@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-
+import 'package:flutter/services.dart';
 import 'ConfigScreen.dart';
 import 'StatusOverview.dart';
 import 'package:flutter/material.dart';
@@ -7,6 +7,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Nur Portrait-Modus erlauben
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+    DeviceOrientation.portraitDown, // optional, falls du umgedrehtes Hochformat erlauben willst
+  ]);
+
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool('hasConfig') ?? false;
 
@@ -22,7 +29,10 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      home: hasConfig ? StatusOverview() : ConfigScreen(),
+      initialRoute: '/',
+      routes: {
+        '/': (context) => hasConfig ? StatusOverview() : ConfigScreen(),
+      },
     );
   }
 }

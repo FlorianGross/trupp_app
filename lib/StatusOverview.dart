@@ -25,9 +25,17 @@ class _StatusOverviewState extends State<StatusOverview> {
   @override
   void initState() {
     super.initState();
-    _initLocation();
-    _loadConfig();
+    _initializeApp();
   }
+
+  Future<void> _initializeApp() async {
+    await _initLocation();
+    await _loadConfig();
+
+    // Status 3 setzen und GPS starten
+    _onStatusPressed(3);
+  }
+
 
   Future<void> _initLocation() async {
     bool serviceEnabled;
@@ -101,17 +109,43 @@ class _StatusOverviewState extends State<StatusOverview> {
     try {
       final response = await http.get(url);
       print("Status gesendet: ${response.statusCode}");
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        _showSnackbar("Status $status erfolgreich gesendet ✅", success: true);
+        setState(() {
+          selectedStatus = status;
+        });
+      } else {
+        _showSnackbar("Fehler beim Senden von Status $status ❌ (Code: ${response.statusCode})", success: false);
+      }
     } catch (e) {
+      if (!mounted) return;
+      _showSnackbar("Fehler beim Senden von Status $status ❌", success: false);
       print("Fehler beim Senden des Status: $e");
     }
   }
+
+  void _showSnackbar(String message, {required bool success}) {
+    final snackBar = SnackBar(
+      content: Text(message),
+      backgroundColor: success ? Colors.green : Colors.red,
+      duration: const Duration(seconds: 3),
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    );
+
+    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  }
+
 
   Future<void> _sendLocation() async {
     try {
       final position = await Geolocator.getCurrentPosition();
 
-      final latitude = position.latitude.toStringAsFixed(6).replaceAll('.', ',');
-      final longitude = position.longitude.toStringAsFixed(6).replaceAll('.', ',');
+      final latitude = position.latitude.toString().replaceAll('.', ',');
+      final longitude = position.longitude.toString().replaceAll('.', ',');
 
       final url = _buildUri("gpsposition", {
         "issi": issi,
@@ -127,10 +161,6 @@ class _StatusOverviewState extends State<StatusOverview> {
   }
 
   void _onStatusPressed(int status) {
-    setState(() {
-      selectedStatus = status;
-    });
-
     _sendStatus(status);
 
     _locationTimer?.cancel();
@@ -146,38 +176,80 @@ class _StatusOverviewState extends State<StatusOverview> {
     }
   }
 
+  void _confirmLogout(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text("Konfiguration zurücksetzen?"),
+        content: const Text("Alle gespeicherten Daten werden gelöscht."),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text("Abbrechen"),
+          ),
+          TextButton(
+            onPressed: () async {
+              // Send Status 6
+
+              await _sendStatus(6);
+
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.clear();
+              Navigator.of(context).pop(); // Dialog
+              Navigator.of(context).pop(); // Drawer
+              Navigator.pushReplacementNamed(context, '/');
+            },
+            child: const Text("Zurücksetzen", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+  }
+
+
   @override
   void dispose() {
     _locationTimer?.cancel();
     super.dispose();
   }
 
-  void _showSettingsDialog() async {
+  Widget _buildSettingsDrawer(BuildContext context) {
     final fullServer = '$protocol://$server:$port';
 
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text("Aktuelle Konfiguration", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-            const Divider(height: 20),
-            _configRow("Server", fullServer),
-            _configRow("Token", token),
-            _configRow("ISSI", issi),
-            _configRow("Trupp", trupp),
-            _configRow("Ansprechpartner", leiter),
-          ],
+    return Drawer(
+      backgroundColor: Colors.white,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(20.0),
+          child: ListView(
+            children: [
+              const Text(
+                "Aktuelle Konfiguration",
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const Divider(height: 20),
+              _configRow("Server", fullServer),
+              _configRow("Token", token),
+              _configRow("ISSI", issi),
+              _configRow("Trupp", trupp),
+              _configRow("Ansprechpartner", leiter),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                icon: const Icon(Icons.logout),
+                label: const Text("Konfiguration zurücksetzen"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                ),
+                onPressed: () => _confirmLogout(context),
+              )
+            ],
+          ),
         ),
       ),
     );
   }
+
 
   Widget _configRow(String label, String value) {
     return Padding(
@@ -202,12 +274,15 @@ class _StatusOverviewState extends State<StatusOverview> {
         backgroundColor: Colors.red.shade800,
         centerTitle: true,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: _showSettingsDialog,
+          Builder(
+            builder: (context) => IconButton(
+              icon: const Icon(Icons.menu),
+              onPressed: () => Scaffold.of(context).openEndDrawer(),
+            ),
           ),
         ],
       ),
+      endDrawer: _buildSettingsDrawer(context),
       body: Column(
         children: [
           const SizedBox(height: 16),
@@ -246,9 +321,15 @@ class _StatusOverviewState extends State<StatusOverview> {
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 16),
-          Expanded(
-            child: Keypad(onPressed: _onStatusPressed),
+          Expanded(child: Container()), // leerer Füller oben
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: Keypad(
+              onPressed: _onStatusPressed,
+              selectedStatus: selectedStatus,
+            ),
           ),
+
           const SizedBox(height: 12),
         ],
       ),

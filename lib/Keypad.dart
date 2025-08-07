@@ -1,60 +1,90 @@
 import 'package:flutter/material.dart';
 
+const Map<int, String> statusDescriptions = {
+  1: "Einsatzbereit Funk",
+  2: "Wache",
+  3: "Auftrag Angenommen",
+  4: "Ziel erreicht",
+  5: "Sprechwunsch",
+  6: "Nicht Einsatzbereit",
+  7: "Transport",
+  8: "Ziel Erreicht",
+  9: "Sonstiges",
+  0: "Dringend",
+};
+
 class Keypad extends StatelessWidget {
   final void Function(int) onPressed;
+  final int? selectedStatus;
 
-  const Keypad({super.key, required this.onPressed});
+  const Keypad({super.key, required this.onPressed, required this.selectedStatus});
 
   @override
   Widget build(BuildContext context) {
-    final List<int> buttons = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
+    final normalButtons = List.generate(9, (i) => i + 1); // 1–9
 
-    return Column(
-      children: [
-        // Erste 3 Reihen mit 3 Buttons
-        for (int row = 0; row < 3; row++)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: List.generate(3, (col) {
-              int number = buttons[row * 3 + col];
-              return _buildKey(number);
-            }),
+    return Container(
+      padding: const EdgeInsets.all(12),
+      color: Colors.grey.shade200,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: normalButtons.map((number) {
+              return SizedBox(
+                width: MediaQuery.of(context).size.width / 3 - 20,
+                child: _buildButton(context, number),
+              );
+            }).toList(),
           ),
-        SizedBox(height: 10),
-        // Letzte Reihe mit nur 0 zentriert
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [_buildKey(0)],
-        ),
-      ],
-    );
-  }
-
-  Widget _buildKey(int number) {
-    return Padding(
-      padding: const EdgeInsets.all(6.0),
-      child: ElevatedButton(
-        onPressed: () => onPressed(number),
-        style: ElevatedButton.styleFrom(
-          shape: const CircleBorder(),
-          padding: const EdgeInsets.all(26),
-          backgroundColor: _statusColor(number),
-          foregroundColor: Colors.white,
-          elevation: 6,
-        ),
-        child: Text(
-          '$number',
-          style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
+          const SizedBox(height: 12),
+          // Status 0 zentriert unten
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              SizedBox(
+                width: MediaQuery.of(context).size.width / 3 - 20,
+                child: _buildButton(context, 0),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
 
-  Color _statusColor(int number) {
-    // Farben für spezielle Stati (1,3,7 = GPS-Modus)
-    if ([1, 3, 7].contains(number)) {
-      return Colors.red.shade700;
-    }
-    return Colors.grey.shade800;
+  Widget _buildButton(BuildContext context, int number) {
+    final isSelected = number == selectedStatus;
+
+    return ElevatedButton(
+      onPressed: () => onPressed(number),
+      style: ElevatedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        backgroundColor: isSelected
+            ? Colors.red.shade800
+            : Colors.grey.shade800,
+        foregroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+      ),
+      child: Column(
+        children: [
+          Text(
+            number.toString(),
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            statusDescriptions[number] ?? '',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+    );
   }
 }
