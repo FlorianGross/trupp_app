@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'Keypad.dart';
+import 'package:flutter/cupertino.dart';
 
 class StatusOverview extends StatefulWidget {
   @override
@@ -36,7 +38,6 @@ class _StatusOverviewState extends State<StatusOverview> {
     _onStatusPressed(3);
   }
 
-
   Future<void> _initLocation() async {
     bool serviceEnabled;
     LocationPermission permission;
@@ -57,22 +58,11 @@ class _StatusOverviewState extends State<StatusOverview> {
     }
 
     if (permission == LocationPermission.deniedForever) {
-      _showErrorDialog("Standortberechtigung dauerhaft verweigert. Bitte in den Einstellungen ändern.");
+      _showErrorDialog(
+        "Standortberechtigung dauerhaft verweigert. Bitte in den Einstellungen ändern.",
+      );
       return;
     }
-  }
-
-  void _showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Fehler"),
-        content: Text(message),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text("OK")),
-        ],
-      ),
-    );
   }
 
   Future<void> _loadConfig() async {
@@ -96,15 +86,13 @@ class _StatusOverviewState extends State<StatusOverview> {
   }
 
   Uri _buildUri(String path, Map<String, String> params) {
-    return Uri.parse('$protocol://$server:$port/$token/$path')
-        .replace(queryParameters: params);
+    return Uri.parse(
+      '$protocol://$server:$port/$token/$path',
+    ).replace(queryParameters: params);
   }
 
   Future<void> _sendStatus(int status) async {
-    final url = _buildUri("setstatus", {
-      "issi": issi,
-      "status": "$status",
-    });
+    final url = _buildUri("setstatus", {"issi": issi, "status": "$status"});
 
     try {
       final response = await http.get(url);
@@ -118,7 +106,10 @@ class _StatusOverviewState extends State<StatusOverview> {
           selectedStatus = status;
         });
       } else {
-        _showSnackbar("Fehler beim Senden von Status $status ❌ (Code: ${response.statusCode})", success: false);
+        _showSnackbar(
+          "Fehler beim Senden von Status $status ❌ (Code: ${response.statusCode})",
+          success: false,
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -138,7 +129,6 @@ class _StatusOverviewState extends State<StatusOverview> {
 
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
   }
-
 
   Future<void> _sendLocation() async {
     try {
@@ -176,36 +166,54 @@ class _StatusOverviewState extends State<StatusOverview> {
     }
   }
 
-  void _confirmLogout(BuildContext context) {
-    showDialog(
+  void _showErrorDialog(String message) {
+    showPlatformDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Konfiguration zurücksetzen?"),
-        content: const Text("Alle gespeicherten Daten werden gelöscht."),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text("Abbrechen"),
+      builder:
+          (_) => PlatformAlertDialog(
+            title: const Text("Fehler"),
+            content: Text(message),
+            actions: [
+              PlatformDialogAction(
+                child: const Text("OK"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              // Send Status 6
-
-              await _sendStatus(6);
-
-              final prefs = await SharedPreferences.getInstance();
-              await prefs.clear();
-              Navigator.of(context).pop(); // Dialog
-              Navigator.of(context).pop(); // Drawer
-              Navigator.pushReplacementNamed(context, '/');
-            },
-            child: const Text("Zurücksetzen", style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
     );
   }
 
+  void _confirmLogout(BuildContext context) {
+    showPlatformDialog(
+      context: context,
+      builder:
+          (_) => PlatformAlertDialog(
+            title: const Text("Konfiguration zurücksetzen?"),
+            content: const Text("Alle gespeicherten Daten werden gelöscht."),
+            actions: [
+              PlatformDialogAction(
+                child: const Text("Abbrechen"),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+              PlatformDialogAction(
+                child: const Text("Zurücksetzen"),
+                cupertino:
+                    (_, __) =>
+                        CupertinoDialogActionData(isDestructiveAction: true),
+                material: (_, __) => MaterialDialogActionData(),
+                onPressed: () async {
+                  await _sendStatus(6);
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.clear();
+                  Navigator.of(context).pop(); // Dialog
+                  Navigator.of(context).pop(); // Drawer
+                  Navigator.pushReplacementNamed(context, '/');
+                },
+              ),
+            ],
+          ),
+    );
+  }
 
   @override
   void dispose() {
@@ -234,15 +242,21 @@ class _StatusOverviewState extends State<StatusOverview> {
               _configRow("Trupp", trupp),
               _configRow("Ansprechpartner", leiter),
               const SizedBox(height: 24),
-              ElevatedButton.icon(
-                icon: const Icon(Icons.logout),
-                label: const Text("Konfiguration zurücksetzen"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade700,
-                  foregroundColor: Colors.white,
-                ),
+              PlatformElevatedButton(
+                child: const Text("Konfiguration zurücksetzen"),
                 onPressed: () => _confirmLogout(context),
-              )
+                cupertino:
+                    (_, __) =>
+                        CupertinoElevatedButtonData(color: Colors.red.shade700),
+                material:
+                    (_, __) => MaterialElevatedButtonData(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                      icon: const Icon(Icons.logout),
+                    ),
+              ),
             ],
           ),
         ),
@@ -250,16 +264,13 @@ class _StatusOverviewState extends State<StatusOverview> {
     );
   }
 
-
   Widget _configRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4.0),
       child: Row(
         children: [
           Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
-          Expanded(
-            child: Text(value, overflow: TextOverflow.ellipsis),
-          )
+          Expanded(child: Text(value, overflow: TextOverflow.ellipsis)),
         ],
       ),
     );
@@ -267,29 +278,47 @@ class _StatusOverviewState extends State<StatusOverview> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PlatformScaffold(
       backgroundColor: Colors.grey[100],
-      appBar: AppBar(
+      appBar: PlatformAppBar(
         title: const Text("Statusübersicht"),
-        backgroundColor: Colors.red.shade800,
-        centerTitle: true,
-        actions: [
-          Builder(
-            builder: (context) => IconButton(
-              icon: const Icon(Icons.menu),
-              onPressed: () => Scaffold.of(context).openEndDrawer(),
+        material:
+            (_, __) => MaterialAppBarData(
+              backgroundColor: Colors.red.shade800,
+              centerTitle: true,
+              actions: [
+                Builder(
+                  builder:
+                      (context) => IconButton(
+                        icon: const Icon(Icons.menu),
+                        onPressed: () => Scaffold.of(context).openEndDrawer(),
+                      ),
+                ),
+              ],
+            ),
+        cupertino: (_, __) => CupertinoNavigationBarData(
+          backgroundColor: Colors.red.shade800,
+          trailing: GestureDetector(
+            child: const Icon(CupertinoIcons.bars),
+            onTap: () => showPlatformModalSheet(
+              context: context,
+              builder: (_) => _buildSettingsDrawer(context),
             ),
           ),
-        ],
+        ),
       ),
-      endDrawer: _buildSettingsDrawer(context),
+      material:
+          (_, __) =>
+              MaterialScaffoldData(endDrawer: _buildSettingsDrawer(context)),
       body: Column(
         children: [
           const SizedBox(height: 16),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Card(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
               color: Colors.red.shade50,
               child: Padding(
                 padding: const EdgeInsets.all(16.0),
@@ -299,7 +328,12 @@ class _StatusOverviewState extends State<StatusOverview> {
                       children: [
                         const Icon(Icons.group, color: Colors.red),
                         const SizedBox(width: 8),
-                        Expanded(child: Text('Trupp: $trupp', style: const TextStyle(fontSize: 18))),
+                        Expanded(
+                          child: Text(
+                            'Trupp: $trupp',
+                            style: const TextStyle(fontSize: 18),
+                          ),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 8),
@@ -307,7 +341,12 @@ class _StatusOverviewState extends State<StatusOverview> {
                       children: [
                         const Icon(Icons.person, color: Colors.red),
                         const SizedBox(width: 8),
-                        Expanded(child: Text('Ansprechpartner: $leiter', style: const TextStyle(fontSize: 18))),
+                        Expanded(
+                          child: Text(
+                            'Ansprechpartner: $leiter',
+                            style: const TextStyle(fontSize: 18),
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -317,11 +356,13 @@ class _StatusOverviewState extends State<StatusOverview> {
           ),
           const SizedBox(height: 16),
           Text(
-            selectedStatus != null ? 'Aktueller Status: $selectedStatus' : 'Kein Status gewählt',
+            selectedStatus != null
+                ? 'Aktueller Status: $selectedStatus'
+                : 'Kein Status gewählt',
             style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
           ),
           const SizedBox(height: 16),
-          Expanded(child: Container()), // leerer Füller oben
+          Expanded(child: Container()),
           Align(
             alignment: Alignment.bottomCenter,
             child: Keypad(
@@ -329,7 +370,6 @@ class _StatusOverviewState extends State<StatusOverview> {
               selectedStatus: selectedStatus,
             ),
           ),
-
           const SizedBox(height: 12),
         ],
       ),

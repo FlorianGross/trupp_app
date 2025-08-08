@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 
 const Map<int, String> statusDescriptions = {
   1: "Einsatzbereit Funk",
@@ -17,7 +18,11 @@ class Keypad extends StatelessWidget {
   final void Function(int) onPressed;
   final int? selectedStatus;
 
-  const Keypad({super.key, required this.onPressed, required this.selectedStatus});
+  const Keypad({
+    super.key,
+    required this.onPressed,
+    required this.selectedStatus,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -41,7 +46,6 @@ class Keypad extends StatelessWidget {
             }).toList(),
           ),
           const SizedBox(height: 12),
-          // Status 0 zentriert unten
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -59,17 +63,26 @@ class Keypad extends StatelessWidget {
   Widget _buildButton(BuildContext context, int number) {
     final isSelected = number == selectedStatus;
 
-    return ElevatedButton(
+    final backgroundColor = isSelected
+        ? Colors.red.shade800
+        : Colors.grey.shade800;
+
+    return PlatformElevatedButton(
       onPressed: () => onPressed(number),
-      style: ElevatedButton.styleFrom(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        backgroundColor: isSelected
-            ? Colors.red.shade800
-            : Colors.grey.shade800,
-        foregroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
+      material: (_, __) => MaterialElevatedButtonData(
+        style: ElevatedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          backgroundColor: backgroundColor,
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
+      ),
+      cupertino: (_, __) => CupertinoElevatedButtonData(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(12),
+        padding: const EdgeInsets.symmetric(vertical: 16),
       ),
       child: Column(
         children: [

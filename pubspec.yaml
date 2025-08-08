@@ -37,6 +37,7 @@ dependencies:
   shared_preferences: ^2.5.3
   geolocator: ^14.0.2
   http: ^1.4.0
+  flutter_platform_widgets: ^8.0.0
 
 dev_dependencies:
   flutter_test:

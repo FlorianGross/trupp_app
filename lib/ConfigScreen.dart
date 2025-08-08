@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'StatusOverview.dart';
 
+import 'StatusOverview.dart';
 
 class ConfigScreen extends StatefulWidget {
   @override
@@ -23,7 +24,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
     if (_formKey.currentState!.validate()) {
       final rawHost = hostController.text.trim();
 
-      // HTTP(S) & Port Strippen, evtl. Slash am Ende entfernen
       final uri = Uri.tryParse(rawHost.startsWith('http') ? rawHost : '$_selectedProtocol://$rawHost');
       if (uri == null || uri.host.isEmpty) {
         _showErrorDialog('Ungültige Serveradresse');
@@ -45,19 +45,25 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => StatusOverview()),
+        platformPageRoute(
+          context: context,
+          builder: (_) => StatusOverview(),
+        ),
       );
     }
   }
 
   void _showErrorDialog(String msg) {
-    showDialog(
+    showPlatformDialog(
       context: context,
-      builder: (_) => AlertDialog(
-        title: Text('Fehler'),
+      builder: (_) => PlatformAlertDialog(
+        title: const Text('Fehler'),
         content: Text(msg),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(), child: Text('OK'))
+          PlatformDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
         ],
       ),
     );
@@ -65,15 +71,22 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Konfiguration')),
+    return PlatformScaffold(
+      appBar: PlatformAppBar(
+        title: const Text('Konfiguration'),
+        material: (_, __) => MaterialAppBarData(
+          backgroundColor: Colors.red.shade800,
+        ),
+        cupertino: (_, __) => CupertinoNavigationBarData(
+          backgroundColor: Colors.red.shade800,
+        ),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Form(
           key: _formKey,
           child: ListView(
             children: [
-              // Protokoll
               DropdownButtonFormField<String>(
                 value: _selectedProtocol,
                 decoration: const InputDecoration(labelText: 'Protokoll'),
@@ -84,17 +97,11 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 onChanged: (value) {
                   setState(() {
                     _selectedProtocol = value!;
-                    if (_selectedProtocol == 'https') {
-                      portController.text = '443';
-                    } else {
-                      portController.text = '80';
-                    }
+                    portController.text = (_selectedProtocol == 'https') ? '443' : '80';
                   });
                 },
               ),
               const SizedBox(height: 12),
-
-              // Host/URL
               TextFormField(
                 controller: hostController,
                 decoration: const InputDecoration(
@@ -103,54 +110,48 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 validator: (v) => v!.isEmpty ? 'Pflichtfeld' : null,
               ),
               const SizedBox(height: 12),
-
-              // Port
               TextFormField(
                 controller: portController,
                 decoration: const InputDecoration(labelText: 'Port'),
                 keyboardType: TextInputType.number,
               ),
               const SizedBox(height: 12),
-
-              // Token
               TextFormField(
                 controller: tokenController,
                 decoration: const InputDecoration(labelText: 'Token'),
                 validator: (v) => v!.isEmpty ? 'Pflichtfeld' : null,
               ),
               const SizedBox(height: 12),
-
-              // ISSI
               TextFormField(
                 controller: issiController,
-                decoration: const InputDecoration(labelText: 'ISSI (optional)'),
+                decoration: const InputDecoration(labelText: 'ISSI'),
               ),
               const SizedBox(height: 12),
-
-              // Truppname
               TextFormField(
                 controller: truppController,
                 decoration: const InputDecoration(labelText: 'Truppname'),
               ),
               const SizedBox(height: 12),
-
-              // Ansprechpartner
               TextFormField(
                 controller: leiterController,
                 decoration: const InputDecoration(labelText: 'Ansprechpartner'),
               ),
               const SizedBox(height: 24),
-
-              // Button
-              ElevatedButton.icon(
-                icon: const Icon(Icons.save),
+              PlatformElevatedButton(
                 onPressed: _saveConfig,
-                label: const Text('Speichern und fortfahren'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade800,
-                  foregroundColor: Colors.white,
+                child: const Text('Speichern und fortfahren'),
+                material: (_, __) => MaterialElevatedButtonData(
+                  icon: const Icon(Icons.save),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade800,
+                    foregroundColor: Colors.white,
+                  ),
                 ),
-              )
+                cupertino: (_, __) => CupertinoElevatedButtonData(
+                  color: Colors.red.shade800,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
             ],
           ),
         ),
