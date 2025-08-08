@@ -224,45 +224,63 @@ class _StatusOverviewState extends State<StatusOverview> {
   Widget _buildSettingsDrawer(BuildContext context) {
     final fullServer = '$protocol://$server:$port';
 
-    return Drawer(
-      backgroundColor: Colors.white,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20.0),
-          child: ListView(
-            children: [
-              const Text(
-                "Aktuelle Konfiguration",
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    final content = SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              "Aktuelle Konfiguration",
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const Divider(height: 20),
+            _configRow("Server", fullServer),
+            _configRow("Token", token),
+            _configRow("ISSI", issi),
+            _configRow("Trupp", trupp),
+            _configRow("Ansprechpartner", leiter),
+            const SizedBox(height: 24),
+            PlatformElevatedButton(
+              child: const Text("Konfiguration zurücksetzen"),
+              onPressed: () => _confirmLogout(context),
+              cupertino: (_, __) =>
+                  CupertinoElevatedButtonData(color: Colors.red.shade700),
+              material: (_, __) => MaterialElevatedButtonData(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                ),
+                icon: const Icon(Icons.logout),
               ),
-              const Divider(height: 20),
-              _configRow("Server", fullServer),
-              _configRow("Token", token),
-              _configRow("ISSI", issi),
-              _configRow("Trupp", trupp),
-              _configRow("Ansprechpartner", leiter),
-              const SizedBox(height: 24),
-              PlatformElevatedButton(
-                child: const Text("Konfiguration zurücksetzen"),
-                onPressed: () => _confirmLogout(context),
-                cupertino:
-                    (_, __) =>
-                        CupertinoElevatedButtonData(color: Colors.red.shade700),
-                material:
-                    (_, __) => MaterialElevatedButtonData(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade700,
-                        foregroundColor: Colors.white,
-                      ),
-                      icon: const Icon(Icons.logout),
-                    ),
+            ),
+            if (isCupertino(context))
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: PlatformElevatedButton(
+                  child: const Text("Schließen"),
+                  onPressed: () => Navigator.of(context).pop(),
+                  cupertino: (_, __) => CupertinoElevatedButtonData(),
+                ),
               ),
-            ],
-          ),
+          ],
         ),
       ),
     );
+
+    if (isMaterial(context)) {
+      return Drawer(
+        backgroundColor: Colors.white,
+        child: content,
+      );
+    } else {
+      return Material( // Damit Cupertino Modal korrekt rendert
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        child: SingleChildScrollView(child: content),
+      );
+    }
   }
+
 
   Widget _configRow(String label, String value) {
     return Padding(
