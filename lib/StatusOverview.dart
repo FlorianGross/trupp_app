@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'Keypad.dart';
 import 'package:flutter/cupertino.dart';
+import 'ConfigScreen.dart';
 
 class StatusOverview extends StatefulWidget {
   @override
@@ -91,7 +92,7 @@ class _StatusOverviewState extends State<StatusOverview> {
     ).replace(queryParameters: params);
   }
 
-  Future<void> _sendStatus(int status) async {
+  Future<void> _sendStatus(int status, {bool notify = true}) async {
     final url = _buildUri("setstatus", {"issi": issi, "status": "$status"});
 
     try {
@@ -101,34 +102,79 @@ class _StatusOverviewState extends State<StatusOverview> {
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        _showSnackbar("Status $status erfolgreich gesendet ✅", success: true);
-        setState(() {
-          selectedStatus = status;
-        });
+        setState(() => selectedStatus = status);
+        if (notify) {
+          _showSnackbar("Status $status erfolgreich gesendet ✅", success: true);
+        }
       } else {
-        _showSnackbar(
-          "Fehler beim Senden von Status $status ❌ (Code: ${response.statusCode})",
-          success: false,
-        );
+        if (notify) {
+          _showSnackbar(
+            "Fehler beim Senden von Status $status ❌ (Code: ${response.statusCode})",
+            success: false,
+          );
+        }
       }
     } catch (e) {
       if (!mounted) return;
-      _showSnackbar("Fehler beim Senden von Status $status ❌", success: false);
+      if (notify) {
+        _showSnackbar("Fehler beim Senden von Status $status ❌", success: false);
+      }
       print("Fehler beim Senden des Status: $e");
     }
   }
 
-  void _showSnackbar(String message, {required bool success}) {
-    final snackBar = SnackBar(
-      content: Text(message),
-      backgroundColor: success ? Colors.green : Colors.red,
-      duration: const Duration(seconds: 3),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-    );
 
-    ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  void _showSnackbar(String message, {required bool success}) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+
+    if (messenger != null) {
+      // Material: SnackBar
+      final snackBar = SnackBar(
+        content: Text(message),
+        backgroundColor: success ? Colors.green : Colors.red,
+        duration: const Duration(seconds: 3),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      );
+      messenger.clearSnackBars();
+      messenger.showSnackBar(snackBar);
+    } else {
+      // Cupertino: kurzer Auto-Dismiss Dialog
+      showCupertinoDialog(
+        context: context,
+        builder: (_) => CupertinoAlertDialog(
+          title: Text(success ? 'Erfolg' : 'Fehler'),
+          content: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text(message),
+          ),
+        ),
+      );
+
+      Future.delayed(const Duration(seconds: 2), () {
+        final nav = Navigator.of(context, rootNavigator: true);
+        if (nav.canPop()) nav.pop();
+      });
+    }
   }
+
+Future<void> _resetToStart() async {
+  // 1) alle offenen Overlays schließen (Dialog + Drawer/Sheet)
+  // zuerst Dialog schließen (rootNavigator, weil showPlatformDialog das nutzt)
+  final rootNav = Navigator.of(context, rootNavigator: true);
+  if (rootNav.canPop()) rootNav.pop();
+
+  // danach evtl. Drawer/Sheet schließen (lokaler Navigator)
+  final nav = Navigator.of(context);
+  if (nav.canPop()) nav.pop();
+
+  // winzige Pause, damit die Close-Animationen sauber durch sind
+  await Future.delayed(const Duration(milliseconds: 50));
+
+  // 2) zurück auf Start – alles rausschieben
+  rootNav.pushNamedAndRemoveUntil('/', (route) => false);
+}
+
 
   Future<void> _sendLocation() async {
     try {
@@ -149,6 +195,20 @@ class _StatusOverviewState extends State<StatusOverview> {
       print("Fehler beim Senden der Position: $e");
     }
   }
+
+  Future<void> _closeOverlays() async {
+    // Dialog schließen (root)
+    final rootNav = Navigator.of(context, rootNavigator: true);
+    if (rootNav.canPop()) rootNav.pop();
+
+    // ggf. Drawer / Modal Sheet schließen (lokal)
+    final nav = Navigator.of(context);
+    if (nav.canPop()) nav.pop();
+
+    // kurze Pause für Animationen
+    await Future.delayed(const Duration(milliseconds: 50));
+  }
+
 
   void _onStatusPressed(int status) {
     _sendStatus(status);
@@ -202,13 +262,20 @@ class _StatusOverviewState extends State<StatusOverview> {
                         CupertinoDialogActionData(isDestructiveAction: true),
                 material: (_, __) => MaterialDialogActionData(),
                 onPressed: () async {
-                  await _sendStatus(6);
+                  await _sendStatus(6, notify: false);
+
                   final prefs = await SharedPreferences.getInstance();
-                  await prefs.clear();
-                  Navigator.of(context).pop(); // Dialog
-                  Navigator.of(context).pop(); // Drawer
-                  Navigator.pushReplacementNamed(context, '/');
-                },
+                  await prefs.clear(); // setzt hasConfig=false
+
+                  await _closeOverlays();
+                  if (!mounted) return;
+
+                  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
+                    platformPageRoute(context: context, builder: (_) => ConfigScreen()),
+                    (_) => false,
+                  );
+                }
+
               ),
             ],
           ),
