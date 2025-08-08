@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'StatusOverview.dart';
 
 class ConfigScreen extends StatefulWidget {
+  const ConfigScreen({super.key});
+
   @override
   State<ConfigScreen> createState() => _ConfigScreenState();
 }
@@ -123,7 +125,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
   }
 
-
   @override
   Widget build(BuildContext context) {
     return PlatformScaffold(
@@ -136,65 +137,95 @@ class _ConfigScreenState extends State<ConfigScreen> {
           backgroundColor: Colors.red.shade800,
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: ListView(
-            children: [
-              _buildProtocolSelector(),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: hostController,
-                decoration: const InputDecoration(
-                  labelText: 'EDP Server (ohne http, z. B. test.local)',
-                ),
-                validator: (v) => v!.isEmpty ? 'Pflichtfeld' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: portController,
-                decoration: const InputDecoration(labelText: 'Port'),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: tokenController,
-                decoration: const InputDecoration(labelText: 'Token'),
-                validator: (v) => v!.isEmpty ? 'Pflichtfeld' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: issiController,
-                decoration: const InputDecoration(labelText: 'ISSI'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: truppController,
-                decoration: const InputDecoration(labelText: 'Truppname'),
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: leiterController,
-                decoration: const InputDecoration(labelText: 'Ansprechpartner'),
-              ),
-              const SizedBox(height: 24),
-              PlatformElevatedButton(
-                onPressed: _saveConfig,
-                child: const Text('Speichern und fortfahren'),
-                material: (_, __) => MaterialElevatedButtonData(
-                  icon: const Icon(Icons.save),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.shade800,
-                    foregroundColor: Colors.white,
+      body: Material( // nötig für InputThemes
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Form(
+            key: _formKey,
+            child: ListView(
+              children: [
+                _buildProtocolSelector(),
+                const SizedBox(height: 12),
+                PlatformTextFormField(
+                  controller: hostController,
+                  validator: (v) => v == null || v.isEmpty ? 'Pflichtfeld' : null,
+                  material: (_, __) => MaterialTextFormFieldData(
+                    decoration: const InputDecoration(labelText: 'EDP Server (z. B. test.local)'),
+                  ),
+                  cupertino: (_, __) => CupertinoTextFormFieldData(
+                    placeholder: 'EDP Server (z. B. test.local)',
                   ),
                 ),
-                cupertino: (_, __) => CupertinoElevatedButtonData(
-                  color: Colors.red.shade800,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                const SizedBox(height: 12),
+                PlatformTextFormField(
+                  controller: portController,
+                  keyboardType: TextInputType.number,
+                  material: (_, __) => MaterialTextFormFieldData(
+                    decoration: const InputDecoration(labelText: 'Port'),
+                  ),
+                  cupertino: (_, __) => CupertinoTextFormFieldData(
+                    placeholder: 'Port',
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 12),
+                PlatformTextFormField(
+                  controller: tokenController,
+                  validator: (v) => v == null || v.isEmpty ? 'Pflichtfeld' : null,
+                  material: (_, __) => MaterialTextFormFieldData(
+                    decoration: const InputDecoration(labelText: 'Token'),
+                  ),
+                  cupertino: (_, __) => CupertinoTextFormFieldData(
+                    placeholder: 'Token',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                PlatformTextFormField(
+                  controller: issiController,
+                  material: (_, __) => MaterialTextFormFieldData(
+                    decoration: const InputDecoration(labelText: 'ISSI'),
+                  ),
+                  cupertino: (_, __) => CupertinoTextFormFieldData(
+                    placeholder: 'ISSI',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                PlatformTextFormField(
+                  controller: truppController,
+                  material: (_, __) => MaterialTextFormFieldData(
+                    decoration: const InputDecoration(labelText: 'Truppname'),
+                  ),
+                  cupertino: (_, __) => CupertinoTextFormFieldData(
+                    placeholder: 'Truppname',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                PlatformTextFormField(
+                  controller: leiterController,
+                  material: (_, __) => MaterialTextFormFieldData(
+                    decoration: const InputDecoration(labelText: 'Ansprechpartner'),
+                  ),
+                  cupertino: (_, __) => CupertinoTextFormFieldData(
+                    placeholder: 'Ansprechpartner',
+                  ),
+                ),
+                const SizedBox(height: 24),
+                PlatformElevatedButton(
+                  onPressed: _saveConfig,
+                  child: const Text('Speichern und fortfahren'),
+                  material: (_, __) => MaterialElevatedButtonData(
+                    icon: const Icon(Icons.save),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade800,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                  cupertino: (_, __) => CupertinoElevatedButtonData(
+                    color: Colors.red.shade800,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
