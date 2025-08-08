@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -69,6 +70,60 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
   }
 
+  Widget _buildProtocolSelector() {
+    if (isMaterial(context)) {
+      return DropdownButtonFormField<String>(
+        value: _selectedProtocol,
+        decoration: const InputDecoration(labelText: 'Protokoll'),
+        items: const [
+          DropdownMenuItem(value: 'http', child: Text('http')),
+          DropdownMenuItem(value: 'https', child: Text('https')),
+        ],
+        onChanged: (value) {
+          setState(() {
+            _selectedProtocol = value!;
+            portController.text = (_selectedProtocol == 'https') ? '443' : '80';
+          });
+        },
+      );
+    } else {
+      return PlatformElevatedButton(
+        child: Text('Protokoll: $_selectedProtocol (ändern)'),
+        onPressed: () => _showProtocolCupertinoPicker(context),
+      );
+    }
+  }
+
+  void _showProtocolCupertinoPicker(BuildContext context) {
+    showPlatformModalSheet(
+      context: context,
+      builder: (_) {
+        return SafeArea(
+          child: SizedBox(
+            height: 200,
+            child: CupertinoPicker(
+              itemExtent: 40,
+              scrollController: FixedExtentScrollController(
+                initialItem: _selectedProtocol == 'https' ? 1 : 0,
+              ),
+              onSelectedItemChanged: (index) {
+                setState(() {
+                  _selectedProtocol = index == 0 ? 'http' : 'https';
+                  portController.text = _selectedProtocol == 'https' ? '443' : '80';
+                });
+              },
+              children: const [
+                Text('http'),
+                Text('https'),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+
   @override
   Widget build(BuildContext context) {
     return PlatformScaffold(
@@ -87,20 +142,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
           key: _formKey,
           child: ListView(
             children: [
-              DropdownButtonFormField<String>(
-                value: _selectedProtocol,
-                decoration: const InputDecoration(labelText: 'Protokoll'),
-                items: const [
-                  DropdownMenuItem(value: 'http', child: Text('http')),
-                  DropdownMenuItem(value: 'https', child: Text('https')),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _selectedProtocol = value!;
-                    portController.text = (_selectedProtocol == 'https') ? '443' : '80';
-                  });
-                },
-              ),
+              _buildProtocolSelector(),
               const SizedBox(height: 12),
               TextFormField(
                 controller: hostController,
