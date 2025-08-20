@@ -2,18 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>BGTaskSchedulerPermittedIdentifiers</key>
-    <array>
-        <string>dev.flutter.background.refresh</string>
-    </array>
-    <key>NSLocationWhenInUseUsageDescription</key>
-    <string>Standort wird zur Einsatzübermittlung benötigt.</string>
-    <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-    <string>Standort wird auch im Hintergrund für Status-/Positionsmeldungen benötigt.</string>
-    <key>UIBackgroundModes</key>
-    <array>
-      <string>location</string>  <!-- Hintergrund-Location -->
-    </array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>dev.flutter.background.refresh</string>
+	</array>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
@@ -34,10 +26,29 @@
 	<string>$(FLUTTER_BUILD_NAME)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>None</string>
+			<key>CFBundleURLName</key>
+			<string>dev.floriang.truppsapp</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>truppapp</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Kamera wird zum Scannen der Konfiguration benötigt.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Standort wird auch im Hintergrund für Status-/Positionsmeldungen benötigt.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Wir benötigen deinen Standort, um Positionsdaten an die Einsatzleitung zu senden.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
