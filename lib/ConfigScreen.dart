@@ -25,7 +25,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
   final issiController = TextEditingController();
 
   String _selectedProtocol = 'https';
-  bool _autoSaveAfterScan = true;
+  bool _autoSaveAfterScan = false;
 
   @override
   void dispose() {
@@ -38,19 +38,200 @@ class _ConfigScreenState extends State<ConfigScreen> {
     super.dispose();
   }
 
+  @override
+  void initState() {
+    super.initState();
+
+    if (widget is ConfigScreenWithPrefill) {
+      final uri = (widget as ConfigScreenWithPrefill).initialDeepLink;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        try {
+          await _applyConfigFromUri(uri); // deine Methode
+        } catch (e) {
+          _showErrorDialog('DeepLink ungültig: $e');
+        }
+      });
+    }
+  }
+
+  bool _showAllErrors =
+      false; // nach erstem fehlgeschlagenen Speichern alle Fehler zeigen
+
+  bool _isMissing(TextEditingController c) => c.text.trim().isEmpty;
+
+  InputDecoration _materialDecoration(String label, {required bool missing}) {
+    return InputDecoration(
+      labelText: label,
+      filled: true,
+      // zarte Rot-Tönung wenn fehlt, sonst neutral
+      fillColor: missing ? Colors.red.shade50 : Colors.grey.shade50,
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(
+          color: missing ? Colors.red.shade200 : Colors.grey.shade300,
+        ),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(
+          color: missing ? Colors.red : Colors.red.shade800,
+        ),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.red),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: BorderSide(color: Colors.red, width: 2),
+      ),
+    );
+  }
+
+  // Für Cupertino: den Hintergrund einfärben – CupertinoTextField hat kein errorBorder.
+  // Wir wrappen unten den Field-Builder in einen Container mit Farbe.
+  BoxDecoration _cupertinoBox({required bool missing}) {
+    return BoxDecoration(
+      color: missing ? const Color(0xffffebee) : const Color(0xfff5f5f5),
+      // #ffebee ≈ red-50
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: missing ? Colors.red : const Color(0xffe0e0e0)),
+    );
+  }
+
+  Widget _requiredField({
+    required String label,
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+  }) {
+    final missing = _isMissing(controller);
+
+    // Autovalidate: nur auf User-Interaktion – oder immer wenn _showAllErrors true
+    final autoMode =
+        _showAllErrors
+            ? AutovalidateMode.always
+            : AutovalidateMode.onUserInteraction;
+
+    validator(String? v) =>
+        (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null;
+
+    if (isMaterial(context)) {
+      return PlatformTextFormField(
+        controller: controller,
+        autovalidateMode: autoMode,
+        validator: validator,
+        keyboardType: keyboardType,
+        material:
+            (_, __) => MaterialTextFormFieldData(
+              decoration: _materialDecoration(label, missing: missing),
+            ),
+      );
+    } else {
+      // Cupertino: Container färbt, Feld bleibt clean
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF616161)),
+            ),
+          ),
+          Container(
+            decoration: _cupertinoBox(missing: missing),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: PlatformTextFormField(
+              controller: controller,
+              autovalidateMode: autoMode,
+              validator: validator,
+              keyboardType: keyboardType,
+              cupertino:
+                  (_, __) => CupertinoTextFormFieldData(
+                    decoration:
+                        null, // keine eigene Box, wir nutzen den Container
+                  ),
+              material:
+                  (_, __) => MaterialTextFormFieldData(
+                    decoration: const InputDecoration(border: InputBorder.none),
+                  ),
+            ),
+          ),
+          if (_showAllErrors && missing)
+            const Padding(
+              padding: EdgeInsets.only(left: 4, top: 4),
+              child: Text(
+                'Pflichtfeld',
+                style: TextStyle(color: Colors.red, fontSize: 12),
+              ),
+            ),
+        ],
+      );
+    }
+  }
+
+  Widget _optionalField({
+    required String label,
+    required TextEditingController controller,
+    TextInputType? keyboardType,
+  }) {
+    final missing = _isMissing(
+      controller,
+    ); // nur zur Hintergrundfarbe, nicht als Fehler
+    if (isMaterial(context)) {
+      return PlatformTextFormField(
+        controller: controller,
+        keyboardType: keyboardType,
+        material:
+            (_, __) => MaterialTextFormFieldData(
+              decoration: _materialDecoration(label, missing: false),
+            ),
+      );
+    } else {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: 6),
+            child: Text(
+              label,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF616161)),
+            ),
+          ),
+          Container(
+            decoration: _cupertinoBox(missing: false),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            child: PlatformTextFormField(
+              controller: controller,
+              keyboardType: keyboardType,
+              cupertino:
+                  (_, __) => CupertinoTextFormFieldData(decoration: null),
+              material:
+                  (_, __) => MaterialTextFormFieldData(
+                    decoration: InputDecoration(border: InputBorder.none),
+                  ),
+            ),
+          ),
+        ],
+      );
+    }
+  }
+
   Future<void> _saveConfig() async {
     if (_formKey.currentState!.validate()) {
       final rawHost = hostController.text.trim();
 
       final uri = Uri.tryParse(
-          rawHost.startsWith('http') ? rawHost : '$_selectedProtocol://$rawHost');
+        rawHost.startsWith('http') ? rawHost : '$_selectedProtocol://$rawHost',
+      );
       if (uri == null || uri.host.isEmpty) {
         _showErrorDialog('Ungültige Serveradresse');
         return;
       }
 
       final cleanedHost = uri.host;
-      final port = int.tryParse(portController.text.trim()) ??
+      final port =
+          int.tryParse(portController.text.trim()) ??
           (_selectedProtocol == 'https' ? 443 : 80);
       final finalUrl = '$cleanedHost:$port';
 
@@ -72,12 +253,14 @@ class _ConfigScreenState extends State<ConfigScreen> {
           return;
         } else if (r.statusCode != 200) {
           _showErrorDialog(
-              'Fehler beim Testen der Konfiguration: ${r.statusCode} ${r
-                  .reasonPhrase}');
+            'Fehler beim Testen der Konfiguration: ${r.statusCode} ${r.reasonPhrase}',
+          );
           return;
         }
-      }catch (e) {
-        _showErrorDialog('Überprüfen Sie die Konfiguration / Internetverbindung');
+      } catch (e) {
+        _showErrorDialog(
+          'Überprüfen Sie die Konfiguration / Internetverbindung',
+        );
         return;
       }
 
@@ -89,8 +272,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
       await prefs.setString('leiter', leiterController.text.trim());
       await prefs.setString('issi', issiController.text.trim());
       await prefs.setBool('hasConfig', true);
-
-
 
       if (!mounted) return;
       Navigator.pushReplacement(
@@ -106,16 +287,17 @@ class _ConfigScreenState extends State<ConfigScreen> {
   void _showErrorDialog(String msg) {
     showPlatformDialog(
       context: context,
-      builder: (_) => PlatformAlertDialog(
-        title: const Text('Fehler'),
-        content: Text(msg),
-        actions: [
-          PlatformDialogAction(
-            child: const Text('OK'),
-            onPressed: () => Navigator.of(context).pop(),
+      builder:
+          (_) => PlatformAlertDialog(
+            title: const Text('Fehler'),
+            content: Text(msg),
+            actions: [
+              PlatformDialogAction(
+                child: const Text('OK'),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -168,13 +350,10 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 setState(() {
                   _selectedProtocol = index == 0 ? 'http' : 'https';
                   portController.text =
-                  _selectedProtocol == 'https' ? '443' : '80';
+                      _selectedProtocol == 'https' ? '443' : '80';
                 });
               },
-              children: const [
-                Text('http'),
-                Text('https'),
-              ],
+              children: const [Text('http'), Text('https')],
             ),
           ),
         );
@@ -203,7 +382,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
       throw Exception('Fehlende Parameter: protocol/server');
     }
 
-    final port = int.tryParse(portStr ?? '') ?? (protocol == 'https' ? 443 : 80);
+    final port =
+        int.tryParse(portStr ?? '') ?? (protocol == 'https' ? 443 : 80);
 
     setState(() {
       _selectedProtocol = (protocol == 'http') ? 'http' : 'https';
@@ -232,9 +412,10 @@ class _ConfigScreenState extends State<ConfigScreen> {
             child: Column(
               children: [
                 const SizedBox(height: 8),
-                const Text('QR-Code scannen',
-                    style:
-                    TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const Text(
+                  'QR-Code scannen',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
                 const SizedBox(height: 8),
                 Expanded(
                   child: Padding(
@@ -254,7 +435,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
                             }
                             await _applyConfigFromUri(uri);
                           } catch (e) {
-                            _showErrorDialog('Fehler beim Lesen des QR-Codes: $e');
+                            _showErrorDialog(
+                              'Fehler beim Lesen des QR-Codes: $e',
+                            );
                           }
                         },
                       ),
@@ -262,17 +445,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Text('Nach Scan automatisch speichern'),
-                    PlatformSwitch(
-                      value: _autoSaveAfterScan,
-                      onChanged: (v) => setState(() => _autoSaveAfterScan = v),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
               ],
             ),
           ),
@@ -286,26 +458,29 @@ class _ConfigScreenState extends State<ConfigScreen> {
     return PlatformScaffold(
       appBar: PlatformAppBar(
         title: const Text('Konfiguration'),
-        material: (_, __) => MaterialAppBarData(
-          backgroundColor: Colors.red.shade800,
-          actions: [
-            // QR-Import auch über AppBar erreichbar
-            IconButton(
-              icon: const Icon(Icons.qr_code_scanner),
-              tooltip: 'Per QR übernehmen',
-              onPressed: _openScannerSheet,
+        material:
+            (_, __) => MaterialAppBarData(
+              backgroundColor: Colors.red.shade800,
+              actions: [
+                // QR-Import auch über AppBar erreichbar
+                IconButton(
+                  icon: const Icon(Icons.qr_code_scanner),
+                  tooltip: 'Per QR übernehmen',
+                  onPressed: _openScannerSheet,
+                ),
+              ],
             ),
-          ],
-        ),
-        cupertino: (_, __) => CupertinoNavigationBarData(
-          backgroundColor: Colors.red.shade800,
-          trailing: GestureDetector(
-            onTap: _openScannerSheet,
-            child: const Icon(CupertinoIcons.qrcode_viewfinder),
-          ),
-        ),
+        cupertino:
+            (_, __) => CupertinoNavigationBarData(
+              backgroundColor: Colors.red.shade800,
+              trailing: GestureDetector(
+                onTap: _openScannerSheet,
+                child: const Icon(CupertinoIcons.qrcode_viewfinder),
+              ),
+            ),
       ),
-      body: Material( // nötig für InputThemes
+      body: Material(
+        // nötig für InputThemes
         child: Padding(
           padding: const EdgeInsets.all(16.0),
           child: Form(
@@ -329,7 +504,9 @@ class _ConfigScreenState extends State<ConfigScreen> {
                               child: Text(
                                 'Konfiguration per QR-Code übernehmen',
                                 style: TextStyle(
-                                    fontSize: 16, fontWeight: FontWeight.w600),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
                           ],
@@ -338,17 +515,21 @@ class _ConfigScreenState extends State<ConfigScreen> {
                         PlatformElevatedButton(
                           onPressed: _openScannerSheet,
                           child: const Text('Per QR übernehmen'),
-                          material: (_, __) => MaterialElevatedButtonData(
-                            icon: const Icon(Icons.qr_code_scanner),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red.shade800,
-                              foregroundColor: Colors.white,
-                            ),
-                          ),
-                          cupertino: (_, __) => CupertinoElevatedButtonData(
-                            color: Colors.red.shade800,
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                          ),
+                          material:
+                              (_, __) => MaterialElevatedButtonData(
+                                icon: const Icon(Icons.qr_code_scanner),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade800,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                          cupertino:
+                              (_, __) => CupertinoElevatedButtonData(
+                                color: Colors.red.shade800,
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 10,
+                                ),
+                              ),
                         ),
                       ],
                     ),
@@ -358,84 +539,61 @@ class _ConfigScreenState extends State<ConfigScreen> {
                 const SizedBox(height: 16),
                 _buildProtocolSelector(),
                 const SizedBox(height: 12),
-                PlatformTextFormField(
+                _requiredField(
+                  label: 'EDP Server* (z. B. test.local)',
                   controller: hostController,
-                  validator: (v) => v == null || v.isEmpty ? 'Pflichtfeld' : null,
-                  material: (_, __) => MaterialTextFormFieldData(
-                    decoration:
-                    const InputDecoration(labelText: 'EDP Server (z. B. test.local)'),
-                  ),
-                  cupertino: (_, __) => CupertinoTextFormFieldData(
-                    placeholder: 'EDP Server (z. B. test.local)',
-                  ),
                 ),
+
                 const SizedBox(height: 12),
-                PlatformTextFormField(
+
+                _requiredField(
+                  label: 'Port*',
                   controller: portController,
                   keyboardType: TextInputType.number,
-                  material: (_, __) => MaterialTextFormFieldData(
-                    decoration: const InputDecoration(labelText: 'Port'),
-                  ),
-                  cupertino: (_, __) => CupertinoTextFormFieldData(
-                    placeholder: 'Port',
-                  ),
                 ),
+
                 const SizedBox(height: 12),
-                PlatformTextFormField(
-                  controller: tokenController,
-                  validator: (v) => v == null || v.isEmpty ? 'Pflichtfeld' : null,
-                  material: (_, __) => MaterialTextFormFieldData(
-                    decoration: const InputDecoration(labelText: 'Token'),
-                  ),
-                  cupertino: (_, __) => CupertinoTextFormFieldData(
-                    placeholder: 'Token',
-                  ),
-                ),
+
+                _requiredField(label: 'Token*', controller: tokenController),
+
                 const SizedBox(height: 12),
-                PlatformTextFormField(
-                  controller: issiController,
-                  material: (_, __) => MaterialTextFormFieldData(
-                    decoration: const InputDecoration(labelText: 'ISSI'),
-                  ),
-                  cupertino: (_, __) => CupertinoTextFormFieldData(
-                    placeholder: 'ISSI',
-                  ),
-                ),
+
+                _requiredField(label: 'ISSI*', controller: issiController),
+
                 const SizedBox(height: 12),
-                PlatformTextFormField(
-                  controller: truppController,
-                  material: (_, __) => MaterialTextFormFieldData(
-                    decoration: const InputDecoration(labelText: 'Truppname'),
-                  ),
-                  cupertino: (_, __) => CupertinoTextFormFieldData(
-                    placeholder: 'Truppname',
-                  ),
-                ),
+
+                _optionalField(label: 'Truppname', controller: truppController),
+
                 const SizedBox(height: 12),
-                PlatformTextFormField(
+
+                _optionalField(
+                  label: 'Ansprechpartner',
                   controller: leiterController,
-                  material: (_, __) => MaterialTextFormFieldData(
-                    decoration: const InputDecoration(labelText: 'Ansprechpartner'),
-                  ),
-                  cupertino: (_, __) => CupertinoTextFormFieldData(
-                    placeholder: 'Ansprechpartner',
+                ),
+                Text(
+                  'Die Konfiguration wird im Gerät gespeichert. \n * Pflichtfelder',
+                  style: TextStyle(
+                    color: Colors.grey.shade600,
+                    fontSize: 12,
                   ),
                 ),
                 const SizedBox(height: 24),
                 PlatformElevatedButton(
                   onPressed: _saveConfig,
                   child: const Text('Speichern und fortfahren'),
-                  material: (_, __) => MaterialElevatedButtonData(
-                    icon: const Icon(Icons.save),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade800,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
-                  cupertino: (_, __) => CupertinoElevatedButtonData(
-                    color: Colors.red.shade800,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
+                  material:
+                      (_, __) => MaterialElevatedButtonData(
+                        icon: const Icon(Icons.save),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade800,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                  cupertino:
+                      (_, __) => CupertinoElevatedButtonData(
+                        color: Colors.red.shade800,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
                 ),
               ],
             ),
@@ -444,4 +602,10 @@ class _ConfigScreenState extends State<ConfigScreen> {
       ),
     );
   }
+}
+
+class ConfigScreenWithPrefill extends ConfigScreen {
+  final Uri initialDeepLink;
+
+  const ConfigScreenWithPrefill({super.key, required this.initialDeepLink});
 }

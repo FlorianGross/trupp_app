@@ -2,21 +2,24 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:trupp_app/DeepLinkHandler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
 import 'StatusOverview.dart';
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
+
+// ➊ Globaler NavigatorKey
+final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 @pragma('vm:entry-point')
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeBackgroundService();
-  // Nur Portrait-Modus erlauben
+
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown, // optional, falls du umgedrehtes Hochformat erlauben willst
+    DeviceOrientation.portraitDown,
   ]);
 
   final prefs = await SharedPreferences.getInstance();
@@ -32,20 +35,21 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return PlatformApp(
-      debugShowCheckedModeBanner: false,
-      material: (_, __) => MaterialAppData(
-        theme: ThemeData.light(),
-      ),
-      cupertino: (_, __) => CupertinoAppData(
-        theme: CupertinoThemeData(
-          brightness: Brightness.light,
+    return DeepLinkHandler(
+      navigatorKey: navigatorKey, // ➋ Key an Handler geben
+      child: PlatformApp(
+        debugShowCheckedModeBanner: false,
+        // ➌ Key an die App hängen, damit wir überall navigieren können
+        navigatorKey: navigatorKey,
+        material: (_, __) => MaterialAppData(theme: ThemeData.light()),
+        cupertino: (_, __) => CupertinoAppData(
+          theme: CupertinoThemeData(brightness: Brightness.light),
         ),
+        initialRoute: '/',
+        routes: {
+          '/': (context) => hasConfig ? const StatusOverview() : const ConfigScreen(),
+        },
       ),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => hasConfig ? StatusOverview() : ConfigScreen(),
-      },
     );
   }
 }
