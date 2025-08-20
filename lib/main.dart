@@ -1,15 +1,18 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
 import 'StatusOverview.dart';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 
+@pragma('vm:entry-point')
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
+  await initializeBackgroundService();
   // Nur Portrait-Modus erlauben
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
