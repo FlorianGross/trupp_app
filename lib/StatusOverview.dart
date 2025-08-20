@@ -92,6 +92,17 @@ class _StatusOverviewState extends State<StatusOverview> {
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
     }
+
+    // iOS: "Always" ist für echtes Background-Tracking empfehlenswert
+    if ((defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) &&
+        p != LocationPermission.always) {
+      // Freundlicher Hinweis + Sprung in Einstellungen
+      _showErrorDialog("Bitte 'Standortzugriff: Immer' in den iOS-Einstellungen erlauben, "
+          "damit die Übertragung im Hintergrund zuverlässig läuft.");
+      // Optional: Geolocator.openAppSettings();
+    }
+
     if (p == LocationPermission.denied ||
         p == LocationPermission.deniedForever) {
       _showErrorDialog("Standortberechtigung fehlt.");
