@@ -4,10 +4,13 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import 'ConfigScreen.dart';
@@ -361,8 +364,29 @@ class _StatusOverviewState extends State<StatusOverview> {
     );
   }
 
+  String _buildConfigDeepLink() {
+    // Custom Scheme: truppapp://config?protocol=...&server=...&port=...&token=...&issi=...&trupp=...&leiter=...
+    final qp = <String, String>{
+      'protocol': protocol,
+      'server'  : server,
+      'port'    : port,
+      'token'   : token,
+      'leiter'  : leiter,
+    };
+
+    final uri = Uri(
+      scheme: 'truppapp',
+      host: 'config',
+      queryParameters: qp,
+    );
+    return uri.toString();
+  }
+
+
   Widget _buildSettingsDrawer(BuildContext context) {
     final fullServer = '$protocol://$server:$port';
+    final deepLink = _buildConfigDeepLink();
+
     final content = SafeArea(
       child: Padding(
         padding: const EdgeInsets.all(20.0),
@@ -375,19 +399,58 @@ class _StatusOverviewState extends State<StatusOverview> {
           _configRow("ISSI", issi),
           _configRow("Trupp", trupp),
           _configRow("Ansprechpartner", leiter),
+
+          const SizedBox(height: 24),
+          const Text("Konfiguration teilen",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+
+          const SizedBox(height: 12),
+          // QR-Code
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black12),
+            ),
+            padding: const EdgeInsets.all(12),
+            child: QrImageView(
+              data: deepLink,
+              version: QrVersions.auto,
+              size: 220,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              PlatformElevatedButton(
+                color: Colors.red,
+                child: const Text("Link kopieren", style: TextStyle(color: Colors.white),),
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: deepLink));
+                  _showSnackbar("Link kopiert", success: true);
+                },
+              ),
+              const SizedBox(width: 12),
+              PlatformElevatedButton(
+                color: Colors.red,
+                child: const Text("Teilen", style: TextStyle(color: Colors.white),),
+                onPressed: () => Share.share(deepLink),
+              ),
+            ],
+          ),
+
           const SizedBox(height: 24),
           PlatformElevatedButton(
             child: const Text("Konfiguration zurücksetzen"),
             onPressed: () => _confirmLogout(context),
-            cupertino: (_, __) =>
-                CupertinoElevatedButtonData(color: Colors.red.shade700),
-            material: (_, __) =>
-                MaterialElevatedButtonData(
-                  style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
-                      foregroundColor: Colors.white),
-                  icon: const Icon(Icons.logout),
-                ),
+            cupertino: (_, __) => CupertinoElevatedButtonData(color: Colors.red.shade700),
+            material:  (_, __) => MaterialElevatedButtonData(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white),
+              icon: const Icon(Icons.logout),
+            ),
           ),
           if (isCupertino(context))
             Padding(
