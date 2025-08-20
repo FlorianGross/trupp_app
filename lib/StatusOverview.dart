@@ -1,7 +1,6 @@
 // lib/screens/status_overview.dart
 import 'dart:async';
 import 'dart:io';
-import 'dart:math' as math;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,9 +10,9 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
-import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
 import 'Keypad.dart';
+import 'service.dart';
 
 class StatusOverview extends StatefulWidget {
   const StatusOverview({super.key});
