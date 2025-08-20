@@ -61,6 +61,22 @@ Future<void> onStart(ServiceInstance service) async {
         issi.isNotEmpty;
   }
 
+  Future<void> _ensureFullAccuracyIfPossible() async {
+    if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      final status = await Geolocator.getLocationAccuracy();
+      if (status == LocationAccuracyStatus.reduced) {
+        // "PreciseTracking" muss im Info.plist unter NSLocationTemporaryUsageDescriptionDictionary existieren
+        try {
+          await Geolocator.requestTemporaryFullAccuracy(purposeKey: 'PreciseTracking');
+        } catch (_) {
+          // ignorieren – User kann "Ungefähr" erzwungen haben
+        }
+      }
+    }
+  }
+
+
   Future<void> startTracking() async {
     if (trackingEnabled) return;
     trackingEnabled = true;
@@ -88,10 +104,10 @@ Future<void> onStart(ServiceInstance service) async {
     } else if (defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS) {
       locationSettings = AppleSettings(
-        accuracy: LocationAccuracy.high,
-        activityType: ActivityType.fitness,
-        distanceFilter: 50,
-        pauseLocationUpdatesAutomatically: true,
+        accuracy: LocationAccuracy.best,
+        activityType: ActivityType.otherNavigation,
+        distanceFilter: 15,
+        pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: false,
       );
     } else {
@@ -100,7 +116,7 @@ Future<void> onStart(ServiceInstance service) async {
         distanceFilter: 50,
       );
     }
-
+    await _ensureFullAccuracyIfPossible();
     sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
           (pos) async {
         // Fix-Qualität prüfen

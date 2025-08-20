@@ -2,19 +2,6 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleURLTypes</key>
-    <array>
-      <dict>
-        <key>CFBundleURLName</key>
-        <string>dev.floriang.truppsapp</string>
-        <key>CFBundleURLSchemes</key>
-        <array>
-          <string>truppapp</string>
-        </array>
-      </dict>
-    </array>
-    <key>NSCameraUsageDescription</key>
-    <string>Kamera wird zum Scannen der Konfiguration benötigt.</string>
     <key>BGTaskSchedulerPermittedIdentifiers</key>
     <array>
         <string>dev.flutter.background.refresh</string>
