@@ -366,7 +366,18 @@ class _StatusOverviewState extends State<StatusOverview> {
 
   // ---------------- Status Handling ----------------
   void _onStatusPressed(int status) async {
-    if (_isTempStatus(status)) { /* unchanged */ }
+    if (_isTempStatus(status)) {
+      _tempStatusTimer?.cancel();
+      await _sendStatus(status);
+
+      final duration = _tempDurations[status] ?? const Duration(seconds: 5);
+      _tempStatusTimer = Timer(duration, () {
+        if (!mounted) return;
+        final revert = _lastPersistentStatus ?? 1;
+        _onStatusPressed(revert);
+      });
+      return;
+    }
 
     final wantsTracking = [1, 3, 7].contains(status);
 
@@ -414,7 +425,6 @@ class _StatusOverviewState extends State<StatusOverview> {
     final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
     await _setBackgroundTracking(wantsTracking && canTrack);
   }
-
 
   Future<void> _onPersistentStatus(int status, {bool notify = true}) async {
     _tempStatusTimer?.cancel();
