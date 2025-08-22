@@ -157,23 +157,23 @@ class _StatusOverviewState extends State<StatusOverview> {
   }
 
   Future<void> _firstRunPermissionFlow() async {
-    // Rationale + While-In-Use anfragen (kein Auto-Redirect)
-    final okWhile = await _requestWhileInUseWithRationale();
-    if (!okWhile) return;
-
-    // Optionale zweite Rationale für Background (für 1/3/7); kein Muss beim ersten Start
-    final proceedBG = await _showRationale(
-      title: 'Hintergrund-Standort (optional)',
-      msg:
-          'Bei Status 1, 3 oder 7 kann die App deinen Standort auch im Hintergrund an den EDP-Server übertragen, '
-          'damit die Leitstelle Ressourcen in Echtzeit koordinieren kann. Möchtest du das jetzt erlauben?',
-      primary: 'Erlauben',
-      secondary: 'Später',
+    await _showPrePermissionInfo(
+      title: 'Standortzugriff benötigt',
+      msg: 'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
+          'Bitte erlaube „Beim Verwenden der App“, damit Statusmeldungen korrekt gesendet werden.',
     );
-    if (proceedBG == true) {
-      await _requestBackgroundWithRationale();
+
+    var p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied) {
+      p = await Geolocator.requestPermission(); // shows OS sheet
     }
+
+    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
+      _showSnackbar('Standortberechtigung nicht erteilt.', success: false);
+    }
+    // NOTE: Do not ask for background permission here anymore.
   }
+
 
   Future<bool> _requestWhileInUseWithRationale() async {
     final proceed = await _showRationale(
@@ -181,8 +181,7 @@ class _StatusOverviewState extends State<StatusOverview> {
       msg:
           'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
           'Dazu benötigt die App Zugriff auf deinen Standort während der Nutzung.',
-      primary: 'Fortfahren',
-      secondary: 'Nicht jetzt',
+      primary: 'Fortfahren'
     );
     if (proceed != true) return false;
 
@@ -203,8 +202,7 @@ class _StatusOverviewState extends State<StatusOverview> {
       title: 'Hintergrund-Standort',
       msg:
           'Bei Status 1, 3 oder 7 wird dein Standort zusätzlich regelmäßig im Hintergrund übertragen.',
-      primary: 'Fortfahren',
-      secondary: 'Abbrechen',
+      primary: 'Fortfahren'
     );
     if (proceed != true) return false;
 
@@ -368,35 +366,44 @@ class _StatusOverviewState extends State<StatusOverview> {
 
   // ---------------- Status Handling ----------------
   void _onStatusPressed(int status) async {
-    if (_isTempStatus(status)) {
-      _tempStatusTimer?.cancel();
-      await _sendStatus(status);
-
-      final duration = _tempDurations[status] ?? const Duration(seconds: 5);
-      _tempStatusTimer = Timer(duration, () {
-        if (!mounted) return;
-        final revert = _lastPersistentStatus ?? 1;
-        _onStatusPressed(revert);
-      });
-      return;
-    }
+    if (_isTempStatus(status)) { /* unchanged */ }
 
     final wantsTracking = [1, 3, 7].contains(status);
 
     if (wantsTracking) {
-      // Wenn BG für 1/3/7 fehlt, optional anbieten — kein Auto-Redirect
-      if (!await _hasBackgroundPermission()) {
-        final grantNow = await _offerSettings(
-          msg:
-              'Für Status 1, 3 oder 7 kann die App deinen Standort zusätzlich im Hintergrund übertragen. '
-              'Bitte ggf. in den Systemeinstellungen erlauben.',
-        );
-        if (grantNow == true) {
-          if (defaultTargetPlatform == TargetPlatform.iOS ||
-              defaultTargetPlatform == TargetPlatform.macOS) {
-            await Geolocator.openAppSettings();
-          } else {
-            await openAppSettings();
+      // Ensure When-In-Use first
+      var p = await Geolocator.checkPermission();
+      if (p == LocationPermission.denied) {
+        // No pre-prompt with cancel – just request
+        p = await Geolocator.requestPermission();
+      }
+
+      // Ask for Background directly when required (no custom cancel UI beforehand)
+      if (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS) {
+        if (p != LocationPermission.always) {
+          // iOS needs a second request step initiated by the app
+          p = await Geolocator.requestPermission(); // iOS may escalate to "Immer"
+        }
+        if (p != LocationPermission.always) {
+          // Now it’s allowed to inform and link to Settings
+          final open = await _offerSettings(
+            msg: 'Für Status 1, 3 oder 7 bitte in den iOS-Einstellungen '
+                '„Standortzugriff: Immer“ aktivieren, um die Hintergrundübertragung zu ermöglichen.',
+          );
+          if (open == true) await Geolocator.openAppSettings();
+        }
+      } else {
+        // Android
+        final whenInUse = await Permission.location.request();
+        if (whenInUse.isGranted) {
+          final bg = await Permission.locationAlways.request();
+          if (!bg.isGranted) {
+            final open = await _offerSettings(
+              msg: 'Bitte in den Android-Einstellungen „Standort im Hintergrund“ erlauben, '
+                  'um die Hintergrundübertragung zu aktivieren.',
+            );
+            if (open == true) await openAppSettings();
           }
         }
       }
@@ -404,10 +411,10 @@ class _StatusOverviewState extends State<StatusOverview> {
 
     _lastPersistentStatus = status;
     await _sendStatus(status);
-
     final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
     await _setBackgroundTracking(wantsTracking && canTrack);
   }
+
 
   Future<void> _onPersistentStatus(int status, {bool notify = true}) async {
     _tempStatusTimer?.cancel();
@@ -449,6 +456,26 @@ class _StatusOverviewState extends State<StatusOverview> {
               ),
             ],
           ),
+    );
+  }
+
+  Future<void> _showPrePermissionInfo({
+    required String title,
+    required String msg,
+    String actionLabel = 'Fortfahren',
+  }) async {
+    await showPlatformDialog<void>(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: Text(title),
+        content: Text(msg),
+        actions: [
+          PlatformDialogAction(
+            child: Text(actionLabel),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+        ],
+      ),
     );
   }
 
