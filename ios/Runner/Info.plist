@@ -51,10 +51,13 @@
 	<string>Standort wird auch im Hintergrund für Status-/Positionsmeldungen benötigt.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Wir benötigen deinen Standort, um Positionsdaten an die Einsatzleitung zu senden.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+    <string>Standort wird auch im Hintergrund für Status-/Positionsmeldungen benötigt.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
+	    <string>fetch</string>
 		<string>location</string>
 	</array>
 	<key>UILaunchStoryboardName</key>

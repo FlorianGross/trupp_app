@@ -1,6 +1,7 @@
 // lib/screens/status_overview.dart
 import 'dart:async';
 import 'dart:io';
+import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -416,6 +417,13 @@ class _StatusOverviewState extends State<StatusOverview> {
             );
             if (open == true) await openAppSettings();
           }
+        }
+
+        // Check for Battery Optimization
+        bool? isBatteryOptimizationDisabled = await DisableBatteryOptimization.isBatteryOptimizationDisabled;
+        if (isBatteryOptimizationDisabled == false) {
+          // Ask to disable battery optimization
+          await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
         }
       }
     }

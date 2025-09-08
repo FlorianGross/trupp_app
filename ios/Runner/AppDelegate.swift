@@ -6,6 +6,7 @@ import app_links
       _ application: UIApplication,
       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+
     GeneratedPluginRegistrant.register(with: self)
 
     // Retrieve the link from parameters
@@ -13,6 +14,10 @@ import app_links
       // We have a link, propagate it to your Flutter app or not
       AppLinks.shared.handleLink(url: url)
       return true // Returning true will stop the propagation to other packages
+    }
+
+    BackgroundTaskPlugin.onRegisterDispatchEngine = {
+        GeneratedPluginRegistrant.register(with: BackgroundTaskPlugin.dispatchEngine)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
