@@ -1,4 +1,5 @@
 import app_links
+import flutter_background_service_ios
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -6,7 +7,7 @@ import app_links
       _ application: UIApplication,
       didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
-
+    SwiftFlutterBackgroundServicePlugin.taskIdentifier = "dev.floriang.truppsapp.background.refresh"
     GeneratedPluginRegistrant.register(with: self)
 
     // Retrieve the link from parameters
@@ -14,10 +15,6 @@ import app_links
       // We have a link, propagate it to your Flutter app or not
       AppLinks.shared.handleLink(url: url)
       return true // Returning true will stop the propagation to other packages
-    }
-
-    BackgroundTaskPlugin.onRegisterDispatchEngine = {
-        GeneratedPluginRegistrant.register(with: BackgroundTaskPlugin.dispatchEngine)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

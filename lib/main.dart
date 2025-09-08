@@ -1,7 +1,5 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:trupp_app/DeepLinkHandler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
@@ -12,15 +10,9 @@ import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 // ➊ Globaler NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
-@pragma('vm:entry-point')
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeBackgroundService();
-
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.portraitUp,
-    DeviceOrientation.portraitDown,
-  ]);
 
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool('hasConfig') ?? false;
