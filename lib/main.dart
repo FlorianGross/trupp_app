@@ -6,6 +6,7 @@ import 'ConfigScreen.dart';
 import 'StatusOverview.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
+import 'package:trupp_app/data/edp_api.dart';
 
 // ➊ Globaler NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -16,6 +17,11 @@ Future<void> main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool('hasConfig') ?? false;
+
+  // EDP-Client bereitstellen (falls möglich)
+  if (hasConfig) {
+    await EdpApi.initFromPrefs();
+  }
 
   runApp(MyApp(hasConfig: hasConfig));
 }

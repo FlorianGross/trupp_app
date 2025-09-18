@@ -6,13 +6,27 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 
-const _minAccuracyMeters = 100.0;     // Fixes schlechter als 100 m werden verworfen
+import 'data/edp_api.dart';
+import 'data/location_quality.dart';
+import 'data/location_sync_manager.dart';
+
+const _minAccuracyMeters = 50.0;     // Fixes schlechter als 100 m werden verworfen
 const _minSendInterval = Duration(seconds: 5);
 int _currentStatus = 0; // <-- neu: Cache für Statuszahl
+const _minDistanceMeters = 5.0;
 DateTime _lastSent = DateTime.fromMillisecondsSinceEpoch(0);
+const _heartbeatInterval = Duration(seconds: 30);
 
+final _quality = LocationQualityFilter(
+  maxAccuracyM: _minAccuracyMeters,
+  minDistanceM: _minDistanceMeters,
+  minInterval: _minSendInterval,
+  maxJumpSpeedMs: 20.0,
+  heartbeatInterval: _heartbeatInterval,
+);
+
+Timer? _hbTimer;
 
 Future<int> _readStatusFromPrefs() async {
   final prefs = await SharedPreferences.getInstance();
@@ -20,47 +34,7 @@ Future<int> _readStatusFromPrefs() async {
 }
 
 Future<bool> _hasValidConfig() async {
-  final prefs = await SharedPreferences.getInstance();
-  final hasConfig = prefs.getBool('hasConfig') ?? false;
-  final protocol = prefs.getString('protocol') ?? '';
-  final serverPort = prefs.getString('server') ?? '';
-  final token = prefs.getString('token') ?? '';
-  final issi = prefs.getString('issi') ?? '';
-  return hasConfig &&
-      protocol.isNotEmpty &&
-      serverPort.contains(':') &&
-      token.isNotEmpty &&
-      issi.isNotEmpty;
-}
-
-Future<Uri?> _buildUrl(Position pos) async {
-  final prefs = await SharedPreferences.getInstance();
-  final protocol = prefs.getString('protocol') ?? 'https';
-  final serverPort = prefs.getString('server') ?? 'localhost:443';
-  final token = prefs.getString('token') ?? '';
-  final issi = prefs.getString('issi') ?? '0000';
-
-  String host = serverPort, port = '443';
-  if (serverPort.contains(':')) {
-    final parts = serverPort.split(':');
-    host = parts[0];
-    if (parts.length > 1) port = parts[1];
-  }
-  final parsedPort = int.tryParse(port) ?? (protocol == 'https' ? 443 : 80);
-
-  if (token.isEmpty || issi.isEmpty) return null;
-
-  return Uri(
-    scheme: protocol,
-    host: host,
-    port: parsedPort,
-    pathSegments: [token, 'gpsposition'],
-    queryParameters: {
-      'issi': issi,
-      'lat': pos.latitude.toString().replaceAll('.', ','),
-      'lon': pos.longitude.toString().replaceAll('.', ','),
-    },
-  );
+  return EdpApi.hasValidConfigInPrefs();
 }
 
 Future<void> _ensureFullAccuracyIfPossible() async {
@@ -75,42 +49,59 @@ Future<void> _ensureFullAccuracyIfPossible() async {
   }
 }
 
-bool _isPoorFix(Position pos) {
-  final acc = (pos.accuracy.isFinite) ? pos.accuracy : double.infinity;
-  final invalidFix = !pos.isMocked &&
-      (pos.latitude.abs() < 0.0001 && pos.longitude.abs() < 0.0001);
-  return acc > _minAccuracyMeters || invalidFix;
-}
-
-Future<void> _sendPositionIfOk(ServiceInstance service, Position pos) async {
+Future<void> _sendPositionIfOk(ServiceInstance service, Position pos, {bool forceByHeartbeat = false}) async {
   final now = DateTime.now();
-  if (now.difference(_lastSent) < _minSendInterval) return;
-  if (_isPoorFix(pos)) {
+
+  // Qualität / Drosselung
+  if (!_quality.isGood(pos, now: now, forceByHeartbeat: forceByHeartbeat)) {
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
         title: 'Trupp App',
-        content: 'Warte auf guten GPS-Fix …',
+        content: 'Warte auf stabilen GPS-Fix …',
       );
     }
     return;
   }
 
-  if (!await _hasValidConfig()) return;
+  if (!await _hasValidConfig()){
+    print("No valid config, not sending position.");
+    return;}
 
-  final url = await _buildUrl(pos);
-  if (url == null) return;
-
-  _lastSent = now;
   try {
-    await http.get(url);
+    await LocationSyncManager.instance.sendOrQueue(
+      lat: pos.latitude,
+      lon: pos.longitude,
+      accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
+      status: _currentStatus,
+      timestamp: pos.timestamp ?? now,
+    );
+
+    _quality.markSent(pos, now: now);
+
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
         title: 'Trupp App',
         content:
-        'Status $_currentStatus – Letzte Position: ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}',
+        'Status $_currentStatus – ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}',
       );
     }
-  } catch (_) {/* still */}
+  } catch (_) {
+    print("Error sending position, queuing.");
+    /* still */}
+}
+
+Future<void> _heartbeatTick(ServiceInstance service) async {
+  try {
+    if (!_quality.heartbeatDue()) return;
+
+    Position? pos = await Geolocator.getLastKnownPosition();
+    pos ??= await Geolocator.getCurrentPosition(
+      locationSettings: _buildLocationSettings(),
+    );
+
+    await _sendPositionIfOk(service, pos, forceByHeartbeat: true);
+  } catch (_) {
+  }
 }
 
 LocationSettings _buildLocationSettings() {
@@ -128,7 +119,6 @@ LocationSettings _buildLocationSettings() {
       activityType: ActivityType.otherNavigation,
       distanceFilter: 15,
       pauseLocationUpdatesAutomatically: false,
-      // Bei Bedarf true setzen, wenn ihr das blaue Banner explizit zeigen wollt:
       showBackgroundLocationIndicator: true,
     );
   } else {
@@ -142,9 +132,10 @@ LocationSettings _buildLocationSettings() {
 
 @pragma('vm:entry-point')
 Future<void> onStart(ServiceInstance service) async {
-  // Plugins im Isolate initialisieren (wichtig für iOS & Flutter 3+)
   DartPluginRegistrant.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
+
+  await EdpApi.ensureInitialized();
 
   _currentStatus = await _readStatusFromPrefs();
 
@@ -190,19 +181,28 @@ Future<void> onStart(ServiceInstance service) async {
     await _ensureFullAccuracyIfPossible();
     final locationSettings = _buildLocationSettings();
 
-    // Kontinuierlicher Stream NUR im Vordergrund / Android-FG-Service.
-    // Unter iOS läuft dieser Callback auch im Vordergrund, im Hintergrund übernimmt onIosBackground ein Einmal-Ping.
     sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
           (pos) async => _sendPositionIfOk(service, pos),
       onError: (_) {},
       cancelOnError: false,
     );
+    _hbTimer?.cancel();
+    _hbTimer = Timer.periodic(
+      const Duration(seconds: 5),
+          (_) => _heartbeatTick(service),
+    );
   }
 
   Future<void> stopTracking() async {
+    if (!trackingEnabled) return;
     trackingEnabled = false;
+
     await sub?.cancel();
     sub = null;
+
+    _hbTimer?.cancel();   // ← NEU
+    _hbTimer = null;
+
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
         title: 'Trupp App',
@@ -213,9 +213,10 @@ Future<void> onStart(ServiceInstance service) async {
 
   service.on('setTracking').listen((event) async {
     final enabled = event?['enabled'] == true;
-    if (enabled) {
+    // Nur Flanke behandeln
+    if (enabled && !trackingEnabled) {
       await startTracking();
-    } else {
+    } else if (!enabled && trackingEnabled) {
       await stopTracking();
     }
   });
@@ -232,18 +233,27 @@ Future<bool> onIosBackground(ServiceInstance service) async {
     DartPluginRegistrant.ensureInitialized();
     WidgetsFlutterBinding.ensureInitialized();
 
+    await EdpApi.ensureInitialized();
+
     if (!await _hasValidConfig()) return true;
 
-    // 1) Last known bevorzugen (sofort), sonst kurzer getCurrentPosition mit Timeouts
     Position? pos = await Geolocator.getLastKnownPosition();
     pos ??= await Geolocator.getCurrentPosition(
       locationSettings: _buildLocationSettings(),
     );
 
-    if (!_isPoorFix(pos)) {
-      await _sendPositionIfOk(service, pos);
+    if (_quality.isGood(pos, now: DateTime.now(), forceByHeartbeat: true)) {
+      await LocationSyncManager.instance.sendOrQueue(
+        lat: pos.latitude,
+        lon: pos.longitude,
+        accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
+        status: _currentStatus,
+        timestamp: DateTime.now(),
+      );
+      _quality.markSent(pos, now: DateTime.now());
     }
-  } catch (_) {
+  } catch (e) {
+    // optional loggen
   }
   return true;
 }

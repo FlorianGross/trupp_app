@@ -2,11 +2,10 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
-import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'StatusOverview.dart';
+import 'data/edp_api.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -219,8 +218,8 @@ class _ConfigScreenState extends State<ConfigScreen> {
 
   Future<void> _saveConfig() async {
     if (_formKey.currentState!.validate()) {
+      // Host/Port/Protocol bereinigen (wie gehabt)
       final rawHost = hostController.text.trim();
-
       final uri = Uri.tryParse(
         rawHost.startsWith('http') ? rawHost : '$_selectedProtocol://$rawHost',
       );
@@ -230,56 +229,38 @@ class _ConfigScreenState extends State<ConfigScreen> {
       }
 
       final cleanedHost = uri.host;
-      final port =
-          int.tryParse(portController.text.trim()) ??
-          (_selectedProtocol == 'https' ? 443 : 80);
-      final finalUrl = '$cleanedHost:$port';
+      final port = int.tryParse(portController.text.trim())
+          ?? (_selectedProtocol == 'https' ? 443 : 80);
 
-      // Test if Configuration is working (Send Get-Request and if != 403 save, else show Error)
-
-      var url = Uri(
-        scheme: _selectedProtocol,
+      final config = EdpConfig(
+        protocol: _selectedProtocol,
         host: cleanedHost,
         port: port,
-        pathSegments: [tokenController.text.trim(), "setstatus"],
-        queryParameters: {'issi': issiController.text.trim(), 'status': "1"},
+        token: tokenController.text.trim(),
+        issi: issiController.text.trim(),
+        trupp: truppController.text.trim(),
+        leiter: leiterController.text.trim(),
       );
 
-      try {
-        final r = await http.get(url);
-
-        if (r.statusCode == 403) {
+      // Probe gegen EDP
+      final api = await EdpApi.initWithConfig(config);
+      final probe = await api.probe();
+      if (!probe.ok) {
+        if (probe.statusCode == 403) {
           _showErrorDialog('Ungültige Konfiguration: Zugriff verweigert (403)');
-          return;
-        } else if (r.statusCode != 200) {
-          _showErrorDialog(
-            'Fehler beim Testen der Konfiguration: ${r.statusCode} ${r.reasonPhrase}',
-          );
-          return;
+        } else {
+          _showErrorDialog('Fehler beim Testen der Konfiguration: ${probe.statusCode} ${probe.body ?? ''}');
         }
-      } catch (e) {
-        _showErrorDialog(
-          'Überprüfen Sie die Konfiguration / Internetverbindung',
-        );
         return;
       }
 
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('server', finalUrl);
-      await prefs.setString('protocol', _selectedProtocol);
-      await prefs.setString('token', tokenController.text.trim());
-      await prefs.setString('trupp', truppController.text.trim());
-      await prefs.setString('leiter', leiterController.text.trim());
-      await prefs.setString('issi', issiController.text.trim());
-      await prefs.setBool('hasConfig', true);
+      // Persistieren (Prefs) übernimmt updateConfig()
+      await api.updateConfig(config);
 
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        platformPageRoute(
-          context: context,
-          builder: (_) => const StatusOverview(),
-        ),
+        platformPageRoute(context: context, builder: (_) => const StatusOverview()),
       );
     }
   }

@@ -13,9 +13,12 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:http/http.dart' as http;
 import 'ConfigScreen.dart';
 import 'Keypad.dart';
+import 'data/edp_api.dart';
+import 'data/gpx_exporter.dart';
+import 'data/location_queue.dart';
+import 'data/location_sync_manager.dart';
 import 'service.dart';
 
 class StatusOverview extends StatefulWidget {
@@ -34,6 +37,9 @@ class _StatusOverviewState extends State<StatusOverview> {
   int? selectedStatus;
   int? _lastPersistentStatus;
   Timer? _tempStatusTimer;
+
+  bool get _trackingDesired =>
+      [1, 3, 7].contains(_lastPersistentStatus ?? selectedStatus ?? -1);
 
   // Hintergrund-Tracking-Indikator (nur für UI im Config-Drawer)
   bool _bgTrackingActive = false;
@@ -160,7 +166,8 @@ class _StatusOverviewState extends State<StatusOverview> {
   Future<void> _firstRunPermissionFlow() async {
     await _showPrePermissionInfo(
       title: 'Standortzugriff benötigt',
-      msg: 'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
+      msg:
+          'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
           'Bitte erlaube „Beim Verwenden der App“, damit Statusmeldungen korrekt gesendet werden.',
     );
 
@@ -169,12 +176,11 @@ class _StatusOverviewState extends State<StatusOverview> {
       p = await Geolocator.requestPermission(); // shows OS sheet
     }
 
-    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
+    if (p == LocationPermission.denied ||
+        p == LocationPermission.deniedForever) {
       _showSnackbar('Standortberechtigung nicht erteilt.', success: false);
     }
-    // NOTE: Do not ask for background permission here anymore.
   }
-
 
   Future<bool> _requestWhileInUseWithRationale() async {
     final proceed = await _showRationale(
@@ -182,7 +188,7 @@ class _StatusOverviewState extends State<StatusOverview> {
       msg:
           'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
           'Dazu benötigt die App Zugriff auf deinen Standort während der Nutzung.',
-      primary: 'Fortfahren'
+      primary: 'Fortfahren',
     );
     if (proceed != true) return false;
 
@@ -203,7 +209,7 @@ class _StatusOverviewState extends State<StatusOverview> {
       title: 'Hintergrund-Standort',
       msg:
           'Bei Status 1, 3 oder 7 wird dein Standort zusätzlich regelmäßig im Hintergrund übertragen.',
-      primary: 'Fortfahren'
+      primary: 'Fortfahren',
     );
     if (proceed != true) return false;
 
@@ -250,6 +256,7 @@ class _StatusOverviewState extends State<StatusOverview> {
 
   Future<void> _sendCurrentPositionOnce() async {
     // Für JEDE Statusmeldung: einmalige Positionssendung (wenn erlaubt)
+    if (_bgTrackingActive) return;
     if (!await _hasWhileInUsePermission()) return;
 
     late LocationSettings locationSettings;
@@ -289,20 +296,16 @@ class _StatusOverviewState extends State<StatusOverview> {
       final now = DateTime.now();
       if (now.difference(_lastSent) >= _sendInterval) {
         _lastSent = now;
-        _sendLocationLatLon(p.latitude, p.longitude);
+        // **Nur gute Fixe** in Queue/Send (nutzt denselben Filter im Service implizit)
+        await LocationSyncManager.instance.sendOrQueue(
+          lat: p.latitude,
+          lon: p.longitude,
+          accuracy: p.accuracy.isFinite ? p.accuracy : null,
+          status: _lastPersistentStatus ?? selectedStatus,
+          timestamp: now,
+        );
       }
     } catch (_) {}
-  }
-
-  Uri _buildUri(String path, Map<String, String> params) {
-    final parsedPort = int.tryParse(port) ?? (protocol == 'https' ? 443 : 80);
-    return Uri(
-      scheme: protocol,
-      host: server,
-      port: parsedPort,
-      pathSegments: [if (token.isNotEmpty) token, path],
-      queryParameters: params,
-    );
   }
 
   Future<void> _sendStatus(int status, {bool notify = true}) async {
@@ -312,11 +315,12 @@ class _StatusOverviewState extends State<StatusOverview> {
     final service = FlutterBackgroundService();
     service.invoke('statusChanged', {'status': status});
 
-    final url = _buildUri("setstatus", {'issi': issi, 'status': '$status'});
     try {
-      final r = await http.get(url);
+      final api =
+          EdpApi.instance; // setzt voraus, dass init im main() passiert ist
+      final r = await api.sendStatus(status);
       if (!mounted) return;
-      if (r.statusCode == 200) {
+      if (r.ok) {
         setState(() => selectedStatus = status);
         if (notify)
           _showSnackbar("Status $status erfolgreich gesendet ✅", success: true);
@@ -334,20 +338,9 @@ class _StatusOverviewState extends State<StatusOverview> {
         );
       }
     }
-
-    // NEU: Immer direkt im Anschluss die aktuelle Position einmalig senden
-    await _sendCurrentPositionOnce();
-  }
-
-  Future<void> _sendLocationLatLon(double lat, double lon) async {
-    try {
-      final url = _buildUri("gpsposition", {
-        'issi': issi,
-        'lat': lat.toString().replaceAll('.', ','),
-        'lon': lon.toString().replaceAll('.', ','),
-      });
-      await http.get(url);
-    } catch (_) {}
+    if (!_bgTrackingActive) {
+      await _sendCurrentPositionOnce(); // bleibt wie gehabt
+    }
   }
 
   // ---------------- Background Service Control ----------------
@@ -355,6 +348,7 @@ class _StatusOverviewState extends State<StatusOverview> {
     final service = FlutterBackgroundService();
     final running = await service.isRunning();
 
+    // Nur auf Flanken reagieren
     if (enabled) {
       if (!running) await service.startService();
       service.invoke('setTracking', {'enabled': true});
@@ -380,9 +374,12 @@ class _StatusOverviewState extends State<StatusOverview> {
       return;
     }
 
+    final wasPersistent = _lastPersistentStatus;
     final wantsTracking = [1, 3, 7].contains(status);
 
-    if (wantsTracking) {
+    final samePersistent = (wasPersistent != null && wasPersistent == status);
+
+    if (wantsTracking && !samePersistent && !_bgTrackingActive) {
       // Ensure When-In-Use first
       var p = await Geolocator.checkPermission();
       if (p == LocationPermission.denied) {
@@ -400,7 +397,8 @@ class _StatusOverviewState extends State<StatusOverview> {
         if (p != LocationPermission.always) {
           // Now it’s allowed to inform and link to Settings
           final open = await _offerSettings(
-            msg: 'Für Status 1, 3 oder 7 bitte in den iOS-Einstellungen '
+            msg:
+                'Für Status 1, 3 oder 7 bitte in den iOS-Einstellungen '
                 '„Standortzugriff: Immer“ aktivieren, um die Hintergrundübertragung zu ermöglichen.',
           );
           if (open == true) await Geolocator.openAppSettings();
@@ -412,7 +410,8 @@ class _StatusOverviewState extends State<StatusOverview> {
           final bg = await Permission.locationAlways.request();
           if (!bg.isGranted) {
             final open = await _offerSettings(
-              msg: 'Bitte in den Android-Einstellungen „Standort im Hintergrund“ erlauben, '
+              msg:
+                  'Bitte in den Android-Einstellungen „Standort im Hintergrund“ erlauben, '
                   'um die Hintergrundübertragung zu aktivieren.',
             );
             if (open == true) await openAppSettings();
@@ -420,7 +419,8 @@ class _StatusOverviewState extends State<StatusOverview> {
         }
 
         // Check for Battery Optimization
-        bool? isBatteryOptimizationDisabled = await DisableBatteryOptimization.isBatteryOptimizationDisabled;
+        bool? isBatteryOptimizationDisabled =
+            await DisableBatteryOptimization.isBatteryOptimizationDisabled;
         if (isBatteryOptimizationDisabled == false) {
           // Ask to disable battery optimization
           await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
@@ -430,8 +430,11 @@ class _StatusOverviewState extends State<StatusOverview> {
 
     _lastPersistentStatus = status;
     await _sendStatus(status);
-    final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
-    await _setBackgroundTracking(wantsTracking && canTrack);
+
+    if (!samePersistent) {
+      final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
+      await _setBackgroundTracking(wantsTracking && canTrack);
+    }
   }
 
   Future<void> _onPersistentStatus(int status, {bool notify = true}) async {
@@ -484,16 +487,17 @@ class _StatusOverviewState extends State<StatusOverview> {
   }) async {
     await showPlatformDialog<void>(
       context: context,
-      builder: (_) => PlatformAlertDialog(
-        title: Text(title),
-        content: Text(msg),
-        actions: [
-          PlatformDialogAction(
-            child: Text(actionLabel),
-            onPressed: () => Navigator.of(context).pop(),
+      builder:
+          (_) => PlatformAlertDialog(
+            title: Text(title),
+            content: Text(msg),
+            actions: [
+              PlatformDialogAction(
+                child: Text(actionLabel),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
@@ -590,9 +594,19 @@ class _StatusOverviewState extends State<StatusOverview> {
                 material: (_, __) => MaterialDialogActionData(),
                 onPressed: () async {
                   await stopBackgroundServiceCompletely();
+
+                  // optional: Status 6 melden ohne UI
                   await _sendStatus(6, notify: false);
+
+                  // 1) Queue-Datenbank löschen
+                  try {
+                    await LocationQueue.instance.destroyDb();
+                  } catch (_) {}
+
+                  // 2) SharedPreferences leeren
                   final prefs = await SharedPreferences.getInstance();
                   await prefs.clear();
+
                   if (!mounted) return;
                   Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
                     platformPageRoute(
@@ -648,13 +662,6 @@ class _StatusOverviewState extends State<StatusOverview> {
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
             ),
             const Divider(height: 20),
-            _configRow("Server", fullServer),
-            _configRow("Token", token),
-            _configRow("ISSI", issi),
-            _configRow("Trupp", trupp),
-            _configRow("Ansprechpartner", leiter),
-
-            const SizedBox(height: 12),
             // Sichtbare, reviewer-freundliche Info NUR hier:
             Align(
               alignment: Alignment.centerLeft,
@@ -692,6 +699,8 @@ class _StatusOverviewState extends State<StatusOverview> {
                 ],
               ),
             ),
+
+            const Divider(height: 20),
 
             const SizedBox(height: 24),
             const Text(
@@ -738,13 +747,45 @@ class _StatusOverviewState extends State<StatusOverview> {
                 ),
               ],
             ),
-
-            const SizedBox(height: 24),
+            const Divider(height: 20),
+            const Text(
+              "Datenexport",
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            PlatformElevatedButton(
+              child: const Text("GPX exportieren"),
+              onPressed: () async {
+                try {
+                  final path = await GpxExporter.exportAllFixesToGpx();
+                  SharePlus.instance.share(
+                    ShareParams(
+                      files: [XFile(path)],
+                      text: "GPX-Datei mit Standortpunkten",
+                    ),
+                  );
+                } catch (e) {
+                  _showSnackbar("Export fehlgeschlagen: $e", success: false);
+                }
+              },
+              material:
+                  (_, __) => MaterialElevatedButtonData(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade800,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+              cupertino:
+                  (_, __) =>
+                      CupertinoElevatedButtonData(color: Colors.red.shade800),
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 20),
             PlatformElevatedButton(
               child: const Text("Konfiguration zurücksetzen"),
               onPressed: () => _confirmLogout(context),
               cupertino:
-                  (_, __) =>
+                  (_, _) =>
                       CupertinoElevatedButtonData(color: Colors.red.shade700),
               material:
                   (_, __) => MaterialElevatedButtonData(
