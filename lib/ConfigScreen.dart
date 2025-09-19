@@ -62,7 +62,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
     return InputDecoration(
       labelText: label,
       filled: true,
-      // zarte Rot-Tönung wenn fehlt, sonst neutral
       fillColor: missing ? Colors.red.shade50 : Colors.grey.shade50,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
@@ -87,8 +86,6 @@ class _ConfigScreenState extends State<ConfigScreen> {
     );
   }
 
-  // Für Cupertino: den Hintergrund einfärben – CupertinoTextField hat kein errorBorder.
-  // Wir wrappen unten den Field-Builder in einen Container mit Farbe.
   BoxDecoration _cupertinoBox({required bool missing}) {
     return BoxDecoration(
       color: missing ? const Color(0xffffebee) : const Color(0xfff5f5f5),
@@ -105,13 +102,12 @@ class _ConfigScreenState extends State<ConfigScreen> {
   }) {
     final missing = _isMissing(controller);
 
-    // Autovalidate: nur auf User-Interaktion – oder immer wenn _showAllErrors true
     final autoMode =
-        _showAllErrors
-            ? AutovalidateMode.always
-            : AutovalidateMode.onUserInteraction;
+    _showAllErrors
+        ? AutovalidateMode.always
+        : AutovalidateMode.onUserInteraction;
 
-    validator(String? v) =>
+    String? validator(String? v) =>
         (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null;
 
     if (isMaterial(context)) {
@@ -120,13 +116,12 @@ class _ConfigScreenState extends State<ConfigScreen> {
         autovalidateMode: autoMode,
         validator: validator,
         keyboardType: keyboardType,
-        material:
-            (_, __) => MaterialTextFormFieldData(
-              decoration: _materialDecoration(label, missing: missing),
-            ),
+        onChanged: (_) => setState(() {}), // <<< hier wichtig
+        material: (_, __) => MaterialTextFormFieldData(
+          decoration: _materialDecoration(label, missing: missing),
+        ),
       );
     } else {
-      // Cupertino: Container färbt, Feld bleibt clean
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -145,15 +140,11 @@ class _ConfigScreenState extends State<ConfigScreen> {
               autovalidateMode: autoMode,
               validator: validator,
               keyboardType: keyboardType,
-              cupertino:
-                  (_, __) => CupertinoTextFormFieldData(
-                    decoration:
-                        null, // keine eigene Box, wir nutzen den Container
-                  ),
-              material:
-                  (_, __) => MaterialTextFormFieldData(
-                    decoration: const InputDecoration(border: InputBorder.none),
-                  ),
+              onChanged: (_) => setState(() {}), // <<< hier auch
+              cupertino: (_, __) => CupertinoTextFormFieldData(decoration: null),
+              material: (_, __) => MaterialTextFormFieldData(
+                decoration: const InputDecoration(border: InputBorder.none),
+              ),
             ),
           ),
           if (_showAllErrors && missing)
@@ -310,6 +301,11 @@ class _ConfigScreenState extends State<ConfigScreen> {
     } else {
       return PlatformElevatedButton(
         child: Text('Protokoll: $_selectedProtocol (ändern)'),
+        cupertino:
+            (_, __) => CupertinoElevatedButtonData(
+              color: Colors.red,
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
         onPressed: () => _showProtocolCupertinoPicker(context),
       );
     }
@@ -456,7 +452,7 @@ class _ConfigScreenState extends State<ConfigScreen> {
               backgroundColor: Colors.red.shade800,
               trailing: GestureDetector(
                 onTap: _openScannerSheet,
-                child: const Icon(CupertinoIcons.qrcode_viewfinder),
+                child: const Icon(CupertinoIcons.qrcode_viewfinder, color: Colors.red),
               ),
             ),
       ),

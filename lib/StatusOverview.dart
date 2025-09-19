@@ -322,8 +322,9 @@ class _StatusOverviewState extends State<StatusOverview> {
       if (!mounted) return;
       if (r.ok) {
         setState(() => selectedStatus = status);
-        if (notify)
+        if (notify) {
           _showSnackbar("Status $status erfolgreich gesendet ✅", success: true);
+        }
       } else if (notify) {
         _showSnackbar(
           "Fehler beim Senden von Status $status ❌ (Code: ${r.statusCode})",
@@ -480,6 +481,20 @@ class _StatusOverviewState extends State<StatusOverview> {
     );
   }
 
+  Widget _statusPill(bool active) {
+    final bg = active ? Colors.green.shade100 : Colors.grey.shade200;
+    final txt = active ? 'Aktiv' : 'Inaktiv';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Text(txt, style: const TextStyle(fontSize: 13)),
+    );
+  }
+
   Future<void> _showPrePermissionInfo({
     required String title,
     required String msg,
@@ -622,18 +637,6 @@ class _StatusOverviewState extends State<StatusOverview> {
     );
   }
 
-  Widget _configRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        children: [
-          Text("$label: ", style: const TextStyle(fontWeight: FontWeight.bold)),
-          Expanded(child: Text(value, overflow: TextOverflow.ellipsis)),
-        ],
-      ),
-    );
-  }
-
   String _buildConfigDeepLink() {
     final qp = <String, String>{
       'protocol': protocol,
@@ -648,7 +651,6 @@ class _StatusOverviewState extends State<StatusOverview> {
   }
 
   Widget _buildSettingsDrawer(BuildContext context) {
-    final fullServer = '$protocol://$server:$port';
     final deepLink = _buildConfigDeepLink();
 
     final content = SafeArea(
@@ -683,17 +685,9 @@ class _StatusOverviewState extends State<StatusOverview> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Text(
-                        "Hintergrund-Standort: ",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Chip(
-                        label: Text(_bgTrackingActive ? 'Aktiv' : 'Inaktiv'),
-                        backgroundColor:
-                            _bgTrackingActive
-                                ? Colors.green.shade100
-                                : Colors.grey.shade200,
-                      ),
+                      const Text("Hintergrund-Standort: ",
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      _statusPill(_bgTrackingActive),
                     ],
                   ),
                 ],
@@ -801,7 +795,14 @@ class _StatusOverviewState extends State<StatusOverview> {
                 child: PlatformElevatedButton(
                   child: const Text("Schließen"),
                   onPressed: () => Navigator.of(context).pop(),
-                  cupertino: (_, __) => CupertinoElevatedButtonData(),
+                  cupertino: (_, __) => CupertinoElevatedButtonData(color: Colors.red.shade700),
+                    material:
+                        (_, __) => MaterialElevatedButtonData(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red.shade700,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
                 ),
               ),
           ],
@@ -842,7 +843,7 @@ class _StatusOverviewState extends State<StatusOverview> {
             (_, __) => CupertinoNavigationBarData(
               backgroundColor: Colors.red.shade800,
               trailing: GestureDetector(
-                child: const Icon(CupertinoIcons.bars),
+                child: const Icon(CupertinoIcons.bars, color: Colors.red,),
                 onTap:
                     () => showPlatformModalSheet(
                       context: context,

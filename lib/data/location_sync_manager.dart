@@ -55,6 +55,19 @@ class LocationSyncManager {
     return _flushPendingInternal(api, batchSize: batchSize);
   }
 
+  Future<int> queueOnly({
+    required double lat,
+    required double lon,
+    double? accuracy,
+    int? status,
+    DateTime? timestamp,
+  }) async {
+    final ts = timestamp?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch;
+    return await _queue.insert(
+      LocationFix(tsMs: ts, lat: lat, lon: lon, acc: accuracy, status: status, isSent: false),
+    );
+  }
+
   Future<bool> _flushPendingInternal(EdpApi api, {int batchSize = 100}) async {
     while (true) {
       final batch = await _queue.pendingBatch(limit: batchSize);

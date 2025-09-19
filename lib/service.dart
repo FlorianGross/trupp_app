@@ -227,34 +227,51 @@ Future<void> onStart(ServiceInstance service) async {
   });
 }
 
+const _flushInterval = Duration(minutes: 15);
+
+Future<bool> _shouldFlushNow() async {
+  final prefs = await SharedPreferences.getInstance();
+  final last = prefs.getInt('lastFlushMs') ?? 0;
+  final now = DateTime.now().millisecondsSinceEpoch;
+  return (now - last) >= _flushInterval.inMilliseconds;
+}
+
+Future<void> _markFlushedNow() async {
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setInt('lastFlushMs', DateTime.now().millisecondsSinceEpoch);
+}
+
 @pragma('vm:entry-point')
 Future<bool> onIosBackground(ServiceInstance service) async {
   try {
     DartPluginRegistrant.ensureInitialized();
     WidgetsFlutterBinding.ensureInitialized();
-
     await EdpApi.ensureInitialized();
 
     if (!await _hasValidConfig()) return true;
 
+    // 1) aktuellen Fix holen
     Position? pos = await Geolocator.getLastKnownPosition();
-    pos ??= await Geolocator.getCurrentPosition(
-      locationSettings: _buildLocationSettings(),
-    );
+    pos ??= await Geolocator.getCurrentPosition(locationSettings: _buildLocationSettings());
 
+    // 2) Qualität grob prüfen & QUEUEN (nicht live senden)
     if (_quality.isGood(pos, now: DateTime.now(), forceByHeartbeat: true)) {
-      await LocationSyncManager.instance.sendOrQueue(
+      await LocationSyncManager.instance.queueOnly(
         lat: pos.latitude,
         lon: pos.longitude,
         accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
         status: _currentStatus,
         timestamp: DateTime.now(),
       );
-      _quality.markSent(pos, now: DateTime.now());
+      _quality.markSent(pos, now: DateTime.now()); // nur interne Zeitanker
     }
-  } catch (e) {
-    // optional loggen
-  }
+
+    // 3) Alle 15 Min: komplette Queue flushen
+    if (await _shouldFlushNow()) {
+      await LocationSyncManager.instance.flushPendingNow(batchSize: 300);
+      await _markFlushedNow();
+    }
+  } catch (_) {}
   return true;
 }
 
