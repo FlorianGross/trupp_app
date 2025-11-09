@@ -8,12 +8,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 @immutable
 class EdpConfig {
   final String protocol; // 'http' | 'https'
-  final String host;     // z.B. 'example.org'
-  final int port;        // z.B. 443
-  final String token;    // Pfadsegment vor Endpoint
-  final String issi;     // Geräte-/Teilnehmerkennung
-  final String trupp;   // optional
-  final String leiter;  // optional
+  final String host; // z.B. 'example.org'
+  final int port; // z.B. 443
+  final String token; // Pfadsegment vor Endpoint
+  final String issi; // Geräte-/Teilnehmerkennung
+  final String trupp; // optional
+  final String leiter; // optional
 
   const EdpConfig({
     required this.protocol,
@@ -27,10 +27,10 @@ class EdpConfig {
 
   bool get isComplete =>
       protocol.isNotEmpty &&
-          host.isNotEmpty &&
-          port > 0 &&
-          token.isNotEmpty &&
-          issi.isNotEmpty;
+      host.isNotEmpty &&
+      port > 0 &&
+      token.isNotEmpty &&
+      issi.isNotEmpty;
 
   String get baseUrl => '$protocol://$host:$port';
 
@@ -53,7 +53,10 @@ class EdpConfig {
     final trupp = prefs.getString('trupp') ?? '';
     final leiter = prefs.getString('leiter') ?? '';
 
-    if (protocol.isEmpty || serverPort.isEmpty || token.isEmpty || issi.isEmpty) {
+    if (protocol.isEmpty ||
+        serverPort.isEmpty ||
+        token.isEmpty ||
+        issi.isEmpty) {
       return null;
     }
 
@@ -85,12 +88,9 @@ class EdpResult {
   final String? body;
   final Object? error;
 
-  const EdpResult.ok(this.statusCode, {this.body})
-      : ok = true,
-        error = null;
+  const EdpResult.ok(this.statusCode, {this.body}) : ok = true, error = null;
 
-  const EdpResult.err(this.statusCode, {this.body, this.error})
-      : ok = false;
+  const EdpResult.err(this.statusCode, {this.body, this.error}) : ok = false;
 }
 
 /// Zentraler Client für alle EDP-Aufrufe.
@@ -102,10 +102,13 @@ class EdpApi {
 
   /// Singleton (optional): EdpApi.instance nach init*() verwenden.
   static EdpApi? _instance;
+
   static EdpApi get instance {
     final inst = _instance;
     if (inst == null) {
-      throw StateError('EdpApi wurde noch nicht initialisiert. Rufe initFromPrefs() oder initWithConfig() auf.');
+      throw StateError(
+        'EdpApi wurde noch nicht initialisiert. Rufe initFromPrefs() oder initWithConfig() auf.',
+      );
     }
     return inst;
   }
@@ -115,9 +118,12 @@ class EdpApi {
     return await initFromPrefs(); // setzt _instance falls Prefs ok
   }
 
-  EdpApi._(this._config,
-      {http.Client? client, this.timeout = const Duration(seconds: 8), this.retries = 0})
-      : _client = client ?? http.Client();
+  EdpApi._(
+    this._config, {
+    http.Client? client,
+    this.timeout = const Duration(seconds: 8),
+    this.retries = 0,
+  }) : _client = client ?? http.Client();
 
   /// Initialisiert das Singleton aus SharedPreferences, falls möglich.
   static Future<EdpApi?> initFromPrefs() async {
@@ -207,6 +213,12 @@ class EdpApi {
       'lat': _fmt(lat),
       'lon': _fmt(lon),
     });
+    return _getWithRetry(url);
+  }
+
+  /// Sendet eine kurze Textnachricht (SDS) an /incommingsds?issi=&text=
+  Future<EdpResult> sendSdsText(String text) {
+    final url = _uri('incommingsds', {'issi': _config.issi, 'text': text});
     return _getWithRetry(url);
   }
 

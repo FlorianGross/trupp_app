@@ -1,0 +1,21 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <service
+            android:name="dev.floriang.trupp_app.car_app.TruppCarAppService"
+            android:exported="true"
+            >
+
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.IOT"/>
+            </intent-filter>
+
+            <meta-data
+                android:name="androidx.car.app.categories"
+                android:value="projection" />
+        </service>
+        <meta-data
+            android:name="androidx.car.app.minCarApiLevel"
+            android:value="1"/>
+    </application>
+</manifest>

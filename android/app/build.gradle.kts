@@ -16,7 +16,7 @@ if (keystorePropertiesFile.exists()) {
 
 android {
     namespace = "dev.floriang.trupp_app.trupp_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk = 36
     ndkVersion = "27.0.12077973"
 
     compileOptions {
@@ -30,8 +30,8 @@ android {
 
     defaultConfig {
         applicationId = "dev.floriang.trupp_app"
-        minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        minSdk = 28
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -49,6 +49,17 @@ android {
         }
     }
 }
+
+dependencies {
+    // Dein neues Car-Modul als Library einbinden
+    implementation(project(":car_app"))
+
+    // Falls du car_app-abhängige Libs auch hier mitziehen willst (optional redundanzfrei möglich):
+    implementation("androidx.car.app:app-projected:1.4.0")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.core:core-ktx:1.13.1")
+}
+
 
 flutter {
     source = "../.."

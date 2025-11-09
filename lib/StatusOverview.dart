@@ -33,6 +33,8 @@ class _StatusOverviewState extends State<StatusOverview> {
   String protocol = 'https', server = 'localhost', port = '443', token = '';
   String trupp = 'Unbekannt', leiter = 'Unbekannt', issi = '0000';
 
+  static const _kBgPromptShownKey = 'bgPromptShown';
+
   // UI/Status
   int? selectedStatus;
   int? _lastPersistentStatus;
@@ -56,6 +58,8 @@ class _StatusOverviewState extends State<StatusOverview> {
   DateTime _lastSent = DateTime.fromMillisecondsSinceEpoch(0);
   static const Duration _sendInterval = Duration(seconds: 2);
 
+  final TextEditingController _infoCtrl = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -65,6 +69,7 @@ class _StatusOverviewState extends State<StatusOverview> {
   @override
   void dispose() {
     _tempStatusTimer?.cancel();
+    _infoCtrl.dispose();
     super.dispose();
   }
 
@@ -256,7 +261,7 @@ class _StatusOverviewState extends State<StatusOverview> {
 
   Future<void> _sendCurrentPositionOnce() async {
     // Für JEDE Statusmeldung: einmalige Positionssendung (wenn erlaubt)
-    if (_bgTrackingActive) return;
+    //if (_bgTrackingActive) return;
     if (!await _hasWhileInUsePermission()) return;
 
     late LocationSettings locationSettings;
@@ -316,8 +321,11 @@ class _StatusOverviewState extends State<StatusOverview> {
     service.invoke('statusChanged', {'status': status});
 
     try {
-      final api =
-          EdpApi.instance; // setzt voraus, dass init im main() passiert ist
+      final api = await EdpApi.ensureInitialized();
+      if (api == null) {
+        if (notify) _showSnackbar("Konfiguration fehlt", success: false);
+        return;
+      }
       final r = await api.sendStatus(status);
       if (!mounted) return;
       if (r.ok) {
@@ -339,22 +347,32 @@ class _StatusOverviewState extends State<StatusOverview> {
         );
       }
     }
-    if (!_bgTrackingActive) {
-      await _sendCurrentPositionOnce(); // bleibt wie gehabt
-    }
+    await _sendCurrentPositionOnce();
   }
 
   // ---------------- Background Service Control ----------------
   Future<void> _setBackgroundTracking(bool enabled) async {
     final service = FlutterBackgroundService();
-    final running = await service.isRunning();
-
-    // Nur auf Flanken reagieren
+    var running = await service.isRunning();
     if (enabled) {
-      if (!running) await service.startService();
-      service.invoke('setTracking', {'enabled': true});
+      if (!running) {
+        await service.startService();
+        for (int i = 0; i < 20; i++) {
+          await Future.delayed(const Duration(milliseconds: 150));
+          running = await service.isRunning();
+          if (running) break;
+        }
+      }
+      if (running) {
+        service.invoke('setTracking', {'enabled': true});
+        service.invoke('statusChanged', {
+          'status': _lastPersistentStatus ?? selectedStatus ?? 0,
+        });
+      }
     } else {
-      if (running) service.invoke('setTracking', {'enabled': false});
+      if (running) {
+        service.invoke('setTracking', {'enabled': false});
+      }
     }
 
     if (mounted) setState(() => _bgTrackingActive = enabled);
@@ -365,6 +383,9 @@ class _StatusOverviewState extends State<StatusOverview> {
     if (_isTempStatus(status)) {
       _tempStatusTimer?.cancel();
       await _sendStatus(status);
+      if (status == 5) {
+        await _sendSds('Sprechwunsch');
+      }
 
       final duration = _tempDurations[status] ?? const Duration(seconds: 5);
       _tempStatusTimer = Timer(duration, () {
@@ -375,66 +396,56 @@ class _StatusOverviewState extends State<StatusOverview> {
       return;
     }
 
-    final wasPersistent = _lastPersistentStatus;
     final wantsTracking = [1, 3, 7].contains(status);
-
-    final samePersistent = (wasPersistent != null && wasPersistent == status);
-
-    if (wantsTracking && !samePersistent && !_bgTrackingActive) {
-      // Ensure When-In-Use first
-      var p = await Geolocator.checkPermission();
-      if (p == LocationPermission.denied) {
-        // No pre-prompt with cancel – just request
-        p = await Geolocator.requestPermission();
-      }
-
-      // Ask for Background directly when required (no custom cancel UI beforehand)
-      if (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS) {
-        if (p != LocationPermission.always) {
-          // iOS needs a second request step initiated by the app
-          p = await Geolocator.requestPermission(); // iOS may escalate to "Immer"
-        }
-        if (p != LocationPermission.always) {
-          // Now it’s allowed to inform and link to Settings
-          final open = await _offerSettings(
-            msg:
-                'Für Status 1, 3 oder 7 bitte in den iOS-Einstellungen '
-                '„Standortzugriff: Immer“ aktivieren, um die Hintergrundübertragung zu ermöglichen.',
-          );
-          if (open == true) await Geolocator.openAppSettings();
-        }
-      } else {
-        // Android
-        final whenInUse = await Permission.location.request();
-        if (whenInUse.isGranted) {
-          final bg = await Permission.locationAlways.request();
-          if (!bg.isGranted) {
-            final open = await _offerSettings(
-              msg:
-                  'Bitte in den Android-Einstellungen „Standort im Hintergrund“ erlauben, '
-                  'um die Hintergrundübertragung zu aktivieren.',
-            );
-            if (open == true) await openAppSettings();
-          }
-        }
-
-        // Check for Battery Optimization
-        bool? isBatteryOptimizationDisabled =
-            await DisableBatteryOptimization.isBatteryOptimizationDisabled;
-        if (isBatteryOptimizationDisabled == false) {
-          // Ask to disable battery optimization
-          await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
-        }
-      }
-    }
 
     _lastPersistentStatus = status;
     await _sendStatus(status);
 
-    if (!samePersistent) {
-      final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
-      await _setBackgroundTracking(wantsTracking && canTrack);
+    if (wantsTracking && !_bgTrackingActive) {
+      // Prompt nur EINMAL pro Installation zeigen, falls noch keine BG-Rechte da sind
+      final hasBg = await _hasBackgroundPermission();
+      if (!hasBg) {
+        final prefs = await SharedPreferences.getInstance();
+        final shown = prefs.getBool(_kBgPromptShownKey) ?? false;
+        if (!shown) {
+          await _requestBackgroundWithRationale(); // zeigt OS-Sheet / Info
+          await prefs.setBool(
+            _kBgPromptShownKey,
+            true,
+          ); // danach nicht mehr nerven
+          if (defaultTargetPlatform == TargetPlatform.android) {
+            final disabled =
+                await DisableBatteryOptimization.isBatteryOptimizationDisabled;
+            if (disabled == false) {
+              await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
+            }
+          }
+        }
+      }
+    }
+    // Nach jedem Klick final evaluieren und Tracking setzen
+    final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
+    await _setBackgroundTracking(wantsTracking && canTrack);
+  }
+
+  Future<void> _sendSds(String text) async {
+    try {
+      final api = await EdpApi.ensureInitialized();
+      if (api == null) {
+        _showSnackbar('Keine gültige Konfiguration für SDS.', success: false);
+        return;
+      }
+      final r = await api.sendSdsText(text);
+      if (r.ok) {
+        _showSnackbar('Nachricht gesendet: $text', success: true);
+      } else {
+        _showSnackbar(
+          'SDS-Fehler (${r.statusCode}): ${r.body ?? ''}',
+          success: false,
+        );
+      }
+    } catch (e) {
+      _showSnackbar('SDS-Fehler: $e', success: false);
     }
   }
 
@@ -685,8 +696,10 @@ class _StatusOverviewState extends State<StatusOverview> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Text("Hintergrund-Standort: ",
-                          style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Text(
+                        "Hintergrund-Standort: ",
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
                       _statusPill(_bgTrackingActive),
                     ],
                   ),
@@ -795,14 +808,17 @@ class _StatusOverviewState extends State<StatusOverview> {
                 child: PlatformElevatedButton(
                   child: const Text("Schließen"),
                   onPressed: () => Navigator.of(context).pop(),
-                  cupertino: (_, __) => CupertinoElevatedButtonData(color: Colors.red.shade700),
-                    material:
-                        (_, __) => MaterialElevatedButtonData(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.red.shade700,
-                        foregroundColor: Colors.white,
+                  cupertino:
+                      (_, __) => CupertinoElevatedButtonData(
+                        color: Colors.red.shade700,
                       ),
-                    ),
+                  material:
+                      (_, __) => MaterialElevatedButtonData(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.red.shade700,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
                 ),
               ),
           ],
@@ -843,7 +859,7 @@ class _StatusOverviewState extends State<StatusOverview> {
             (_, __) => CupertinoNavigationBarData(
               backgroundColor: Colors.red.shade800,
               trailing: GestureDetector(
-                child: const Icon(CupertinoIcons.bars, color: Colors.red,),
+                child: const Icon(CupertinoIcons.bars, color: Colors.red),
                 onTap:
                     () => showPlatformModalSheet(
                       context: context,
@@ -891,6 +907,74 @@ class _StatusOverviewState extends State<StatusOverview> {
                             'Ansprechpartner: $leiter',
                             style: const TextStyle(fontSize: 18),
                           ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        const Icon(Icons.message, color: Colors.red),
+                        const SizedBox(width: 8),
+                        const Expanded(
+                          child: Text(
+                            'Nachricht senden',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _infoCtrl,
+                            decoration: InputDecoration(
+                              hintText: 'Freitext (z. B. Info an Leitstelle)',
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                                borderSide: const BorderSide(
+                                  color: Colors.black12,
+                                ),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        PlatformElevatedButton(
+                          child: const Text('Senden'),
+                          onPressed: () async {
+                            final s = _infoCtrl.text.trim();
+                            if (s.isEmpty) {
+                              _showSnackbar(
+                                'Bitte eine Nachricht eingeben.',
+                                success: false,
+                              );
+                              return;
+                            }
+                            await _sendSds(s);
+                            _infoCtrl.clear();
+                          },
+                          material:
+                              (_, __) => MaterialElevatedButtonData(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red.shade800,
+                                  foregroundColor: Colors.white,
+                                ),
+                              ),
+                          cupertino:
+                              (_, __) => CupertinoElevatedButtonData(
+                                color: Colors.red.shade800,
+                              ),
                         ),
                       ],
                     ),

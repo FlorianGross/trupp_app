@@ -1,0 +1,52 @@
+apply plugin: 'com.android.library'
+
+android {
+    namespace 'dev.floriang.trupp_app.car_app'
+    compileSdk 34
+
+    defaultConfig {
+        // muss mit deinem App-Modul kompatibel sein
+        minSdk 28
+        targetSdk 34
+
+        consumerProguardFiles 'consumer-rules.pro'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    packagingOptions {
+        resources {
+            excludes += ['META-INF/LICENSE.txt', 'META-INF/NOTICE.txt', 'META-INF/*.kotlin_module']
+        }
+    }
+}
+
+dependencies {
+    // Basispaket (Templates, Screens, Session, usw.)
+    implementation "androidx.car.app:app:1.7.0"
+
+    // Für Android Auto Projection (Handy spiegelt UI ins Auto)
+    implementation "androidx.car.app:app-projected:1.7.0"
+
+    // WICHTIG: KEIN app-automotive!
+    // implementation "androidx.car.app:app-automotive:1.7.0"  <-- RAUS
+
+    // Core libs
+    implementation 'androidx.core:core-ktx:1.13.1'
+
+    // HTTP Client
+    implementation 'com.squareup.okhttp3:okhttp:4.12.0'
+}
