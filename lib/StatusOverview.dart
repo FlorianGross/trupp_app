@@ -28,7 +28,7 @@ class StatusOverview extends StatefulWidget {
   State<StatusOverview> createState() => _StatusOverviewState();
 }
 
-class _StatusOverviewState extends State<StatusOverview> {
+class _StatusOverviewState extends State<StatusOverview> with SingleTickerProviderStateMixin {
   // Config
   String protocol = 'https', server = 'localhost', port = '443', token = '';
   String trupp = 'Unbekannt', leiter = 'Unbekannt', issi = '0000';
@@ -39,11 +39,13 @@ class _StatusOverviewState extends State<StatusOverview> {
   int? selectedStatus;
   int? _lastPersistentStatus;
   Timer? _tempStatusTimer;
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
 
   bool get _trackingDesired =>
       [1, 3, 7].contains(_lastPersistentStatus ?? selectedStatus ?? -1);
 
-  // Hintergrund-Tracking-Indikator (nur für UI im Config-Drawer)
+  // Hintergrund-Tracking-Indikator
   bool _bgTrackingActive = false;
 
   // Kurzstatus 0/9/5 → nach 5s zurück
@@ -63,6 +65,15 @@ class _StatusOverviewState extends State<StatusOverview> {
   @override
   void initState() {
     super.initState();
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _fadeAnimation = CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    );
+    _animationController.forward();
     _initialize();
   }
 
@@ -70,21 +81,18 @@ class _StatusOverviewState extends State<StatusOverview> {
   void dispose() {
     _tempStatusTimer?.cancel();
     _infoCtrl.dispose();
+    _animationController.dispose();
     super.dispose();
   }
 
   Future<void> _initialize() async {
     await _loadConfig();
     await _ensureNotificationPermission();
-
-    // Beim Starten nur prüfen, ob Services/Berechtigungen vorhanden sind;
-    // kein Prompt außer beim allerersten Start (onboarding).
     await _checkLocationServicesSilently();
 
     final prefs = await SharedPreferences.getInstance();
     final firstRun = !(prefs.getBool('onboarded') ?? false);
     if (firstRun) {
-      // Einmalige, freundliche Vorab-Erklärung + While-In-Use anfragen.
       await _firstRunPermissionFlow();
       await prefs.setBool('onboarded', true);
     }
@@ -130,8 +138,7 @@ class _StatusOverviewState extends State<StatusOverview> {
       if (!status.isGranted) {
         _showInfoDialog(
           title: 'Hinweis',
-          msg:
-              'Benachrichtigungen sind deaktiviert. Ohne Benachrichtigung kann die Standortübertragung im Hintergrund beendet werden.',
+          msg: 'Benachrichtigungen sind deaktiviert. Ohne Benachrichtigung kann die Standortübertragung im Hintergrund beendet werden.',
         );
       }
     }
@@ -142,13 +149,10 @@ class _StatusOverviewState extends State<StatusOverview> {
     if (!enabled) {
       _showInfoDialog(
         title: 'Standortdienste deaktiviert',
-        msg:
-            'Bitte Standortdienste aktivieren, damit Position gesendet werden kann.',
+        msg: 'Bitte Standortdienste aktivieren, damit Position gesendet werden kann.',
       );
     }
   }
-
-  // -------------------- Permissions (kontextuell) --------------------
 
   Future<bool> _hasWhileInUsePermission() async {
     final p = await Geolocator.checkPermission();
@@ -162,7 +166,6 @@ class _StatusOverviewState extends State<StatusOverview> {
         defaultTargetPlatform == TargetPlatform.macOS) {
       return p == LocationPermission.always;
     }
-    // Android: permission_handler kapselt Background; zusätzlich explizit prüfen
     final bg = await Permission.locationAlways.status;
     if (bg.isGranted) return true;
     return p == LocationPermission.always;
@@ -171,18 +174,16 @@ class _StatusOverviewState extends State<StatusOverview> {
   Future<void> _firstRunPermissionFlow() async {
     await _showPrePermissionInfo(
       title: 'Standortzugriff benötigt',
-      msg:
-          'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
-          'Bitte erlaube „Beim Verwenden der App“, damit Statusmeldungen korrekt gesendet werden.',
+      msg: 'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
+          'Bitte erlaube „Beim Verwenden der App", damit Statusmeldungen korrekt gesendet werden.',
     );
 
     var p = await Geolocator.checkPermission();
     if (p == LocationPermission.denied) {
-      p = await Geolocator.requestPermission(); // shows OS sheet
+      p = await Geolocator.requestPermission();
     }
 
-    if (p == LocationPermission.denied ||
-        p == LocationPermission.deniedForever) {
+    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
       _showSnackbar('Standortberechtigung nicht erteilt.', success: false);
     }
   }
@@ -190,8 +191,7 @@ class _StatusOverviewState extends State<StatusOverview> {
   Future<bool> _requestWhileInUseWithRationale() async {
     final proceed = await _showRationale(
       title: 'Standortzugriff benötigt',
-      msg:
-          'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
+      msg: 'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
           'Dazu benötigt die App Zugriff auf deinen Standort während der Nutzung.',
       primary: 'Fortfahren',
     );
@@ -201,8 +201,7 @@ class _StatusOverviewState extends State<StatusOverview> {
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
     }
-    if (p == LocationPermission.denied ||
-        p == LocationPermission.deniedForever) {
+    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
       _showSnackbar('Standortberechtigung nicht erteilt.', success: false);
       return false;
     }
@@ -212,440 +211,240 @@ class _StatusOverviewState extends State<StatusOverview> {
   Future<bool> _requestBackgroundWithRationale() async {
     final proceed = await _showRationale(
       title: 'Hintergrund-Standort',
-      msg:
-          'Bei Status 1, 3 oder 7 wird dein Standort zusätzlich regelmäßig im Hintergrund übertragen.',
+      msg: 'Bei Status 1, 3 oder 7 wird dein Standort zusätzlich regelmäßig im Hintergrund übertragen.',
       primary: 'Fortfahren',
     );
     if (proceed != true) return false;
 
     if (defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS) {
-      var p = await Geolocator.checkPermission();
-      if (p == LocationPermission.denied) {
-        p = await Geolocator.requestPermission();
-      }
-      if (p != LocationPermission.always) {
-        // Kein Auto-Redirect – nur optional anbieten
-        final open = await _offerSettings(
-          msg:
-              'Bitte in den iOS-Einstellungen „Standortzugriff: Immer“ erlauben, um die Hintergrundübertragung zu aktivieren.',
-        );
-        if (open == true) {
-          await Geolocator.openAppSettings();
-        }
-        return false;
-      }
-      return true;
+      final p = await Geolocator.requestPermission();
+      if (p == LocationPermission.always) return true;
+      _showSnackbar('Hintergrund-Standort nicht erteilt.', success: false);
+      return false;
     } else {
-      final whenInUse = await Permission.location.request();
-      if (!whenInUse.isGranted) {
-        _showSnackbar('Standortberechtigung nicht erteilt.', success: false);
-        return false;
-      }
       final bg = await Permission.locationAlways.request();
-      if (!bg.isGranted) {
-        final open = await _offerSettings(
-          msg:
-              'Bitte in den Android-Einstellungen „Standort im Hintergrund“ erlauben, um die Hintergrundübertragung zu aktivieren.',
-        );
-        if (open == true) {
-          await openAppSettings();
-        }
-        return false;
-      }
-      return true;
+      if (bg.isGranted) return true;
+      _showSnackbar('Hintergrund-Standort nicht erteilt.', success: false);
+      return false;
     }
   }
 
-  // -------------------- Networking & Location --------------------
-
-  Future<void> _sendCurrentPositionOnce() async {
-    // Für JEDE Statusmeldung: einmalige Positionssendung (wenn erlaubt)
-    //if (_bgTrackingActive) return;
-    if (!await _hasWhileInUsePermission()) return;
-
-    late LocationSettings locationSettings;
-    if (defaultTargetPlatform == TargetPlatform.android) {
-      locationSettings = AndroidSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 15,
-        forceLocationManager: true,
-        intervalDuration: const Duration(seconds: 5),
-      );
-    } else if (defaultTargetPlatform == TargetPlatform.iOS ||
-        defaultTargetPlatform == TargetPlatform.macOS) {
-      locationSettings = AppleSettings(
-        accuracy: LocationAccuracy.high,
-        activityType: ActivityType.fitness,
-        distanceFilter: 100,
-        pauseLocationUpdatesAutomatically: true,
-        showBackgroundLocationIndicator: false,
-      );
-    } else if (kIsWeb) {
-      locationSettings = WebSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 100,
-        maximumAge: Duration(minutes: 5),
-      );
+  Future<void> _setBackgroundTracking(bool enabled) async {
+    final service = FlutterBackgroundService();
+    if (enabled) {
+      if (!await service.isRunning()) {
+        await service.startService();
+      }
+      service.invoke('setTracking', {'enabled': true});
     } else {
-      locationSettings = const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        distanceFilter: 100,
-      );
+      service.invoke('setTracking', {'enabled': false});
     }
-
-    try {
-      final p = await Geolocator.getCurrentPosition(
-        locationSettings: locationSettings,
-      );
-      final now = DateTime.now();
-      if (now.difference(_lastSent) >= _sendInterval) {
-        _lastSent = now;
-        // **Nur gute Fixe** in Queue/Send (nutzt denselben Filter im Service implizit)
-        await LocationSyncManager.instance.sendOrQueue(
-          lat: p.latitude,
-          lon: p.longitude,
-          accuracy: p.accuracy.isFinite ? p.accuracy : null,
-          status: _lastPersistentStatus ?? selectedStatus,
-          timestamp: now,
-        );
-      }
-    } catch (_) {}
+    setState(() => _bgTrackingActive = enabled);
   }
 
-  Future<void> _sendStatus(int status, {bool notify = true}) async {
+  Future<void> _onStatusPressed(int status) async {
+    final needsWiu = !await _hasWhileInUsePermission();
+    if (needsWiu) {
+      final granted = await _requestWhileInUseWithRationale();
+      if (!granted) return;
+    }
+
+    _tempStatusTimer?.cancel();
+    if (_isTempStatus(status)) {
+      await _sendStatus(status);
+      if(status == 5)await _sendSds("Sprechwunsch!");
+      if(status == 0)await _sendSds("Dringender Sprechwunsch!");
+      setState(() {
+        selectedStatus = status;
+        _tempStatusTimer = Timer(_tempDurations[status]!, () async {
+          final fallback = _lastPersistentStatus ?? 1;
+          await _onPersistentStatus(fallback);
+        });
+      });
+    } else {
+      await _onPersistentStatus(status);
+    }
+  }
+
+  Future<void> _onPersistentStatus(int status, {bool notify = true}) async {
+    _tempStatusTimer?.cancel();
+    _lastPersistentStatus = status;
+
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lastStatus', status);
 
     final service = FlutterBackgroundService();
     service.invoke('statusChanged', {'status': status});
 
-    try {
-      final api = await EdpApi.ensureInitialized();
-      if (api == null) {
-        if (notify) _showSnackbar("Konfiguration fehlt", success: false);
+    final wantsTracking = [1, 3, 7].contains(status);
+    if (wantsTracking && !await _hasBackgroundPermission()) {
+      final granted = await _requestBackgroundWithRationale();
+      if (!granted) {
+        await _setBackgroundTracking(false);
+        setState(() => selectedStatus = status);
+        await _sendStatus(status);
         return;
       }
-      final r = await api.sendStatus(status);
-      if (!mounted) return;
-      if (r.ok) {
-        setState(() => selectedStatus = status);
-        if (notify) {
-          _showSnackbar("Status $status erfolgreich gesendet ✅", success: true);
-        }
-      } else if (notify) {
-        _showSnackbar(
-          "Fehler beim Senden von Status $status ❌ (Code: ${r.statusCode})",
-          success: false,
-        );
-      }
-    } catch (_) {
-      if (notify) {
-        _showSnackbar(
-          "Fehler beim Senden von Status $status ❌",
-          success: false,
-        );
-      }
     }
-    await _sendCurrentPositionOnce();
-  }
-
-  // ---------------- Background Service Control ----------------
-  Future<void> _setBackgroundTracking(bool enabled) async {
-    final service = FlutterBackgroundService();
-    var running = await service.isRunning();
-    if (enabled) {
-      if (!running) {
-        await service.startService();
-        for (int i = 0; i < 20; i++) {
-          await Future.delayed(const Duration(milliseconds: 150));
-          running = await service.isRunning();
-          if (running) break;
-        }
-      }
-      if (running) {
-        service.invoke('setTracking', {'enabled': true});
-        service.invoke('statusChanged', {
-          'status': _lastPersistentStatus ?? selectedStatus ?? 0,
-        });
-      }
-    } else {
-      if (running) {
-        service.invoke('setTracking', {'enabled': false});
-      }
-    }
-
-    if (mounted) setState(() => _bgTrackingActive = enabled);
-  }
-
-  // ---------------- Status Handling ----------------
-  void _onStatusPressed(int status) async {
-    if (_isTempStatus(status)) {
-      _tempStatusTimer?.cancel();
-      await _sendStatus(status);
-      if (status == 5) {
-        await _sendSds('Sprechwunsch');
-      }
-
-      final duration = _tempDurations[status] ?? const Duration(seconds: 5);
-      _tempStatusTimer = Timer(duration, () {
-        if (!mounted) return;
-        final revert = _lastPersistentStatus ?? 1;
-        _onStatusPressed(revert);
-      });
-      return;
-    }
-
-    final wantsTracking = [1, 3, 7].contains(status);
-
-    _lastPersistentStatus = status;
+    await _setBackgroundTracking(wantsTracking);
+    setState(() => selectedStatus = status);
     await _sendStatus(status);
+  }
 
-    if (wantsTracking && !_bgTrackingActive) {
-      // Prompt nur EINMAL pro Installation zeigen, falls noch keine BG-Rechte da sind
-      final hasBg = await _hasBackgroundPermission();
-      if (!hasBg) {
-        final prefs = await SharedPreferences.getInstance();
-        final shown = prefs.getBool(_kBgPromptShownKey) ?? false;
-        if (!shown) {
-          await _requestBackgroundWithRationale(); // zeigt OS-Sheet / Info
-          await prefs.setBool(
-            _kBgPromptShownKey,
-            true,
-          ); // danach nicht mehr nerven
-          if (defaultTargetPlatform == TargetPlatform.android) {
-            final disabled =
-                await DisableBatteryOptimization.isBatteryOptimizationDisabled;
-            if (disabled == false) {
-              await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
-            }
-          }
-        }
-      }
+  Future<void> _sendStatus(int status) async {
+    final now = DateTime.now();
+    if (now.difference(_lastSent) < _sendInterval) return;
+    _lastSent = now;
+
+    try {
+      Position? pos = await Geolocator.getLastKnownPosition();
+      pos ??= await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+
+      final api = EdpApi.instance;
+      await api.sendStatus(status);
+      await LocationSyncManager.instance.sendOrQueue(
+        lat: pos.latitude,
+        lon: pos.longitude,
+        accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
+        status: status,
+        timestamp: pos.timestamp ?? now,
+      );
+
+      _showSnackbar('Status $status gesendet');
+    } catch (e) {
+      _showSnackbar('Fehler beim Senden: $e', success: false);
     }
-    // Nach jedem Klick final evaluieren und Tracking setzen
-    final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
-    await _setBackgroundTracking(wantsTracking && canTrack);
   }
 
   Future<void> _sendSds(String text) async {
     try {
-      final api = await EdpApi.ensureInitialized();
-      if (api == null) {
-        _showSnackbar('Keine gültige Konfiguration für SDS.', success: false);
-        return;
-      }
-      final r = await api.sendSdsText(text);
-      if (r.ok) {
-        _showSnackbar('Nachricht gesendet: $text', success: true);
+      final api = EdpApi.instance;
+      final res = await api.sendSdsText(text);
+      if (res.ok) {
+        _showSnackbar('Nachricht gesendet');
       } else {
-        _showSnackbar(
-          'SDS-Fehler (${r.statusCode}): ${r.body ?? ''}',
-          success: false,
-        );
+        _showSnackbar('Fehler: ${res.statusCode}', success: false);
       }
     } catch (e) {
-      _showSnackbar('SDS-Fehler: $e', success: false);
+      _showSnackbar('Fehler: $e', success: false);
     }
   }
 
-  Future<void> _onPersistentStatus(int status, {bool notify = true}) async {
-    _tempStatusTimer?.cancel();
-    _tempStatusTimer = null;
-    _lastPersistentStatus = status;
-
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('lastStatus', status);
-
-    final wantsTracking = [1, 3, 7].contains(status);
-    final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
-
-    await _sendStatus(status, notify: notify);
-    await _setBackgroundTracking(wantsTracking && canTrack);
+  void _showSnackbar(String msg, {bool success = true}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: success ? Colors.green : Colors.red.shade800,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        margin: EdgeInsets.only(
+          bottom: MediaQuery.of(context).padding.bottom + 80,
+          left: 16,
+          right: 16,
+        ),
+      ),
+    );
   }
 
-  // ---------------- Dialog/Helper ----------------
+  Future<void> _showInfoDialog({required String title, required String msg}) async {
+    await showPlatformDialog(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: Text(title),
+        content: Text(msg),
+        actions: [
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPrePermissionInfo({required String title, required String msg}) async {
+    await showPlatformDialog(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: Text(title),
+        content: Text(msg),
+        actions: [
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Verstanden'),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<bool?> _showRationale({
     required String title,
     required String msg,
-    String primary = 'OK',
-    String secondary = 'Abbrechen',
+    required String primary,
   }) async {
     return showPlatformDialog<bool>(
       context: context,
-      builder:
-          (_) => PlatformAlertDialog(
-            title: Text(title),
-            content: Text(msg),
-            actions: [
-              PlatformDialogAction(
-                child: Text(secondary),
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-              PlatformDialogAction(
-                child: Text(primary),
-                onPressed: () => Navigator.of(context).pop(true),
-              ),
-            ],
+      builder: (_) => PlatformAlertDialog(
+        title: Text(title),
+        content: Text(msg),
+        actions: [
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
           ),
-    );
-  }
-
-  Widget _statusPill(bool active) {
-    final bg = active ? Colors.green.shade100 : Colors.grey.shade200;
-    final txt = active ? 'Aktiv' : 'Inaktiv';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.black12),
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(context, true),
+            child: Text(primary),
+          ),
+        ],
       ),
-      child: Text(txt, style: const TextStyle(fontSize: 13)),
     );
   }
 
-  Future<void> _showPrePermissionInfo({
-    required String title,
-    required String msg,
-    String actionLabel = 'Fortfahren',
-  }) async {
-    await showPlatformDialog<void>(
-      context: context,
-      builder:
-          (_) => PlatformAlertDialog(
-            title: Text(title),
-            content: Text(msg),
-            actions: [
-              PlatformDialogAction(
-                child: Text(actionLabel),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
+  Future<void> _confirmLogout(BuildContext ctx) async {
+    final ok = await showPlatformDialog<bool>(
+      context: ctx,
+      builder: (_) => PlatformAlertDialog(
+        title: const Text('Konfiguration löschen?'),
+        content: const Text(
+          'Alle Einstellungen und die Historie werden gelöscht. Dies kann nicht rückgängig gemacht werden.',
+        ),
+        actions: [
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
           ),
-    );
-  }
-
-  Future<bool?> _offerSettings({required String msg}) {
-    return showPlatformDialog<bool>(
-      context: context,
-      builder:
-          (_) => PlatformAlertDialog(
-            title: const Text('Berechtigung erforderlich'),
-            content: Text(msg),
-            actions: [
-              PlatformDialogAction(
-                child: const Text('Abbrechen'),
-                onPressed: () => Navigator.of(context).pop(false),
-              ),
-              PlatformDialogAction(
-                child: const Text('Zu den Einstellungen'),
-                onPressed: () => Navigator.of(context).pop(true),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _showInfoDialog({required String title, required String msg}) {
-    showPlatformDialog(
-      context: context,
-      builder:
-          (_) => PlatformAlertDialog(
-            title: Text(title),
-            content: Text(msg),
-            actions: [
-              PlatformDialogAction(
-                child: const Text('OK'),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-            ],
-          ),
-    );
-  }
-
-  void _showSnackbar(String message, {required bool success}) {
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (messenger != null) {
-      messenger
-        ..clearSnackBars()
-        ..showSnackBar(
-          SnackBar(
-            content: Text(message),
-            backgroundColor: success ? Colors.green : Colors.red,
-            duration: const Duration(seconds: 3),
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10),
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Löschen'),
+            material: (_, __) => MaterialDialogActionData(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
             ),
           ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      await stopBackgroundServiceCompletely();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      await LocationQueue.instance.destroyDb();
+
+      if (ctx.mounted) {
+        Navigator.of(ctx).pushAndRemoveUntil(
+          platformPageRoute(context: ctx, builder: (_) => const ConfigScreen()),
+              (_) => false,
         );
-      return;
+      }
     }
-    showCupertinoDialog(
-      context: context,
-      builder:
-          (_) => CupertinoAlertDialog(
-            title: Text(success ? 'Erfolg' : 'Fehler'),
-            content: Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(message),
-            ),
-          ),
-    );
-    Future.delayed(const Duration(seconds: 2), () {
-      final nav = Navigator.of(context, rootNavigator: true);
-      if (nav.canPop()) nav.pop();
-    });
-  }
-
-  void _confirmLogout(BuildContext context) {
-    showPlatformDialog(
-      context: context,
-      builder:
-          (_) => PlatformAlertDialog(
-            title: const Text("Konfiguration zurücksetzen?"),
-            content: const Text("Alle gespeicherten Daten werden gelöscht."),
-            actions: [
-              PlatformDialogAction(
-                child: const Text("Abbrechen"),
-                onPressed: () => Navigator.of(context).pop(),
-              ),
-              PlatformDialogAction(
-                child: const Text("Zurücksetzen"),
-                cupertino:
-                    (_, __) =>
-                        CupertinoDialogActionData(isDestructiveAction: true),
-                material: (_, __) => MaterialDialogActionData(),
-                onPressed: () async {
-                  await stopBackgroundServiceCompletely();
-
-                  // optional: Status 6 melden ohne UI
-                  await _sendStatus(6, notify: false);
-
-                  // 1) Queue-Datenbank löschen
-                  try {
-                    await LocationQueue.instance.destroyDb();
-                  } catch (_) {}
-
-                  // 2) SharedPreferences leeren
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.clear();
-
-                  if (!mounted) return;
-                  Navigator.of(context, rootNavigator: true).pushAndRemoveUntil(
-                    platformPageRoute(
-                      context: context,
-                      builder: (_) => const ConfigScreen(),
-                    ),
-                    (_) => false,
-                  );
-                },
-              ),
-            ],
-          ),
-    );
   }
 
   String _buildConfigDeepLink() {
@@ -654,153 +453,190 @@ class _StatusOverviewState extends State<StatusOverview> {
       'server': server,
       'port': port,
       'token': token,
+      'issi': issi,
+      'trupp': trupp,
       'leiter': leiter,
     };
-
     final uri = Uri(scheme: 'truppapp', host: 'config', queryParameters: qp);
     return uri.toString();
   }
 
-  Widget _buildSettingsDrawer(BuildContext context) {
-    final deepLink = _buildConfigDeepLink();
+  Future<void> _exportAndShareGpx() async {
+    try {
+      final path = await GpxExporter.exportAllFixesToGpx();
+      await Share.shareXFiles([XFile(path)], text: 'Trupp App GPS-Export');
+      _showSnackbar('GPX exportiert');
+    } catch (e) {
+      _showSnackbar('Export-Fehler: $e', success: false);
+    }
+  }
 
+  Widget _buildSettingsDrawer(BuildContext context) {
     final content = SafeArea(
       child: Padding(
-        padding: const EdgeInsets.all(20.0),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        padding: const EdgeInsets.all(20),
+        child: ListView(
           children: [
-            const Text(
-              "Aktuelle Konfiguration",
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const Divider(height: 20),
-            // Sichtbare, reviewer-freundliche Info NUR hier:
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Standortübertragung",
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 6),
-                  const Text(
-                    "• Der Standort wird bei JEDEM Status zusammen mit der Meldung übertragen.",
-                  ),
-                  const SizedBox(height: 2),
-                  const Text(
-                    "• Bei Status 1, 3 oder 7 wird der Standort zusätzlich regelmäßig im Hintergrund gesendet (sofern erlaubt).",
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      const Text(
-                        "Hintergrund-Standort: ",
-                        style: TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      _statusPill(_bgTrackingActive),
-                    ],
-                  ),
-                ],
+            const SizedBox(height: 12),
+            Text(
+              'Einstellungen',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade800,
               ),
             ),
-
-            const Divider(height: 20),
-
             const SizedBox(height: 24),
-            const Text(
-              "Konfiguration teilen",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+            _buildInfoTile(
+              icon: Icons.dns,
+              label: 'Server',
+              value: '$protocol://$server:$port',
             ),
-            const SizedBox(height: 12),
+            const Divider(height: 24),
+            _buildInfoTile(
+              icon: Icons.vpn_key,
+              label: 'Token',
+              value: token.isEmpty ? 'Nicht gesetzt' : token,
+            ),
+            const Divider(height: 24),
+            _buildInfoTile(
+              icon: Icons.badge,
+              label: 'ISSI',
+              value: issi,
+            ),
+            const SizedBox(height: 24),
+            Card(
+              elevation: 0,
+              color: _bgTrackingActive ? Colors.green.shade50 : Colors.grey.shade100,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    Icon(
+                      _bgTrackingActive ? Icons.gps_fixed : Icons.gps_off,
+                      color: _bgTrackingActive ? Colors.green : Colors.grey,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Hintergrund-Tracking',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _bgTrackingActive ? 'Aktiv' : 'Inaktiv',
+                            style: TextStyle(
+                              color: _bgTrackingActive ? Colors.green : Colors.grey,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Bei Status 1, 3 oder 7 wird der Standort automatisch im Hintergrund übertragen.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+            const SizedBox(height: 24),
+            const Divider(),
+            const SizedBox(height: 16),
+            Text(
+              'Konfiguration teilen',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.red.shade800,
+              ),
+            ),
+            const SizedBox(height: 16),
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.black12),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: Colors.grey.shade300, width: 2),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(16),
               child: QrImageView(
-                data: deepLink,
+                data: _buildConfigDeepLink(),
                 version: QrVersions.auto,
-                size: 220,
+                size: 200,
+                backgroundColor: Colors.white,
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 16),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                PlatformElevatedButton(
-                  color: Colors.red,
-                  child: const Text(
-                    "Link kopieren",
-                    style: TextStyle(color: Colors.white),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: _buildConfigDeepLink()));
+                      _showSnackbar('Link kopiert');
+                    },
+                    icon: const Icon(Icons.copy, size: 18),
+                    label: const Text('Kopieren'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade800,
+                      side: BorderSide(color: Colors.red.shade200),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: deepLink));
-                    _showSnackbar("Link kopiert", success: true);
-                  },
                 ),
                 const SizedBox(width: 12),
-                PlatformElevatedButton(
-                  color: Colors.red,
-                  child: const Text(
-                    "Teilen",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                  onPressed: () => Share.share(deepLink),
-                ),
-              ],
-            ),
-            const Divider(height: 20),
-            const Text(
-              "Datenexport",
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 12),
-            PlatformElevatedButton(
-              child: const Text("GPX exportieren"),
-              onPressed: () async {
-                try {
-                  final path = await GpxExporter.exportAllFixesToGpx();
-                  SharePlus.instance.share(
-                    ShareParams(
-                      files: [XFile(path)],
-                      text: "GPX-Datei mit Standortpunkten",
-                    ),
-                  );
-                } catch (e) {
-                  _showSnackbar("Export fehlgeschlagen: $e", success: false);
-                }
-              },
-              material:
-                  (_, __) => MaterialElevatedButtonData(
+                Expanded(
+                  child: ElevatedButton.icon(
+                    onPressed: () => Share.share(_buildConfigDeepLink()),
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('Teilen'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.red.shade800,
                       foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
-              cupertino:
-                  (_, __) =>
-                      CupertinoElevatedButtonData(color: Colors.red.shade800),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
-            const Divider(height: 20),
+            const SizedBox(height: 16),
+            _buildActionButton(
+              label: 'GPX Export',
+              icon: Icons.file_download,
+              onPressed: _exportAndShareGpx,
+            ),
+            const SizedBox(height: 16),
             PlatformElevatedButton(
               child: const Text("Konfiguration zurücksetzen"),
               onPressed: () => _confirmLogout(context),
-              cupertino:
-                  (_, _) =>
-                      CupertinoElevatedButtonData(color: Colors.red.shade700),
-              material:
-                  (_, __) => MaterialElevatedButtonData(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
-                      foregroundColor: Colors.white,
-                    ),
-                  ),
+              cupertino: (_, _) => CupertinoElevatedButtonData(color: Colors.red.shade700),
+              material: (_, __) => MaterialElevatedButtonData(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red.shade700,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+              ),
             ),
             if (isCupertino(context))
               Padding(
@@ -808,17 +644,17 @@ class _StatusOverviewState extends State<StatusOverview> {
                 child: PlatformElevatedButton(
                   child: const Text("Schließen"),
                   onPressed: () => Navigator.of(context).pop(),
-                  cupertino:
-                      (_, __) => CupertinoElevatedButtonData(
-                        color: Colors.red.shade700,
-                      ),
-                  material:
-                      (_, __) => MaterialElevatedButtonData(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.red.shade700,
-                          foregroundColor: Colors.white,
-                        ),
-                      ),
+                  cupertino: (_, __) => CupertinoElevatedButtonData(
+                    color: Colors.red.shade700,
+                  ),
+                  material: (_, __) => MaterialElevatedButtonData(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size.fromHeight(48),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -835,173 +671,300 @@ class _StatusOverviewState extends State<StatusOverview> {
     );
   }
 
+  Widget _buildInfoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, color: Colors.red.shade800, size: 22),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildActionButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onPressed,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 20),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        minimumSize: const Size.fromHeight(48),
+        foregroundColor: Colors.red.shade800,
+        side: BorderSide(color: Colors.red.shade200),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return PlatformScaffold(
       backgroundColor: Colors.grey[100],
       appBar: PlatformAppBar(
         title: const Text("Statusübersicht"),
-        material:
-            (_, __) => MaterialAppBarData(
-              backgroundColor: Colors.red.shade800,
-              centerTitle: true,
-              actions: [
-                Builder(
-                  builder:
-                      (context) => IconButton(
-                        icon: const Icon(Icons.menu),
-                        onPressed: () => Scaffold.of(context).openEndDrawer(),
-                      ),
-                ),
-              ],
-            ),
-        cupertino:
-            (_, __) => CupertinoNavigationBarData(
-              backgroundColor: Colors.red.shade800,
-              trailing: GestureDetector(
-                child: const Icon(CupertinoIcons.bars, color: Colors.red),
-                onTap:
-                    () => showPlatformModalSheet(
-                      context: context,
-                      builder: (_) => _buildSettingsDrawer(context),
-                    ),
+        material: (_, __) => MaterialAppBarData(
+          backgroundColor: Colors.red.shade800,
+          centerTitle: true,
+          elevation: 0,
+          actions: [
+            Builder(
+              builder: (context) => IconButton(
+                icon: const Icon(Icons.menu),
+                onPressed: () => Scaffold.of(context).openEndDrawer(),
               ),
             ),
+          ],
+        ),
+        cupertino: (_, __) => CupertinoNavigationBarData(
+          backgroundColor: Colors.red.shade800,
+          trailing: GestureDetector(
+            child: const Icon(CupertinoIcons.bars, color: Colors.white),
+            onTap: () => showPlatformModalSheet(
+              context: context,
+              builder: (_) => _buildSettingsDrawer(context),
+            ),
+          ),
+        ),
       ),
-      material:
-          (_, __) =>
-              MaterialScaffoldData(endDrawer: _buildSettingsDrawer(context)),
-      body: Column(
-        children: [
-          const SizedBox(height: 16),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Card(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+      material: (_, __) => MaterialScaffoldData(endDrawer: _buildSettingsDrawer(context)),
+      body: SafeArea(
+        bottom: true,
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                  child: Column(
+                    children: [
+                      Card(
+                        elevation: 2,
+                        shadowColor: Colors.black26,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        color: Colors.white,
+                        child: Padding(
+                          padding: const EdgeInsets.all(20.0),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Icon(Icons.group, color: Colors.red.shade800, size: 24),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Trupp',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          trupp,
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.red.shade50,
+                                      borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Icon(Icons.person, color: Colors.red.shade800, size: 24),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        const Text(
+                                          'Ansprechpartner',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            color: Colors.grey,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          leiter,
+                                          style: const TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              const Divider(),
+                              const SizedBox(height: 16),
+                              Row(
+                                children: [
+                                  Icon(Icons.message, color: Colors.red.shade800, size: 20),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Nachricht senden',
+                                    style: TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _infoCtrl,
+                                      decoration: InputDecoration(
+                                        hintText: 'Freitext (z. B. Info an ELW)',
+                                        filled: true,
+                                        fillColor: Colors.grey.shade50,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: Colors.grey.shade300),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: Colors.red.shade800, width: 2),
+                                        ),
+                                        contentPadding: const EdgeInsets.symmetric(
+                                          horizontal: 16,
+                                          vertical: 14,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Material(
+                                    color: Colors.red.shade800,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () async {
+                                        final s = _infoCtrl.text.trim();
+                                        if (s.isEmpty) {
+                                          _showSnackbar('Bitte eine Nachricht eingeben.', success: false);
+                                          return;
+                                        }
+                                        await _sendSds(s);
+                                        _infoCtrl.clear();
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.all(14),
+                                        child: const Icon(Icons.send, color: Colors.white, size: 24),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: selectedStatus != null ? Colors.red.shade800 : Colors.grey.shade300,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          selectedStatus != null
+                              ? 'Aktueller Status: $selectedStatus'
+                              : 'Kein Status gewählt',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w600,
+                            color: selectedStatus != null ? Colors.white : Colors.grey.shade700,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ),
-              color: Colors.red.shade50,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.group, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Trupp: $trupp',
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                        ),
-                      ],
+              Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
                     ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.person, color: Colors.red),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Ansprechpartner: $leiter',
-                            style: const TextStyle(fontSize: 18),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        const Icon(Icons.message, color: Colors.red),
-                        const SizedBox(width: 8),
-                        const Expanded(
-                          child: Text(
-                            'Nachricht senden',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _infoCtrl,
-                            decoration: InputDecoration(
-                              hintText: 'Freitext (z. B. Info an Leitstelle)',
-                              filled: true,
-                              fillColor: Colors.white,
-                              border: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(10),
-                                borderSide: const BorderSide(
-                                  color: Colors.black12,
-                                ),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 10,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        PlatformElevatedButton(
-                          child: const Text('Senden'),
-                          onPressed: () async {
-                            final s = _infoCtrl.text.trim();
-                            if (s.isEmpty) {
-                              _showSnackbar(
-                                'Bitte eine Nachricht eingeben.',
-                                success: false,
-                              );
-                              return;
-                            }
-                            await _sendSds(s);
-                            _infoCtrl.clear();
-                          },
-                          material:
-                              (_, __) => MaterialElevatedButtonData(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.red.shade800,
-                                  foregroundColor: Colors.white,
-                                ),
-                              ),
-                          cupertino:
-                              (_, __) => CupertinoElevatedButtonData(
-                                color: Colors.red.shade800,
-                              ),
-                        ),
-                      ],
-                    ),
-                    // Hinweis-Text zur Standortlogik wurde aus der Hauptansicht entfernt (nur im Drawer).
                   ],
                 ),
+                child: Keypad(
+                  onPressed: _onStatusPressed,
+                  selectedStatus: selectedStatus,
+                ),
               ),
-            ),
+            ],
           ),
-          const SizedBox(height: 16),
-          Text(
-            selectedStatus != null
-                ? 'Aktueller Status: $selectedStatus'
-                : 'Kein Status gewählt',
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w500),
-          ),
-          const SizedBox(height: 16),
-          const Spacer(),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Keypad(
-              onPressed: _onStatusPressed,
-              selectedStatus: selectedStatus,
-            ),
-          ),
-          const SizedBox(height: 12),
-        ],
+        ),
       ),
     );
   }
