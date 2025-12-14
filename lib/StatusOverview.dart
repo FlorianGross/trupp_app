@@ -159,6 +159,11 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     return p == LocationPermission.whileInUse || p == LocationPermission.always;
   }
 
+  // WICHTIG: Im iOS Simulator funktionieren Location-Permissions nicht zuverlässig!
+  // Für echtes Testing bitte ein physisches iOS-Gerät verwenden.
+  // Im Simulator:
+  // - Features > Location > Apple (oder Custom Location setzen)
+  // - Permissions können sich trotzdem merkwürdig verhalten
   Future<bool> _hasBackgroundPermission() async {
     final p = await Geolocator.checkPermission();
 
@@ -190,144 +195,233 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<bool> _requestWhileInUseWithRationale() async {
     final proceed = await _showRationale(
-      title: 'Standortzugriff benötigt',
+      title: 'Standortzugriff erforderlich',
       msg: 'Der Standort wird zusammen mit jedem Status an den EDP-Server übertragen. '
-          'Dazu benötigt die App Zugriff auf deinen Standort während der Nutzung.',
-      primary: 'Fortfahren',
+          'Bitte erlaube mindestens „Beim Verwenden der App".',
     );
-    if (proceed != true) return false;
+
+    if (!proceed) return false;
 
     var p = await Geolocator.checkPermission();
     if (p == LocationPermission.denied) {
       p = await Geolocator.requestPermission();
     }
-    if (p == LocationPermission.denied || p == LocationPermission.deniedForever) {
-      _showSnackbar('Standortberechtigung nicht erteilt.', success: false);
-      return false;
+
+    if (p == LocationPermission.whileInUse || p == LocationPermission.always) {
+      return true;
     }
-    return true;
+
+    if (p == LocationPermission.deniedForever) {
+      _showInfoDialog(
+        title: 'Berechtigung verweigert',
+        msg: 'Bitte in den Systemeinstellungen aktivieren.',
+      );
+    } else {
+      _showSnackbar('Standortberechtigung nicht erteilt.', success: false);
+    }
+    return false;
   }
 
   Future<bool> _requestBackgroundWithRationale() async {
-    final proceed = await _showRationale(
-      title: 'Hintergrund-Standort',
-      msg: 'Bei Status 1, 3 oder 7 wird dein Standort zusätzlich regelmäßig im Hintergrund übertragen.',
-      primary: 'Fortfahren',
-    );
-    if (proceed != true) return false;
+    final prefs = await SharedPreferences.getInstance();
+    final shown = prefs.getBool(_kBgPromptShownKey) ?? false;
+    if (!shown) {
+      await prefs.setBool(_kBgPromptShownKey, true);
+
+      final proceed = await _showRationale(
+        title: 'Hintergrundortung',
+        msg: 'Damit deine Position auch bei geschlossener App gesendet wird, '
+            'benötigt die App „Immer"-Berechtigung.',
+      );
+      if (!proceed) return false;
+    }
+
+    var p = await Geolocator.checkPermission();
+    if (p == LocationPermission.denied || p == LocationPermission.whileInUse) {
+      p = await Geolocator.requestPermission();
+    }
 
     if (defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS) {
-      final p = await Geolocator.requestPermission();
+      // Auf iOS: Nach dem Request nochmal prüfen
+      await Future.delayed(const Duration(milliseconds: 300));
+      p = await Geolocator.checkPermission();
+
       if (p == LocationPermission.always) return true;
-      _showSnackbar('Hintergrund-Standort nicht erteilt.', success: false);
+
+      if (p == LocationPermission.deniedForever) {
+        _showInfoDialog(
+          title: 'Berechtigung nötig',
+          msg: 'Bitte in den Systemeinstellungen auf „Immer" setzen.',
+        );
+      } else if (p == LocationPermission.whileInUse) {
+        // User hat "Beim Verwenden" gewählt - das ist OK für Vordergrund
+        // Zeige Info, dass für Hintergrund "Immer" nötig ist
+        _showInfoDialog(
+          title: 'Hintergrund-Ortung',
+          msg: 'Du hast "Beim Verwenden der App" ausgewählt. '
+              'Für Hintergrund-Ortung bitte in den Einstellungen auf "Immer" ändern.',
+        );
+      }
       return false;
     } else {
       final bg = await Permission.locationAlways.request();
       if (bg.isGranted) return true;
-      _showSnackbar('Hintergrund-Standort nicht erteilt.', success: false);
+      if (bg.isPermanentlyDenied) {
+        _showInfoDialog(
+          title: 'Berechtigung nötig',
+          msg: 'Bitte in den Systemeinstellungen „Immer erlauben" auswählen.',
+        );
+      }
       return false;
     }
   }
 
   Future<void> _setBackgroundTracking(bool enabled) async {
-    final service = FlutterBackgroundService();
-    if (enabled) {
-      if (!await service.isRunning()) {
-        await service.startService();
-      }
-      service.invoke('setTracking', {'enabled': true});
-    } else {
-      service.invoke('setTracking', {'enabled': false});
+    final svc = FlutterBackgroundService();
+
+    if (enabled && !await svc.isRunning()) {
+      await svc.startService();
     }
+
+    if (await svc.isRunning()) {
+      svc.invoke('setTracking', {'enabled': enabled});
+    }
+
     setState(() => _bgTrackingActive = enabled);
   }
 
-  Future<void> _onStatusPressed(int status) async {
-    final needsWiu = !await _hasWhileInUsePermission();
-    if (needsWiu) {
-      final granted = await _requestWhileInUseWithRationale();
-      if (!granted) return;
-    }
+  Future<void> _onPersistentStatus(int st, {bool notify = true}) async {
+    final now = DateTime.now();
+    if (notify && now.difference(_lastSent) < _sendInterval) return;
 
-    _tempStatusTimer?.cancel();
-    if (_isTempStatus(status)) {
-      await _sendStatus(status);
-      if(status == 5)await _sendSds("Sprechwunsch!");
-      if(status == 0)await _sendSds("Dringender Sprechwunsch!");
-      setState(() {
-        selectedStatus = status;
-        _tempStatusTimer = Timer(_tempDurations[status]!, () async {
-          final fallback = _lastPersistentStatus ?? 1;
-          await _onPersistentStatus(fallback);
-        });
-      });
-    } else {
-      await _onPersistentStatus(status);
-    }
-  }
-
-  Future<void> _onPersistentStatus(int status, {bool notify = true}) async {
-    _tempStatusTimer?.cancel();
-    _lastPersistentStatus = status;
+    _lastPersistentStatus = st;
+    selectedStatus = st;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('lastStatus', status);
+    await prefs.setInt('lastStatus', st);
 
-    final service = FlutterBackgroundService();
-    service.invoke('statusChanged', {'status': status});
+    final svc = FlutterBackgroundService();
+    if (await svc.isRunning()) {
+      svc.invoke('statusChanged', {'status': st});
+    }
 
-    final wantsTracking = [1, 3, 7].contains(status);
-    if (wantsTracking && !await _hasBackgroundPermission()) {
-      final granted = await _requestBackgroundWithRationale();
-      if (!granted) {
-        await _setBackgroundTracking(false);
-        setState(() => selectedStatus = status);
-        await _sendStatus(status);
-        return;
+    final needsTracking = [1, 3, 7].contains(st);
+    if (needsTracking && !await _hasBackgroundPermission()) {
+      await _offerBackgroundPermission(st);
+      return;
+    }
+
+    await _setBackgroundTracking(needsTracking);
+
+    if (notify) {
+      try {
+        await EdpApi.instance.sendStatus(st);
+        await LocationSyncManager.instance.flushPendingNow();
+        _lastSent = now;
+        _showSnackbar('Status $st gesendet', success: true);
+      } catch (_) {
+        _showSnackbar('Status $st gespeichert (offline)', success: false);
       }
     }
-    await _setBackgroundTracking(wantsTracking);
-    setState(() => selectedStatus = status);
-    await _sendStatus(status);
+
+    setState(() {});
   }
 
-  Future<void> _sendStatus(int status) async {
+  Future<void> _onTempStatus(int st) async {
     final now = DateTime.now();
     if (now.difference(_lastSent) < _sendInterval) return;
-    _lastSent = now;
+
+    selectedStatus = st;
+    setState(() {});
+
+    _tempStatusTimer?.cancel();
+    _tempStatusTimer = Timer(_tempDurations[st]!, () async {
+      if (_lastPersistentStatus != null && selectedStatus == st) {
+        selectedStatus = _lastPersistentStatus;
+        setState(() {});
+      }
+    });
 
     try {
-      Position? pos = await Geolocator.getLastKnownPosition();
-      pos ??= await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 5),
+      await EdpApi.instance.sendStatus(st);
+      _lastSent = now;
+      _showSnackbar('Status $st gesendet', success: true);
+    } catch (_) {
+      _showSnackbar('Status $st gespeichert (offline)', success: false);
+    }
+  }
+
+  Future<void> _onStatusPressed(int st) async {
+    // Erst prüfen ob WhileInUse-Permission vorhanden ist
+    if (!await _hasWhileInUsePermission()) {
+      final granted = await _requestWhileInUseWithRationale();
+      if (!granted) {
+        _showSnackbar('Standort nötig zum Senden', success: false);
+        return;
+      }
+      // Kurze Verzögerung nach Permission-Request, damit iOS Zeit hat die Permission zu verarbeiten
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    if (_isTempStatus(st)) {
+      await _onTempStatus(st);
+    } else {
+      await _onPersistentStatus(st);
+    }
+  }
+
+  Future<void> _offerBackgroundPermission(int st) async {
+    final res = await showPlatformDialog<bool>(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: const Text('Hintergrundortung'),
+        content: const Text(
+          'Damit bei Status 1, 3 und 7 auch bei geschlossener App der Standort gesendet wird, '
+              'benötigt die App die „Immer"-Berechtigung.\n\nJetzt anfragen?',
         ),
-      );
+        actions: [
+          PlatformDialogAction(
+            child: const Text('Später'),
+            onPressed: () => Navigator.pop(context, false),
+          ),
+          PlatformDialogAction(
+            child: const Text('Erlauben'),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
 
-      final api = EdpApi.instance;
-      await api.sendStatus(status);
-      await LocationSyncManager.instance.sendOrQueue(
-        lat: pos.latitude,
-        lon: pos.longitude,
-        accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
-        status: status,
-        timestamp: pos.timestamp ?? now,
-      );
+    if (res == true) {
+      final granted = await _requestBackgroundWithRationale();
+      if (granted) {
+        await _setBackgroundTracking(true);
+        _showSnackbar('Hintergrundortung aktiv', success: true);
+      } else {
+        // Permission wurde nicht erteilt - trotzdem Status senden aber ohne Hintergrund-Tracking
+        _showSnackbar('Status $st nur im Vordergrund', success: false);
+      }
+    } else {
+      // User hat "Später" gewählt - Status trotzdem ohne Hintergrund-Tracking senden
+      _showSnackbar('Status $st nur im Vordergrund', success: false);
+    }
 
-      _showSnackbar('Status $status gesendet');
-    } catch (e) {
-      _showSnackbar('Fehler beim Senden: $e', success: false);
+    // Status trotzdem senden (auch ohne Background-Permission)
+    try {
+      await EdpApi.instance.sendStatus(st);
+      await LocationSyncManager.instance.flushPendingNow();
+      setState(() {});
+    } catch (_) {
+      // Wird bereits in _onPersistentStatus behandelt
     }
   }
 
   Future<void> _sendSds(String text) async {
     try {
-      final api = EdpApi.instance;
-      final res = await api.sendSdsText(text);
+      final res = await EdpApi.instance.sendSdsText(text);
       if (res.ok) {
-        _showSnackbar('Nachricht gesendet');
+        _showSnackbar('Nachricht gesendet', success: true);
       } else {
         _showSnackbar('Fehler: ${res.statusCode}', success: false);
       }
@@ -336,349 +430,669 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
   }
 
-  void _showSnackbar(String msg, {bool success = true}) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: success ? Colors.green : Colors.red.shade800,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        margin: EdgeInsets.only(
-          bottom: MediaQuery.of(context).padding.bottom + 80,
-          left: 16,
-          right: 16,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _showInfoDialog({required String title, required String msg}) async {
-    await showPlatformDialog(
-      context: context,
-      builder: (_) => PlatformAlertDialog(
-        title: Text(title),
-        content: Text(msg),
-        actions: [
-          PlatformDialogAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _showPrePermissionInfo({required String title, required String msg}) async {
-    await showPlatformDialog(
-      context: context,
-      builder: (_) => PlatformAlertDialog(
-        title: Text(title),
-        content: Text(msg),
-        actions: [
-          PlatformDialogAction(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Verstanden'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<bool?> _showRationale({
-    required String title,
-    required String msg,
-    required String primary,
-  }) async {
-    return showPlatformDialog<bool>(
-      context: context,
-      builder: (_) => PlatformAlertDialog(
-        title: Text(title),
-        content: Text(msg),
-        actions: [
-          PlatformDialogAction(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Abbrechen'),
-          ),
-          PlatformDialogAction(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(primary),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _confirmLogout(BuildContext ctx) async {
-    final ok = await showPlatformDialog<bool>(
-      context: ctx,
-      builder: (_) => PlatformAlertDialog(
-        title: const Text('Konfiguration löschen?'),
-        content: const Text(
-          'Alle Einstellungen und die Historie werden gelöscht. Dies kann nicht rückgängig gemacht werden.',
-        ),
-        actions: [
-          PlatformDialogAction(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Abbrechen'),
-          ),
-          PlatformDialogAction(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Löschen'),
-            material: (_, __) => MaterialDialogActionData(
-              style: TextButton.styleFrom(foregroundColor: Colors.red),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (ok == true) {
-      await stopBackgroundServiceCompletely();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.clear();
-      await LocationQueue.instance.destroyDb();
-
-      if (ctx.mounted) {
-        Navigator.of(ctx).pushAndRemoveUntil(
-          platformPageRoute(context: ctx, builder: (_) => const ConfigScreen()),
-              (_) => false,
-        );
-      }
-    }
-  }
-
-  String _buildConfigDeepLink() {
-    final qp = <String, String>{
-      'protocol': protocol,
-      'server': server,
-      'port': port,
-      'token': token,
-      'issi': issi,
-      'trupp': trupp,
-      'leiter': leiter,
-    };
-    final uri = Uri(scheme: 'truppapp', host: 'config', queryParameters: qp);
-    return uri.toString();
-  }
-
-  Future<void> _exportAndShareGpx() async {
+  Future<void> _exportGpx() async {
     try {
       final path = await GpxExporter.exportAllFixesToGpx();
-      await Share.shareXFiles([XFile(path)], text: 'Trupp App GPS-Export');
-      _showSnackbar('GPX exportiert');
+      await Share.shareXFiles([XFile(path)], text: 'GPX-Export');
     } catch (e) {
-      _showSnackbar('Export-Fehler: $e', success: false);
+      _showSnackbar('Export fehlgeschlagen: $e', success: false);
     }
   }
 
-  Widget _buildSettingsDrawer(BuildContext context) {
-    final content = SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: ListView(
-          children: [
-            const SizedBox(height: 12),
-            Text(
-              'Einstellungen',
-              style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
-                color: Colors.red.shade800,
-              ),
-            ),
-            const SizedBox(height: 24),
-            _buildInfoTile(
-              icon: Icons.dns,
-              label: 'Server',
-              value: '$protocol://$server:$port',
-            ),
-            const Divider(height: 24),
-            _buildInfoTile(
-              icon: Icons.vpn_key,
-              label: 'Token',
-              value: token.isEmpty ? 'Nicht gesetzt' : token,
-            ),
-            const Divider(height: 24),
-            _buildInfoTile(
-              icon: Icons.badge,
-              label: 'ISSI',
-              value: issi,
-            ),
-            const SizedBox(height: 24),
-            Card(
-              elevation: 0,
-              color: _bgTrackingActive ? Colors.green.shade50 : Colors.grey.shade100,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    Icon(
-                      _bgTrackingActive ? Icons.gps_fixed : Icons.gps_off,
-                      color: _bgTrackingActive ? Colors.green : Colors.grey,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Hintergrund-Tracking',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _bgTrackingActive ? 'Aktiv' : 'Inaktiv',
-                            style: TextStyle(
-                              color: _bgTrackingActive ? Colors.green : Colors.grey,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Bei Status 1, 3 oder 7 wird der Standort automatisch im Hintergrund übertragen.',
-              style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            const Divider(),
-            const SizedBox(height: 16),
-            Text(
-              'Konfiguration teilen',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.red.shade800,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
+  Future<void> _clearQueue() async {
+    final confirm = await showPlatformDialog<bool>(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: const Text('Warteschlange löschen?'),
+        content: const Text('Alle gespeicherten Positionen werden gelöscht.'),
+        actions: [
+          PlatformDialogAction(
+            child: const Text('Abbrechen'),
+            onPressed: () => Navigator.pop(context, false),
+          ),
+          PlatformDialogAction(
+            child: const Text('Löschen'),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await LocationQueue.instance.deleteAll();
+      _showSnackbar('Warteschlange geleert', success: true);
+    }
+  }
+
+  void _showSnackbar(String msg, {bool success = true}) {
+    if (isMaterial(context)) {
+      // Material Design: SnackBar
+      final color = success ? Colors.green : Colors.red;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(msg),
+          backgroundColor: color,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } else {
+      // iOS: Overlay-basierte Toast-Nachricht
+      final overlay = Overlay.of(context);
+      final overlayEntry = OverlayEntry(
+        builder: (context) => Positioned(
+          top: MediaQuery.of(context).padding.top + 8,
+          left: 16,
+          right: 16,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.shade300, width: 2),
+                color: success ? CupertinoColors.systemGreen : CupertinoColors.systemRed,
+                borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
+                    color: Colors.black.withOpacity(0.2),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
                 ],
               ),
-              padding: const EdgeInsets.all(16),
-              child: QrImageView(
-                data: _buildConfigDeepLink(),
-                version: QrVersions.auto,
-                size: 200,
-                backgroundColor: Colors.white,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () async {
-                      await Clipboard.setData(ClipboardData(text: _buildConfigDeepLink()));
-                      _showSnackbar('Link kopiert');
-                    },
-                    icon: const Icon(Icons.copy, size: 18),
-                    label: const Text('Kopieren'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.red.shade800,
-                      side: BorderSide(color: Colors.red.shade200),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Row(
+                children: [
+                  Icon(
+                    success ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.exclamationmark_triangle_fill,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      msg,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: () => Share.share(_buildConfigDeepLink()),
-                    icon: const Icon(Icons.share, size: 18),
-                    label: const Text('Teilen'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade800,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const SizedBox(height: 16),
-            _buildActionButton(
-              label: 'GPX Export',
-              icon: Icons.file_download,
-              onPressed: _exportAndShareGpx,
+          ),
+        ),
+      );
+
+      overlay.insert(overlayEntry);
+
+      // Auto-dismiss nach 2 Sekunden mit Animation
+      Future.delayed(const Duration(seconds: 2), () {
+        overlayEntry.remove();
+      });
+    }
+  }
+
+  void _showInfoDialog({required String title, required String msg}) {
+    showPlatformDialog(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: Text(title),
+        content: Text(msg),
+        actions: [
+          PlatformDialogAction(
+            child: const Text('OK'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showPrePermissionInfo({
+    required String title,
+    required String msg,
+  }) async {
+    await showPlatformDialog(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: Text(title),
+        content: Text(msg),
+        actions: [
+          PlatformDialogAction(
+            child: const Text('Verstanden'),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<bool> _showRationale({
+    required String title,
+    required String msg,
+  }) async {
+    final res = await showPlatformDialog<bool>(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: Text(title),
+        content: Text(msg),
+        actions: [
+          PlatformDialogAction(
+            child: const Text('Abbrechen'),
+            onPressed: () => Navigator.pop(context, false),
+          ),
+          PlatformDialogAction(
+            child: const Text('Weiter'),
+            onPressed: () => Navigator.pop(context, true),
+          ),
+        ],
+      ),
+    );
+    return res ?? false;
+  }
+
+  void _showMenu() {
+    showPlatformModalSheet(
+      context: context,
+      builder: (_) => PlatformWidget(
+        material: (_, __) => Container(
+          padding: const EdgeInsets.all(24),
+          child: _buildMenuContent(),
+        ),
+        cupertino: (_, __) => Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: CupertinoColors.systemBackground,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+          ),
+          child: _buildMenuContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMenuContent() {
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Menü',
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+              color: Colors.red.shade800,
             ),
-            const SizedBox(height: 16),
-            PlatformElevatedButton(
-              child: const Text("Konfiguration zurücksetzen"),
-              onPressed: () => _confirmLogout(context),
-              cupertino: (_, _) => CupertinoElevatedButtonData(color: Colors.red.shade700),
-              material: (_, __) => MaterialElevatedButtonData(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade700,
-                  foregroundColor: Colors.white,
-                  minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+          const SizedBox(height: 20),
+          _buildMenuItem(
+            icon: isMaterial(context) ? Icons.settings : CupertinoIcons.settings,
+            title: 'Konfiguration ändern',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                platformPageRoute(
+                  context: context,
+                  builder: (_) => const ConfigScreen(),
+                ),
+              );
+            },
+          ),
+          _buildMenuItem(
+            icon: isMaterial(context) ? Icons.download : CupertinoIcons.arrow_down_circle,
+            title: 'GPX exportieren',
+            onTap: () {
+              Navigator.pop(context);
+              _exportGpx();
+            },
+          ),
+          _buildMenuItem(
+            icon: isMaterial(context) ? Icons.delete : CupertinoIcons.delete,
+            title: 'Warteschlange löschen',
+            onTap: () {
+              Navigator.pop(context);
+              _clearQueue();
+            },
+          ),
+          if (Platform.isAndroid)
+            _buildMenuItem(
+              icon: Icons.battery_charging_full,
+              title: 'Akkuoptimierung deaktivieren',
+              onTap: () async {
+                Navigator.pop(context);
+                await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMenuItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return PlatformWidget(
+      material: (_, __) => ListTile(
+        leading: Icon(icon, color: Colors.red.shade800),
+        title: Text(title),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+      cupertino: (_, __) => CupertinoButton(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        onPressed: onTap,
+        child: Row(
+          children: [
+            Icon(icon, color: Colors.red.shade800),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 17,
+                  color: CupertinoColors.label,
                 ),
               ),
             ),
-            if (isCupertino(context))
-              Padding(
-                padding: const EdgeInsets.only(top: 12),
-                child: PlatformElevatedButton(
-                  child: const Text("Schließen"),
-                  onPressed: () => Navigator.of(context).pop(),
-                  cupertino: (_, __) => CupertinoElevatedButtonData(
-                    color: Colors.red.shade700,
-                  ),
-                  material: (_, __) => MaterialElevatedButtonData(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade700,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(48),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ),
           ],
         ),
       ),
     );
+  }
+
+  void _showQrCode() {
+    final deeplink =
+        'truppapp://config?protocol=$protocol&server=$server:$port&token=$token&issi=$issi&trupp=$trupp&leiter=$leiter';
 
     if (isMaterial(context)) {
-      return Drawer(backgroundColor: Colors.white, child: content);
+      // Material: Dialog
+      showPlatformDialog(
+        context: context,
+        builder: (_) => PlatformAlertDialog(
+          title: const Text('Konfiguration teilen'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Scanne diesen Code mit einem anderen Gerät:'),
+              const SizedBox(height: 16),
+              QrImageView(
+                data: deeplink,
+                size: 200,
+                backgroundColor: Colors.white,
+              ),
+              const SizedBox(height: 16),
+              PlatformElevatedButton(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: deeplink));
+                  if (mounted) Navigator.pop(context);
+                  _showSnackbar('Link kopiert', success: true);
+                },
+                child: const Text('Link kopieren'),
+                material: (_, __) => MaterialElevatedButtonData(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade800,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            PlatformDialogAction(
+              child: const Text('Schließen'),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      );
+    } else {
+      // iOS: Modal Sheet
+      showPlatformModalSheet(
+        context: context,
+        builder: (_) => Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: CupertinoColors.systemBackground,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Drag Handle
+                Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: CupertinoColors.systemGrey3,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Text(
+                  'Konfiguration teilen',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red.shade800,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Scanne diesen Code mit einem anderen Gerät:',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 15),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: CupertinoColors.systemGrey4),
+                  ),
+                  child: QrImageView(
+                    data: deeplink,
+                    size: 200,
+                    backgroundColor: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton(
+                    color: Colors.red.shade800,
+                    borderRadius: BorderRadius.circular(12),
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: deeplink));
+                      if (mounted) Navigator.pop(context);
+                      _showSnackbar('Link kopiert', success: true);
+                    },
+                    child: const Text('Link kopieren'),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoButton(
+                    borderRadius: BorderRadius.circular(12),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Schließen'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
     }
-    return Material(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      child: SingleChildScrollView(child: content),
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PlatformScaffold(
+      backgroundColor: isMaterial(context) ? Colors.grey[50] : CupertinoColors.systemGroupedBackground,
+      appBar: PlatformAppBar(
+        title: const Text('Status'),
+        material: (_, __) => MaterialAppBarData(
+          backgroundColor: Colors.red.shade800,
+          elevation: 0,
+          centerTitle: true,
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.qr_code),
+              onPressed: _showQrCode,
+              tooltip: 'QR-Code anzeigen',
+            ),
+            IconButton(
+              icon: const Icon(Icons.more_vert),
+              onPressed: _showMenu,
+              tooltip: 'Menü',
+            ),
+          ],
+        ),
+        cupertino: (_, __) => CupertinoNavigationBarData(
+          backgroundColor: Colors.red.shade800,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: _showQrCode,
+                child: const Padding(
+                  padding: EdgeInsets.only(right: 12),
+                  child: Icon(CupertinoIcons.qrcode, color: Colors.white),
+                ),
+              ),
+              GestureDetector(
+                onTap: _showMenu,
+                child: const Icon(CupertinoIcons.ellipsis, color: Colors.white),
+              ),
+            ],
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Column(
+            children: [
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      if (_bgTrackingActive)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                          color: Colors.green.shade700,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                isMaterial(context) ? Icons.location_on : CupertinoIcons.location_fill,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Hintergrundortung aktiv',
+                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 20),
+                      _buildInfoCard(),
+                      const SizedBox(height: 20),
+                      _buildStatusIndicator(),
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 10,
+                      offset: const Offset(0, -2),
+                    ),
+                  ],
+                ),
+                child: Keypad(
+                  onPressed: _onStatusPressed,
+                  selectedStatus: selectedStatus,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildInfoTile({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
+  Widget _buildInfoCard() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: PlatformWidget(
+        material: (_, __) => Card(
+          elevation: 2,
+          shadowColor: Colors.black12,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          child: _buildInfoCardContent(),
+        ),
+        cupertino: (_, __) => Container(
+          decoration: BoxDecoration(
+            color: CupertinoColors.systemBackground,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: _buildInfoCardContent(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoCardContent() {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          _buildInfoRow(
+            icon: isMaterial(context) ? Icons.group : CupertinoIcons.person_2_fill,
+            label: 'Trupp',
+            value: trupp,
+          ),
+          const SizedBox(height: 16),
+          _buildInfoRow(
+            icon: isMaterial(context) ? Icons.person : CupertinoIcons.person_fill,
+            label: 'Ansprechpartner',
+            value: leiter,
+          ),
+          const SizedBox(height: 20),
+          const Divider(),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Icon(
+                isMaterial(context) ? Icons.message : CupertinoIcons.chat_bubble_fill,
+                color: Colors.red.shade800,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Nachricht senden',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: PlatformTextFormField(
+                  controller: _infoCtrl,
+                  hintText: 'Freitext (z. B. Info an ELW)',
+                  material: (_, __) => MaterialTextFormFieldData(
+                    decoration: InputDecoration(
+                      hintText: 'Freitext (z. B. Info an ELW)',
+                      filled: true,
+                      fillColor: Colors.grey.shade50,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.grey.shade300),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide(color: Colors.red.shade800, width: 2),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 14,
+                      ),
+                    ),
+                  ),
+                  cupertino: (_, __) => CupertinoTextFormFieldData(
+                    decoration: BoxDecoration(
+                      color: CupertinoColors.systemGrey6,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: CupertinoColors.systemGrey4),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    placeholder: 'Freitext (z. B. Info an ELW)',
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              PlatformWidget(
+                material: (_, __) => Material(
+                  color: Colors.red.shade800,
+                  borderRadius: BorderRadius.circular(12),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () async {
+                      final s = _infoCtrl.text.trim();
+                      if (s.isEmpty) {
+                        _showSnackbar('Bitte eine Nachricht eingeben.', success: false);
+                        return;
+                      }
+                      await _sendSds(s);
+                      _infoCtrl.clear();
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(14),
+                      child: const Icon(Icons.send, color: Colors.white, size: 24),
+                    ),
+                  ),
+                ),
+                cupertino: (_, __) => CupertinoButton(
+                  padding: const EdgeInsets.all(14),
+                  color: Colors.red.shade800,
+                  borderRadius: BorderRadius.circular(12),
+                  onPressed: () async {
+                    final s = _infoCtrl.text.trim();
+                    if (s.isEmpty) {
+                      _showSnackbar('Bitte eine Nachricht eingeben.', success: false);
+                      return;
+                    }
+                    await _sendSds(s);
+                    _infoCtrl.clear();
+                  },
+                  child: const Icon(CupertinoIcons.paperplane_fill, color: Colors.white, size: 24),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow({required IconData icon, required String label, required String value}) {
     return Row(
       children: [
-        Icon(icon, color: Colors.red.shade800, size: 22),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.red.shade50,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: Colors.red.shade800, size: 24),
+        ),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
@@ -695,10 +1109,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               const SizedBox(height: 2),
               Text(
                 value,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -707,263 +1118,23 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     );
   }
 
-  Widget _buildActionButton({
-    required String label,
-    required IconData icon,
-    required VoidCallback onPressed,
-  }) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 20),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        minimumSize: const Size.fromHeight(48),
-        foregroundColor: Colors.red.shade800,
-        side: BorderSide(color: Colors.red.shade200),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return PlatformScaffold(
-      backgroundColor: Colors.grey[100],
-      appBar: PlatformAppBar(
-        title: const Text("Statusübersicht"),
-        material: (_, __) => MaterialAppBarData(
-          backgroundColor: Colors.red.shade800,
-          centerTitle: true,
-          elevation: 0,
-          actions: [
-            Builder(
-              builder: (context) => IconButton(
-                icon: const Icon(Icons.menu),
-                onPressed: () => Scaffold.of(context).openEndDrawer(),
-              ),
-            ),
-          ],
+  Widget _buildStatusIndicator() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: selectedStatus != null ? Colors.red.shade800 : Colors.grey.shade300,
+          borderRadius: BorderRadius.circular(12),
         ),
-        cupertino: (_, __) => CupertinoNavigationBarData(
-          backgroundColor: Colors.red.shade800,
-          trailing: GestureDetector(
-            child: const Icon(CupertinoIcons.bars, color: Colors.white),
-            onTap: () => showPlatformModalSheet(
-              context: context,
-              builder: (_) => _buildSettingsDrawer(context),
-            ),
+        child: Text(
+          selectedStatus != null ? 'Aktueller Status: $selectedStatus' : 'Kein Status gewählt',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w600,
+            color: selectedStatus != null ? Colors.white : Colors.grey.shade700,
           ),
-        ),
-      ),
-      material: (_, __) => MaterialScaffoldData(endDrawer: _buildSettingsDrawer(context)),
-      body: SafeArea(
-        bottom: true,
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  child: Column(
-                    children: [
-                      Card(
-                        elevation: 2,
-                        shadowColor: Colors.black26,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        color: Colors.white,
-                        child: Padding(
-                          padding: const EdgeInsets.all(20.0),
-                          child: Column(
-                            children: [
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(Icons.group, color: Colors.red.shade800, size: 24),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Trupp',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          trupp,
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade50,
-                                      borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Icon(Icons.person, color: Colors.red.shade800, size: 24),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        const Text(
-                                          'Ansprechpartner',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            color: Colors.grey,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          leiter,
-                                          style: const TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              const Divider(),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  Icon(Icons.message, color: Colors.red.shade800, size: 20),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Nachricht senden',
-                                    style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: TextField(
-                                      controller: _infoCtrl,
-                                      decoration: InputDecoration(
-                                        hintText: 'Freitext (z. B. Info an ELW)',
-                                        filled: true,
-                                        fillColor: Colors.grey.shade50,
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide.none,
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: Colors.grey.shade300),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: Colors.red.shade800, width: 2),
-                                        ),
-                                        contentPadding: const EdgeInsets.symmetric(
-                                          horizontal: 16,
-                                          vertical: 14,
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Material(
-                                    color: Colors.red.shade800,
-                                    borderRadius: BorderRadius.circular(12),
-                                    child: InkWell(
-                                      borderRadius: BorderRadius.circular(12),
-                                      onTap: () async {
-                                        final s = _infoCtrl.text.trim();
-                                        if (s.isEmpty) {
-                                          _showSnackbar('Bitte eine Nachricht eingeben.', success: false);
-                                          return;
-                                        }
-                                        await _sendSds(s);
-                                        _infoCtrl.clear();
-                                      },
-                                      child: Container(
-                                        padding: const EdgeInsets.all(14),
-                                        child: const Icon(Icons.send, color: Colors.white, size: 24),
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 20),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                        decoration: BoxDecoration(
-                          color: selectedStatus != null ? Colors.red.shade800 : Colors.grey.shade300,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          selectedStatus != null
-                              ? 'Aktueller Status: $selectedStatus'
-                              : 'Kein Status gewählt',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: selectedStatus != null ? Colors.white : Colors.grey.shade700,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Container(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
-                      offset: const Offset(0, -2),
-                    ),
-                  ],
-                ),
-                child: Keypad(
-                  onPressed: _onStatusPressed,
-                  selectedStatus: selectedStatus,
-                ),
-              ),
-            ],
-          ),
+          textAlign: TextAlign.center,
         ),
       ),
     );

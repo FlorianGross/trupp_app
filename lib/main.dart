@@ -39,9 +39,11 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         // ➌ Key an die App hängen, damit wir überall navigieren können
         navigatorKey: navigatorKey,
-        material: (_, __) => MaterialAppData(theme: ThemeData.light()),
+        material: (_, __) => MaterialAppData(
+          theme: ThemeData.light(),
+        ),
         cupertino: (_, __) => CupertinoAppData(
-          theme: CupertinoThemeData(brightness: Brightness.light),
+          theme: const CupertinoThemeData(brightness: Brightness.light),
         ),
         initialRoute: '/',
         routes: {
