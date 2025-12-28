@@ -19,6 +19,7 @@ import 'data/edp_api.dart';
 import 'data/gpx_exporter.dart';
 import 'data/location_queue.dart';
 import 'data/location_sync_manager.dart';
+import 'iot_car_helper.dart';
 import 'service.dart';
 
 class StatusOverview extends StatefulWidget {
@@ -28,12 +29,13 @@ class StatusOverview extends StatefulWidget {
   State<StatusOverview> createState() => _StatusOverviewState();
 }
 
-class _StatusOverviewState extends State<StatusOverview> with SingleTickerProviderStateMixin {
+class _StatusOverviewState extends State<StatusOverview> with TickerProviderStateMixin {
   // Config
   String protocol = 'https', server = 'localhost', port = '443', token = '';
   String trupp = 'Unbekannt', leiter = 'Unbekannt', issi = '0000';
 
   static const _kBgPromptShownKey = 'bgPromptShown';
+
 
   // UI/Status
   int? selectedStatus;
@@ -73,6 +75,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       parent: _animationController,
       curve: Curves.easeInOut,
     );
+    IotCarHelper.initialize((status) {
+      // Status wurde im Auto geändert
+      _onPersistentStatus(status, notify: false);
+    });
     _animationController.forward();
     _initialize();
   }
@@ -231,16 +237,22 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Future<void> _setBackgroundTracking(bool enabled) async {
-    final service = FlutterBackgroundService();
-    if (enabled) {
-      if (!await service.isRunning()) {
-        await service.startService();
+    try {
+      final service = FlutterBackgroundService();
+      if (enabled) {
+        if (!await service.isRunning()) {
+          await service.startService();
+        }
+        service.invoke('setTracking', {'enabled': true});
+      } else {
+        service.invoke('setTracking', {'enabled': false});
       }
-      service.invoke('setTracking', {'enabled': true});
-    } else {
-      service.invoke('setTracking', {'enabled': false});
+      setState(() => _bgTrackingActive = enabled);
+    } catch (e) {
+      // Background service error - ignore in non-main isolate
+      print('Background service error (safe to ignore): $e');
+      setState(() => _bgTrackingActive = enabled);
     }
-    setState(() => _bgTrackingActive = enabled);
   }
 
   Future<void> _onStatusPressed(int status) async {
@@ -253,8 +265,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     _tempStatusTimer?.cancel();
     if (_isTempStatus(status)) {
       await _sendStatus(status);
-      if(status == 5)await _sendSds("Sprechwunsch!");
-      if(status == 0)await _sendSds("Dringender Sprechwunsch!");
       setState(() {
         selectedStatus = status;
         _tempStatusTimer = Timer(_tempDurations[status]!, () async {
@@ -274,8 +284,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('lastStatus', status);
 
-    final service = FlutterBackgroundService();
-    service.invoke('statusChanged', {'status': status});
+    try {
+      final service = FlutterBackgroundService();
+      service.invoke('statusChanged', {'status': status});
+    } catch (e) {
+      print('Background service error (safe to ignore): $e');
+    }
 
     final wantsTracking = [1, 3, 7].contains(status);
     if (wantsTracking && !await _hasBackgroundPermission()) {
@@ -316,6 +330,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         timestamp: pos.timestamp ?? now,
       );
 
+      await IotCarHelper.sendStatusToIot(status);
       _showSnackbar('Status $status gesendet');
     } catch (e) {
       _showSnackbar('Fehler beim Senden: $e', success: false);
@@ -471,6 +486,44 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
   }
 
+  Future<void> _clearQueue() async {
+    final ok = await showPlatformDialog<bool>(
+      context: context,
+      builder: (_) => PlatformAlertDialog(
+        title: const Text('Warteschlange löschen?'),
+        content: const Text('Alle gespeicherten Standortdaten werden entfernt.'),
+        actions: [
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
+          PlatformDialogAction(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Löschen'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      await LocationQueue.instance.deleteAll();
+      _showSnackbar('Warteschlange geleert');
+    }
+  }
+
+  Future<void> _flushQueue() async {
+    try {
+      final success = await LocationSyncManager.instance.flushPendingNow(batchSize: 300);
+      if (success) {
+        _showSnackbar('Warteschlange abgearbeitet');
+      } else {
+        _showSnackbar('Einige Einträge konnten nicht gesendet werden', success: false);
+      }
+    } catch (e) {
+      _showSnackbar('Fehler: $e', success: false);
+    }
+  }
+
   Widget _buildSettingsDrawer(BuildContext context) {
     final content = SafeArea(
       child: Padding(
@@ -618,13 +671,14 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
+            const Divider(),
             _buildActionButton(
               label: 'GPX Export',
               icon: Icons.file_download,
               onPressed: _exportAndShareGpx,
             ),
-            const SizedBox(height: 16),
+            const Spacer(),
             PlatformElevatedButton(
               child: const Text("Konfiguration zurücksetzen"),
               onPressed: () => _confirmLogout(context),
@@ -874,7 +928,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                                     child: TextField(
                                       controller: _infoCtrl,
                                       decoration: InputDecoration(
-                                        hintText: 'Freitext (z. B. Info an ELW)',
+                                        hintText: 'Freitext (z. B. Info an Leitstelle)',
                                         filled: true,
                                         fillColor: Colors.grey.shade50,
                                         border: OutlineInputBorder(

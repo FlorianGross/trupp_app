@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<automotiveApp>
+    <!-- Notifications werden in Android Auto angezeigt -->
+    <uses name="notification"/>
+
+    <!-- Optional: Media-Controls (falls du später Audio/Media hinzufügen willst) -->
+    <uses name="media"/>
+</automotiveApp>
