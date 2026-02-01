@@ -13,12 +13,16 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:battery_plus/battery_plus.dart';
+import 'package:trupp_app/system_check_screen.dart';
 import 'ConfigScreen.dart';
 import 'Keypad.dart';
 import 'data/edp_api.dart';
 import 'data/gpx_exporter.dart';
 import 'data/location_queue.dart';
 import 'data/location_sync_manager.dart';
+import 'data/deployment_state.dart';
+import 'data/adaptive_location_settings.dart';
 import 'service.dart';
 
 class StatusOverview extends StatefulWidget {
@@ -39,8 +43,18 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   int? selectedStatus;
   int? _lastPersistentStatus;
   Timer? _tempStatusTimer;
+  Timer? _statsRefreshTimer;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
+  bool _showMessageField = false; // Collapsible message field
+
+  // Deployment & Tracking State
+  DeploymentMode _deploymentMode = DeploymentMode.standby;
+  TrackingMode _trackingMode = TrackingMode.balanced;
+  int _batteryLevel = 100;
+
+  // Stats
+  Map<String, int> _stats = {'pending': 0, 'total': 0};
 
   bool get _trackingDesired =>
       [1, 3, 7].contains(_lastPersistentStatus ?? selectedStatus ?? -1);
@@ -80,6 +94,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   @override
   void dispose() {
     _tempStatusTimer?.cancel();
+    _statsRefreshTimer?.cancel();
     _infoCtrl.dispose();
     _animationController.dispose();
     super.dispose();
@@ -87,6 +102,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _initialize() async {
     await _loadConfig();
+    await _loadDeploymentState();
+    await _updateBatteryLevel();
     await _ensureNotificationPermission();
     await _checkLocationServicesSilently();
 
@@ -98,11 +115,47 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
 
     final last = prefs.getInt('lastStatus') ?? 1;
-    final wantsTracking = [1, 3, 7].contains(last);
-    final canTrack = wantsTracking ? await _hasBackgroundPermission() : false;
+    final shouldTrack = await DeploymentState.shouldTrack(last);
+    final canTrack = shouldTrack ? await _hasBackgroundPermission() : false;
 
-    await _setBackgroundTracking(wantsTracking && canTrack);
+    await _setBackgroundTracking(shouldTrack && canTrack);
     await _onPersistentStatus(last, notify: false);
+
+    // Stats regelmäßig aktualisieren
+    _statsRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
+      _refreshStats();
+    });
+    await _refreshStats();
+  }
+
+  Future<void> _loadDeploymentState() async {
+    _deploymentMode = await DeploymentState.getMode();
+    final status = await _getCurrentStatus();
+    _trackingMode = await AdaptiveLocationSettings.determineMode(
+      deployment: _deploymentMode,
+      currentStatus: status,
+    );
+    setState(() {});
+  }
+
+  Future<int> _getCurrentStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('lastStatus') ?? 1;
+  }
+
+  Future<void> _updateBatteryLevel() async {
+    try {
+      final battery = Battery();
+      _batteryLevel = await battery.batteryLevel;
+      setState(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _refreshStats() async {
+    final stats = await LocationSyncManager.instance.getStats();
+    if (mounted) {
+      setState(() => _stats = stats);
+    }
   }
 
   Future<void> _loadConfig() async {
@@ -323,6 +376,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       } catch (_) {
         _showSnackbar('Status $st gespeichert (offline)', success: false);
       }
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+
+    if (_isTempStatus(st)) {
+      await _onTempStatus(st);
+    } else {
+      await _onPersistentStatus(st);
     }
 
     setState(() {});
@@ -415,6 +475,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     } catch (_) {
       // Wird bereits in _onPersistentStatus behandelt
     }
+
+    await _loadDeploymentState();
+    _showSnackbar(
+      newMode == DeploymentMode.deployed ? 'Einsatz gestartet' : 'Einsatz beendet',
+      success: true,
+    );
   }
 
   Future<void> _sendSds(String text) async {
@@ -918,7 +984,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
+                      blurRadius: 8,
                       offset: const Offset(0, -2),
                     ),
                   ],
@@ -926,10 +992,358 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 child: Keypad(
                   onPressed: _onStatusPressed,
                   selectedStatus: selectedStatus,
+                  lastPersistentStatus: _lastPersistentStatus,
                 ),
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  // Kompakter Status-Bar (kombiniert Deployment + Tracking + Battery)
+  Widget _buildCompactStatusBar() {
+    final isDeployed = _deploymentMode == DeploymentMode.deployed;
+    final baseColor = isDeployed ? Colors.green : Colors.blue;
+
+    return GestureDetector(
+      onTap: _toggleDeploymentMode,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+        decoration: BoxDecoration(
+          color: baseColor.shade700,
+          border: Border(bottom: BorderSide(color: baseColor.shade900, width: 1)),
+        ),
+        child: Row(
+          children: [
+            // Deployment Status
+            Icon(
+              isDeployed ? Icons.emergency : Icons.home,
+              color: Colors.white,
+              size: 18,
+            ),
+            const SizedBox(width: 8),
+            Text(
+              isDeployed ? 'EINSATZ' : 'BEREIT',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                letterSpacing: 0.8,
+              ),
+            ),
+
+            const Spacer(),
+
+            // Tracking Indicator (nur wenn aktiv)
+            if (_bgTrackingActive) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isMaterial(context) ? Icons.gps_fixed : CupertinoIcons.location_fill,
+                      color: Colors.white,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'GPS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+
+            // Battery
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    _getBatteryIcon(),
+                    color: Colors.white,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$_batteryLevel%',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  IconData _getBatteryIcon() {
+    if (_batteryLevel < 15) return Icons.battery_alert;
+    if (_batteryLevel < 30) return Icons.battery_2_bar;
+    if (_batteryLevel < 60) return Icons.battery_4_bar;
+    return Icons.battery_full;
+  }
+
+  // Essentielle Info (nur Trupp, Leiter, aktueller Status, Queue kompakt)
+  Widget _buildEssentialInfo() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            // Trupp & Leiter kompakt
+            Row(
+              children: [
+                Expanded(
+                  child: _buildCompactInfo(
+                    icon: isMaterial(context) ? Icons.group : CupertinoIcons.person_2_fill,
+                    label: trupp,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildCompactInfo(
+                    icon: isMaterial(context) ? Icons.person : CupertinoIcons.person_fill,
+                    label: leiter,
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+
+            // Aktueller Status + Queue in einer Zeile
+            Row(
+              children: [
+                // Aktueller Status
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: selectedStatus != null
+                          ? Colors.red.shade800.withOpacity(0.1)
+                          : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          selectedStatus != null ? 'Status $selectedStatus' : 'Kein Status',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: selectedStatus != null
+                                ? Colors.red.shade800
+                                : Colors.grey.shade600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(width: 12),
+
+                // Queue kompakt
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: _stats['pending']! > 0
+                        ? Colors.orange.shade100
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        isMaterial(context) ? Icons.storage : CupertinoIcons.tray_arrow_up,
+                        size: 16,
+                        color: _stats['pending']! > 0
+                            ? Colors.orange.shade800
+                            : Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${_stats['pending']}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: _stats['pending']! > 0
+                              ? Colors.orange.shade800
+                              : Colors.grey.shade600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactInfo({required IconData icon, required String label}) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 18, color: Colors.red.shade800),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Collapsible Nachrichtenfeld
+  Widget _buildMessageSection() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            // Header zum Ein-/Ausklappen
+            InkWell(
+              onTap: () => setState(() => _showMessageField = !_showMessageField),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Icon(
+                      isMaterial(context) ? Icons.message : CupertinoIcons.chat_bubble_fill,
+                      color: Colors.red.shade800,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Nachricht senden',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    Icon(
+                      _showMessageField
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      color: Colors.grey,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Ausklappbares Nachrichtenfeld
+            if (_showMessageField) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: PlatformTextFormField(
+                        controller: _infoCtrl,
+                        hintText: 'Nachricht eingeben...',
+                        material: (_, __) => MaterialTextFormFieldData(
+                          decoration: InputDecoration(
+                            hintText: 'Nachricht eingeben...',
+                            filled: true,
+                            fillColor: Colors.grey.shade50,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                          ),
+                        ),
+                        cupertino: (_, __) => CupertinoTextFormFieldData(
+                          decoration: BoxDecoration(
+                            color: CupertinoColors.systemGrey6,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                          placeholder: 'Nachricht eingeben...',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Material(
+                      color: Colors.red.shade800,
+                      borderRadius: BorderRadius.circular(10),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () async {
+                          final s = _infoCtrl.text.trim();
+                          if (s.isEmpty) {
+                            _showSnackbar('Bitte Text eingeben', success: false);
+                            return;
+                          }
+                          await _sendSds(s);
+                          _infoCtrl.clear();
+                        },
+                        child: const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Icon(Icons.send, color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ),
       ),
     );

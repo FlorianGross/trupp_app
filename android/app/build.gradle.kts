@@ -4,7 +4,6 @@ import java.io.FileInputStream
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
@@ -35,6 +34,7 @@ android {
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
+
     signingConfigs {
         create("release") {
             keyAlias = keystoreProperties["keyAlias"] as String
@@ -43,6 +43,7 @@ android {
             storePassword = keystoreProperties["storePassword"] as String
         }
     }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("release")
@@ -51,15 +52,18 @@ android {
 }
 
 dependencies {
-    // Dein neues Car-Modul als Library einbinden
-    implementation(project(":car_app"))
+    // Kotlin
+    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
 
-    // Falls du car_app-abhängige Libs auch hier mitziehen willst (optional redundanzfrei möglich):
-    implementation("androidx.car.app:app-projected:1.4.0")
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // Android Automotive OS Car App Library (nur IOT, keine Android Auto)
+    implementation("androidx.car.app:app:1.4.0")
+
+    // AndroidX Core
     implementation("androidx.core:core-ktx:1.13.1")
-}
 
+    // OkHttp für API-Calls
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+}
 
 flutter {
     source = "../.."

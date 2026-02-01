@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:trupp_app/data/edp_api.dart';
 
-// ➊ Globaler NavigatorKey
+// Globaler NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
 
 Future<void> main() async {
@@ -34,10 +34,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DeepLinkHandler(
-      navigatorKey: navigatorKey, // ➋ Key an Handler geben
+      navigatorKey: navigatorKey,
       child: PlatformApp(
         debugShowCheckedModeBanner: false,
-        // ➌ Key an die App hängen, damit wir überall navigieren können
         navigatorKey: navigatorKey,
         material: (_, __) => MaterialAppData(
           theme: ThemeData.light(),
@@ -45,10 +44,8 @@ class MyApp extends StatelessWidget {
         cupertino: (_, __) => CupertinoAppData(
           theme: const CupertinoThemeData(brightness: Brightness.light),
         ),
-        initialRoute: '/',
-        routes: {
-          '/': (context) => hasConfig ? const StatusOverview() : const ConfigScreen(),
-        },
+        // NEU: Home mit TabBar für Status und Alarmierung
+        home: hasConfig ? const MainScreen() : const ConfigScreen(),
       ),
     );
   }
