@@ -38,42 +38,14 @@ class MyApp extends StatelessWidget {
       child: PlatformApp(
         debugShowCheckedModeBanner: false,
         navigatorKey: navigatorKey,
-        material: (_, __) => MaterialAppData(theme: ThemeData.light()),
+        material: (_, __) => MaterialAppData(
+          theme: ThemeData.light(),
+        ),
         cupertino: (_, __) => CupertinoAppData(
-          theme: CupertinoThemeData(brightness: Brightness.light),
+          theme: const CupertinoThemeData(brightness: Brightness.light),
         ),
         // NEU: Home mit TabBar für Status und Alarmierung
         home: hasConfig ? const MainScreen() : const ConfigScreen(),
-      ),
-    );
-  }
-}
-
-// NEU: Haupt-Screen mit Tabs für Status und Alarmierung
-class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
-
-  @override
-  State<MainScreen> createState() => _MainScreenState();
-}
-
-class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
-
-  @override
-  void initState() {
-    super.initState();
-  }
-
-
-  @override
-  Widget build(BuildContext context) {
-    return PlatformScaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: const [
-          StatusOverview()
-        ],
       ),
     );
   }
