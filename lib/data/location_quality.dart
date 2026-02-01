@@ -1,5 +1,4 @@
 // lib/data/location_quality.dart
-import 'dart:math';
 import 'package:geolocator/geolocator.dart';
 
 class LocationQualityFilter {
@@ -34,7 +33,7 @@ class LocationQualityFilter {
     if (_lastSentAt != null && tNow.difference(_lastSentAt!) < minInterval) {
       return false;
     }
-    print("LocationQualityFilter: Passed accuracy and interval checks.");
+    //print("LocationQualityFilter: Passed accuracy and interval checks.");
     if (!forceByHeartbeat && _lastAccepted != null) {
       final d = Geolocator.distanceBetween(
         _lastAccepted!.latitude, _lastAccepted!.longitude,
@@ -42,8 +41,8 @@ class LocationQualityFilter {
       );
       if (d < minDistanceM) return false;
 
-      final fromT = _lastAccepted!.timestamp ?? _lastSentAt ?? tNow;
-      final toT   = p.timestamp ?? tNow;
+      final fromT = _lastAccepted!.timestamp;
+      final toT   = p.timestamp;
       final dt = toT.difference(fromT).inMilliseconds / 1000.0;
       if (dt > 0) {
         final v = d / dt;

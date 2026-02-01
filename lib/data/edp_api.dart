@@ -179,7 +179,7 @@ class EdpApi {
           return EdpResult.ok(r.statusCode, body: r.body);
         }
         return EdpResult.err(r.statusCode, body: r.body);
-      } on TimeoutException catch (e) {
+      } on TimeoutException {
         if (attempt >= retries) {
           return const EdpResult.err(408, body: 'Timeout');
         }

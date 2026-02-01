@@ -126,7 +126,7 @@ class LocationSyncManager {
 
       // Bei Fehler oder Ende des Batches stoppen
       if (hadError || sentIds.length < batch.length) {
-        print('LocationSyncManager: Sent $totalSent positions, stopped ${hadError ? "due to error" : ""}');
+        //print('LocationSyncManager: Sent $totalSent positions, stopped ${hadError ? "due to error" : ""}');
         return !hadError && sentIds.isNotEmpty;
       }
 
@@ -138,7 +138,7 @@ class LocationSyncManager {
       }
     }
 
-    print('LocationSyncManager: Flushed $totalSent positions successfully');
+    //print('LocationSyncManager: Flushed $totalSent positions successfully');
     return totalSent > 0;
   }
 

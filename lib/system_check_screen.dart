@@ -9,7 +9,6 @@ import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:battery_plus/battery_plus.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 
 enum CheckStatus { ok, warning, error, checking }
@@ -493,7 +492,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
       backgroundColor: isMaterial(context) ? Colors.grey[100] : CupertinoColors.systemGroupedBackground,
       appBar: PlatformAppBar(
         title: const Text('System-Check'),
-        material: (_, __) => MaterialAppBarData(
+        material: (_, _) => MaterialAppBarData(
           backgroundColor: allOk ? Colors.green.shade800 : Colors.red.shade800,
           elevation: 0,
           centerTitle: true,
@@ -505,7 +504,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
             ),
           ],
         ),
-        cupertino: (_, __) => CupertinoNavigationBarData(
+        cupertino: (_, _) => CupertinoNavigationBarData(
           backgroundColor: allOk ? Colors.green.shade800 : Colors.red.shade800,
           trailing: GestureDetector(
             onTap: _isChecking ? null : _runAllChecks,
@@ -726,14 +725,14 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
                 child: PlatformElevatedButton(
                   onPressed: check.action,
                   child: Text(check.actionLabel!),
-                  material: (_, __) => MaterialElevatedButtonData(
+                  material: (_, _) => MaterialElevatedButtonData(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: _getStatusColor(check.status),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
                   ),
-                  cupertino: (_, __) => CupertinoElevatedButtonData(
+                  cupertino: (_, _) => CupertinoElevatedButtonData(
                     color: _getStatusColor(check.status),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),

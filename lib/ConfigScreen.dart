@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import 'StatusOverview.dart';
+import 'status_overview_screen.dart';
 import 'data/edp_api.dart';
 
 class ConfigScreen extends StatefulWidget {

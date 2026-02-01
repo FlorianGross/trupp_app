@@ -1,9 +1,9 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:trupp_app/DeepLinkHandler.dart';
+import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
-import 'StatusOverview.dart';
+import 'status_overview_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:trupp_app/data/edp_api.dart';
@@ -44,8 +44,7 @@ class MyApp extends StatelessWidget {
         cupertino: (_, __) => CupertinoAppData(
           theme: const CupertinoThemeData(brightness: Brightness.light),
         ),
-        // NEU: Home mit TabBar für Status und Alarmierung
-        home: hasConfig ? const MainScreen() : const ConfigScreen(),
+        home: hasConfig ? const StatusOverview() : const ConfigScreen(),
       ),
     );
   }

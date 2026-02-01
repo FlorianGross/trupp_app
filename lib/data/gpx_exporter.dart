@@ -83,6 +83,6 @@ class GpxExporter {
     final hh = t.hour.toString().padLeft(2, '0');
     final mm = t.minute.toString().padLeft(2, '0');
     final ss = t.second.toString().padLeft(2, '0');
-    return '${y}${m}${d}_${hh}${mm}${ss}Z';
+    return '$y$m${d}_$hh$mm${ss}Z';
   }
 }

@@ -116,7 +116,7 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
   }
 
   if (!await _hasValidConfig()) {
-    print("No valid config, not sending position.");
+    //print("No valid config, not sending position.");
     return;
   }
 
@@ -126,7 +126,7 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
       lon: pos.longitude,
       accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
       status: _currentStatus,
-      timestamp: pos.timestamp ?? now,
+      timestamp: pos.timestamp,
     );
 
     _quality.markSent(pos, now: now);
@@ -138,7 +138,7 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
       );
     }
   } catch (_) {
-    print("Error sending position, queuing.");
+    //print("Error sending position, queuing.");
   }
 }
 
@@ -187,7 +187,7 @@ Future<void> _updateTrackingMode(ServiceInstance service) async {
 
   if (newMode != _trackingMode) {
     _trackingMode = newMode;
-    print('Tracking mode changed to: $_trackingMode');
+    //print('Tracking mode changed to: $_trackingMode');
 
     // Service neu starten mit neuen Einstellungen
     // (wird durch die nächste Position oder Heartbeat wirksam)
