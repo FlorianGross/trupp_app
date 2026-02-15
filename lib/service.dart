@@ -145,22 +145,33 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
   }
 }
 
+int _lastPendingCount = 0;
+
+Future<String> _getNotificationContentAsync({bool isWaiting = false}) async {
+  try {
+    _lastPendingCount = await LocationSyncManager.instance.getStats()
+        .then((s) => s['pending'] ?? 0);
+  } catch (_) {}
+  return _getNotificationContent(isWaiting: isWaiting);
+}
+
 String _getNotificationContent({bool isWaiting = false}) {
   final modeText = _deploymentMode == DeploymentMode.deployed
       ? 'Im Einsatz'
       : (_deploymentMode == DeploymentMode.returning ? 'Rückweg' : 'Bereitschaft');
 
   final trackingText = AdaptiveLocationSettings.getModeDescription(_trackingMode);
+  final pendingText = _lastPendingCount > 0 ? ' | $_lastPendingCount ausstehend' : '';
 
   if (isWaiting) {
-    return '$modeText (Status $_currentStatus) - Warte auf GPS…';
+    return '$modeText (Status $_currentStatus) - Warte auf GPS…$pendingText';
   }
 
   if (SmartHeartbeat.isStationary) {
-    return '$modeText (Status $_currentStatus) - Stillstand - $trackingText';
+    return '$modeText (Status $_currentStatus) - Stillstand - $trackingText$pendingText';
   }
 
-  return '$modeText (Status $_currentStatus) - $trackingText';
+  return '$modeText (Status $_currentStatus) - $trackingText$pendingText';
 }
 
 Future<void> _heartbeatTick(ServiceInstance service) async {
@@ -225,12 +236,19 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
 }
 
 /// Periodischer Flush: alle 3 Minuten ausstehende Positionen an den Server senden
-void _schedulePeriodicFlush() {
+void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer?.cancel();
   _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
     try {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 100);
     } catch (_) {}
+    // Notification aktualisieren mit aktuellem Pending-Count
+    if (service is AndroidServiceInstance) {
+      await service.setForegroundNotificationInfo(
+        title: 'Trupp App',
+        content: await _getNotificationContentAsync(),
+      );
+    }
   });
 }
 
@@ -361,7 +379,7 @@ Future<void> onStart(ServiceInstance service) async {
 
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
-    _schedulePeriodicFlush();
+    _schedulePeriodicFlush(service);
     _startConnectivityListener();
   }
 

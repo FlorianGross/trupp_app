@@ -31,7 +31,7 @@ class StatusOverview extends StatefulWidget {
   State<StatusOverview> createState() => _StatusOverviewState();
 }
 
-class _StatusOverviewState extends State<StatusOverview> with SingleTickerProviderStateMixin {
+class _StatusOverviewState extends State<StatusOverview> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Config
   String protocol = 'https', server = 'localhost', port = '443', token = '';
   String trupp = 'Unbekannt', leiter = 'Unbekannt', issi = '0000';
@@ -78,6 +78,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _animationController = AnimationController(
       duration: const Duration(milliseconds: 300),
       vsync: this,
@@ -92,11 +93,53 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _tempStatusTimer?.cancel();
     _statsRefreshTimer?.cancel();
     _infoCtrl.dispose();
     _animationController.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _onAppResumed();
+    }
+  }
+
+  /// Wird aufgerufen wenn die App wieder in den Vordergrund kommt.
+  /// Flusht die Queue sofort und aktualisiert den GPS-Tracking-Modus.
+  Future<void> _onAppResumed() async {
+    // Queue sofort flushen (Daten die im Hintergrund aufgelaufen sind)
+    try {
+      await LocationSyncManager.instance.flushPendingNow(batchSize: 200);
+    } catch (_) {}
+
+    // Tracking-Modus aktualisieren (falls sich Akku/Status geändert hat)
+    await _loadDeploymentState();
+    await _updateBatteryLevel();
+    await _refreshStats();
+
+    // Sicherstellen dass Tracking aktiv ist
+    final canTrack = await _hasBackgroundPermission();
+    if (canTrack) {
+      await _setBackgroundTracking(true);
+    }
+
+    // Periodisches DB-Cleanup (einmal pro App-Resume, max alle 24h)
+    await _maybeCleanupDatabase();
+  }
+
+  Future<void> _maybeCleanupDatabase() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lastCleanup = prefs.getInt('lastDbCleanupMs') ?? 0;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    const cleanupInterval = Duration(hours: 24);
+    if ((now - lastCleanup) >= cleanupInterval.inMilliseconds) {
+      await LocationSyncManager.instance.cleanupOldEntries(maxAgeDays: 30);
+      await prefs.setInt('lastDbCleanupMs', now);
+    }
   }
 
   Future<void> _initialize() async {
