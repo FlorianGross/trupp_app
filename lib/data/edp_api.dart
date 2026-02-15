@@ -122,7 +122,7 @@ class EdpApi {
     this._config, {
     http.Client? client,
     this.timeout = const Duration(seconds: 8),
-    this.retries = 0,
+    this.retries = 3,
   }) : _client = client ?? http.Client();
 
   /// Initialisiert das Singleton aus SharedPreferences, falls möglich.
@@ -178,18 +178,26 @@ class EdpApi {
         if (r.statusCode >= 200 && r.statusCode < 300) {
           return EdpResult.ok(r.statusCode, body: r.body);
         }
+        // Bei Server-Fehler (5xx) Retry, bei Client-Fehler (4xx) sofort abbrechen
+        if (r.statusCode >= 500 && attempt < retries) {
+          attempt++;
+          await Future.delayed(Duration(seconds: 1 << attempt)); // 2s, 4s, 8s
+          continue;
+        }
         return EdpResult.err(r.statusCode, body: r.body);
       } on TimeoutException {
         if (attempt >= retries) {
           return const EdpResult.err(408, body: 'Timeout');
         }
         attempt++;
+        await Future.delayed(Duration(seconds: 1 << attempt));
       } catch (e) {
-        // Netzwerkfehler etc.
+        // Netzwerkfehler: Retry mit exponentiellem Backoff
         if (attempt >= retries) {
           return EdpResult.err(-1, error: e);
         }
         attempt++;
+        await Future.delayed(Duration(seconds: 1 << attempt));
       }
     }
   }

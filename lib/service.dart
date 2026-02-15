@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'data/edp_api.dart';
 import 'data/location_quality.dart';
@@ -74,6 +75,7 @@ final _quality = LocationQualityFilter(
 Timer? _hbTimer;
 Timer? _modeCheckTimer;
 Timer? _flushTimer;
+StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
 Future<int> _readStatusFromPrefs() async {
   final prefs = await SharedPreferences.getInstance();
@@ -143,22 +145,33 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
   }
 }
 
+int _lastPendingCount = 0;
+
+Future<String> _getNotificationContentAsync({bool isWaiting = false}) async {
+  try {
+    _lastPendingCount = await LocationSyncManager.instance.getStats()
+        .then((s) => s['pending'] ?? 0);
+  } catch (_) {}
+  return _getNotificationContent(isWaiting: isWaiting);
+}
+
 String _getNotificationContent({bool isWaiting = false}) {
   final modeText = _deploymentMode == DeploymentMode.deployed
       ? 'Im Einsatz'
       : (_deploymentMode == DeploymentMode.returning ? 'Rückweg' : 'Bereitschaft');
 
   final trackingText = AdaptiveLocationSettings.getModeDescription(_trackingMode);
+  final pendingText = _lastPendingCount > 0 ? ' | $_lastPendingCount ausstehend' : '';
 
   if (isWaiting) {
-    return '$modeText (Status $_currentStatus) - Warte auf GPS…';
+    return '$modeText (Status $_currentStatus) - Warte auf GPS…$pendingText';
   }
 
   if (SmartHeartbeat.isStationary) {
-    return '$modeText (Status $_currentStatus) - Stillstand - $trackingText';
+    return '$modeText (Status $_currentStatus) - Stillstand - $trackingText$pendingText';
   }
 
-  return '$modeText (Status $_currentStatus) - $trackingText';
+  return '$modeText (Status $_currentStatus) - $trackingText$pendingText';
 }
 
 Future<void> _heartbeatTick(ServiceInstance service) async {
@@ -180,6 +193,10 @@ void _scheduleNextHeartbeat(ServiceInstance service) {
   });
 }
 
+/// Callback wird von onStart gesetzt, damit _updateTrackingMode den Stream
+/// bei Moduswechsel neu starten kann.
+Future<void> Function()? _restartStreamCallback;
+
 Future<void> _updateTrackingMode(ServiceInstance service) async {
   final newMode = await AdaptiveLocationSettings.determineMode(
     deployment: _deploymentMode,
@@ -188,10 +205,18 @@ Future<void> _updateTrackingMode(ServiceInstance service) async {
 
   if (newMode != _trackingMode) {
     _trackingMode = newMode;
-    //print('Tracking mode changed to: $_trackingMode');
 
-    // Service neu starten mit neuen Einstellungen
-    // (wird durch die nächste Position oder Heartbeat wirksam)
+    // GPS-Stream mit neuen Einstellungen neu starten
+    if (_restartStreamCallback != null) {
+      await _restartStreamCallback!();
+    }
+
+    if (service is AndroidServiceInstance) {
+      await service.setForegroundNotificationInfo(
+        title: 'Trupp App',
+        content: _getNotificationContent(),
+      );
+    }
   }
 }
 
@@ -211,12 +236,36 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
 }
 
 /// Periodischer Flush: alle 3 Minuten ausstehende Positionen an den Server senden
-void _schedulePeriodicFlush() {
+void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer?.cancel();
   _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
     try {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 100);
     } catch (_) {}
+    // Notification aktualisieren mit aktuellem Pending-Count
+    if (service is AndroidServiceInstance) {
+      await service.setForegroundNotificationInfo(
+        title: 'Trupp App',
+        content: await _getNotificationContentAsync(),
+      );
+    }
+  });
+}
+
+/// Connectivity-Listener: Bei Netzwerk-Wiederherstellung sofort Queue flushen
+void _startConnectivityListener() {
+  _connectivitySub?.cancel();
+  _connectivitySub = Connectivity().onConnectivityChanged.listen((results) async {
+    final hasConnection = results.any((r) =>
+        r == ConnectivityResult.wifi ||
+        r == ConnectivityResult.mobile ||
+        r == ConnectivityResult.ethernet);
+    if (hasConnection) {
+      // Netzwerk ist (wieder) da → sofort ausstehende Positionen senden
+      try {
+        await LocationSyncManager.instance.flushPendingNow(batchSize: 200);
+      } catch (_) {}
+    }
   });
 }
 
@@ -281,6 +330,24 @@ Future<void> onStart(ServiceInstance service) async {
   StreamSubscription<Position>? sub;
   bool trackingEnabled = false;
 
+  /// Startet den GPS-Stream mit aktuellen Einstellungen neu
+  Future<void> _restartStream() async {
+    await sub?.cancel();
+    sub = null;
+
+    if (!await _hasValidConfig()) return;
+
+    final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
+    sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (pos) async => _sendPositionIfOk(service, pos),
+      onError: (_) {},
+      cancelOnError: false,
+    );
+  }
+
+  // Callback registrieren, damit _updateTrackingMode den Stream neu starten kann
+  _restartStreamCallback = _restartStream;
+
   /// Startet oder aktualisiert den GPS-Stream mit aktuellen Einstellungen
   Future<void> startTracking() async {
     if (!await _hasValidConfig()) {
@@ -296,8 +363,6 @@ Future<void> onStart(ServiceInstance service) async {
     await _ensureFullAccuracyIfPossible();
     await _updateTrackingMode(service);
 
-    final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
-
     // Stream neu starten falls bereits aktiv (Mode-Wechsel)
     if (trackingEnabled) {
       await sub?.cancel();
@@ -305,6 +370,7 @@ Future<void> onStart(ServiceInstance service) async {
     }
     trackingEnabled = true;
 
+    final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
     sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
           (pos) async => _sendPositionIfOk(service, pos),
       onError: (_) {},
@@ -313,7 +379,8 @@ Future<void> onStart(ServiceInstance service) async {
 
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
-    _schedulePeriodicFlush();
+    _schedulePeriodicFlush(service);
+    _startConnectivityListener();
   }
 
   /// Wechselt in den Energiesparmodus statt komplett zu stoppen.
@@ -356,6 +423,9 @@ Future<void> onStart(ServiceInstance service) async {
 
     _flushTimer?.cancel();
     _flushTimer = null;
+
+    _connectivitySub?.cancel();
+    _connectivitySub = null;
 
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(

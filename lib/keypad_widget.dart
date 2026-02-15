@@ -129,13 +129,15 @@ class Keypad extends StatelessWidget {
 
     final normalStatuses = [1, 2, 3, 4, 5, 6, 7, 8, 9];
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       padding: EdgeInsets.fromLTRB(16, isSmallScreen ? 12 : 16, 16, 16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isDark ? Theme.of(context).colorScheme.surface : Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
             blurRadius: 8,
             offset: const Offset(0, -2),
           ),
