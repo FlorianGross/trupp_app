@@ -108,8 +108,9 @@ class _MapScreenState extends State<MapScreen> {
               TileLayer(
                 urlTemplate: isDark
                     ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-                    : 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 subdomains: isDark ? const ['a', 'b', 'c', 'd'] : const ['a', 'b', 'c'],
+                userAgentPackageName: 'de.floriang.trupp_app',
               ),
               // Track-Linie
               if (_trackPoints.length >= 2)
