@@ -73,6 +73,7 @@ final _quality = LocationQualityFilter(
 
 Timer? _hbTimer;
 Timer? _modeCheckTimer;
+Timer? _flushTimer;
 
 Future<int> _readStatusFromPrefs() async {
   final prefs = await SharedPreferences.getInstance();
@@ -199,12 +200,23 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
   _modeCheckTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
     await _updateTrackingMode(service);
 
-    // Auto-Stop prüfen
+    // Auto-Stop nur Deployment-Modus zurücksetzen, Tracking bleibt aktiv
     if (await DeploymentState.shouldAutoStop(inactiveMinutes: 180)) {
       await DeploymentState.setMode(DeploymentMode.standby);
       _deploymentMode = DeploymentMode.standby;
-      service.invoke('setTracking', {'enabled': false});
+      await _updateTrackingMode(service);
+      // Tracking bleibt aktiv im Power-Saver-Modus
     }
+  });
+}
+
+/// Periodischer Flush: alle 3 Minuten ausstehende Positionen an den Server senden
+void _schedulePeriodicFlush() {
+  _flushTimer?.cancel();
+  _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
+    try {
+      await LocationSyncManager.instance.flushPendingNow(batchSize: 100);
+    } catch (_) {}
   });
 }
 
@@ -269,10 +281,8 @@ Future<void> onStart(ServiceInstance service) async {
   StreamSubscription<Position>? sub;
   bool trackingEnabled = false;
 
+  /// Startet oder aktualisiert den GPS-Stream mit aktuellen Einstellungen
   Future<void> startTracking() async {
-    if (trackingEnabled) return;
-    trackingEnabled = true;
-
     if (!await _hasValidConfig()) {
       if (service is AndroidServiceInstance) {
         await service.setForegroundNotificationInfo(
@@ -280,7 +290,6 @@ Future<void> onStart(ServiceInstance service) async {
           content: 'Keine gültige Konfiguration',
         );
       }
-      trackingEnabled = false;
       return;
     }
 
@@ -288,6 +297,13 @@ Future<void> onStart(ServiceInstance service) async {
     await _updateTrackingMode(service);
 
     final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
+
+    // Stream neu starten falls bereits aktiv (Mode-Wechsel)
+    if (trackingEnabled) {
+      await sub?.cancel();
+      sub = null;
+    }
+    trackingEnabled = true;
 
     sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
           (pos) async => _sendPositionIfOk(service, pos),
@@ -297,6 +313,32 @@ Future<void> onStart(ServiceInstance service) async {
 
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
+    _schedulePeriodicFlush();
+  }
+
+  /// Wechselt in den Energiesparmodus statt komplett zu stoppen.
+  /// GPS bleibt aktiv mit reduzierter Frequenz.
+  Future<void> switchToPowerSaver() async {
+    _trackingMode = TrackingMode.powerSaver;
+    // Stream mit neuen (sparsamen) Einstellungen neu starten
+    await sub?.cancel();
+    sub = null;
+
+    if (!await _hasValidConfig()) return;
+
+    final locationSettings = AdaptiveLocationSettings.buildSettings(TrackingMode.powerSaver);
+    sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
+          (pos) async => _sendPositionIfOk(service, pos),
+      onError: (_) {},
+      cancelOnError: false,
+    );
+
+    if (service is AndroidServiceInstance) {
+      await service.setForegroundNotificationInfo(
+        title: 'Trupp App',
+        content: 'Hintergrund-Tracking (Status $_currentStatus) - Energiesparmodus',
+      );
+    }
   }
 
   Future<void> stopTracking() async {
@@ -312,6 +354,9 @@ Future<void> onStart(ServiceInstance service) async {
     _modeCheckTimer?.cancel();
     _modeCheckTimer = null;
 
+    _flushTimer?.cancel();
+    _flushTimer = null;
+
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
         title: 'Trupp App',
@@ -322,11 +367,12 @@ Future<void> onStart(ServiceInstance service) async {
 
   service.on('setTracking').listen((event) async {
     final enabled = event?['enabled'] == true;
-    // Nur Flanke behandeln
-    if (enabled && !trackingEnabled) {
+    if (enabled) {
       await startTracking();
-    } else if (!enabled && trackingEnabled) {
-      await stopTracking();
+    } else {
+      // Statt komplett stoppen: auf Power-Saver wechseln
+      // Damit wird auch im Hintergrund weiter getrackt
+      await switchToPowerSaver();
     }
   });
 
@@ -336,7 +382,7 @@ Future<void> onStart(ServiceInstance service) async {
   });
 }
 
-const _flushInterval = Duration(minutes: 15);
+const _flushInterval = Duration(minutes: 5);
 
 Future<bool> _shouldFlushNow() async {
   final prefs = await SharedPreferences.getInstance();
@@ -372,19 +418,19 @@ Future<bool> onIosBackground(ServiceInstance service) async {
       locationSettings: AdaptiveLocationSettings.buildSettings(_trackingMode),
     );
 
-    // 2) Qualität grob prüfen & QUEUEN (nicht live senden)
+    // 2) Qualität prüfen & direkt senden (nicht nur queuen)
     if (_quality.isGood(pos, now: DateTime.now(), forceByHeartbeat: true)) {
-      await LocationSyncManager.instance.queueOnly(
+      await LocationSyncManager.instance.sendOrQueue(
         lat: pos.latitude,
         lon: pos.longitude,
         accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
         status: _currentStatus,
-        timestamp: DateTime.now(),
+        timestamp: pos.timestamp,
       );
       _quality.markSent(pos, now: DateTime.now());
     }
 
-    // 3) Alle 15 Min: komplette Queue flushen
+    // 3) Alle 5 Min: komplette Queue flushen (Standort-Historie übertragen)
     if (await _shouldFlushNow()) {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 300);
       await _markFlushedNow();

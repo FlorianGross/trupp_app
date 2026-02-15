@@ -9,7 +9,10 @@
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>NSLocationTemporaryUsageDescriptionDictionary</key>
-	<string>Wir benötigen deinen Standort, um Positionsdaten an die Einsatzleitung zu senden.</string>
+	<dict>
+		<key>PreciseTracking</key>
+		<string>Wir benötigen deinen genauen Standort, um Positionsdaten an die Einsatzleitung zu senden.</string>
+	</dict>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
@@ -61,6 +64,7 @@
 	<array>
 	    <string>fetch</string>
 		<string>location</string>
+		<string>processing</string>
 	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

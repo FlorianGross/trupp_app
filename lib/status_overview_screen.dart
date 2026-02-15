@@ -55,8 +55,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Stats
   Map<String, int> _stats = {'pending': 0, 'total': 0};
 
-  bool get _trackingDesired =>
-      [1, 3, 7].contains(_lastPersistentStatus ?? selectedStatus ?? -1);
+  // Tracking ist immer gewünscht, sobald konfiguriert
+  bool get _trackingDesired => true;
 
   // Hintergrund-Tracking-Indikator
   bool _bgTrackingActive = false;
@@ -113,11 +113,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       await prefs.setBool('onboarded', true);
     }
 
-    final last = prefs.getInt('lastStatus') ?? 1;
-    final shouldTrack = await DeploymentState.shouldTrack(last);
-    final canTrack = shouldTrack ? await _hasBackgroundPermission() : false;
+    // Hintergrund-Berechtigung sicherstellen
+    final hasBgPerm = await _hasBackgroundPermission();
+    if (!hasBgPerm) {
+      await _requestBackgroundWithRationale();
+    }
 
-    await _setBackgroundTracking(shouldTrack && canTrack);
+    // Batterie-Optimierung deaktivieren für dauerhaftes Hintergrund-Tracking
+    await _requestDisableBatteryOptimization();
+
+    final last = prefs.getInt('lastStatus') ?? 1;
+
+    // Tracking immer starten (mit adaptiver Frequenz)
+    final canTrack = await _hasBackgroundPermission();
+    await _setBackgroundTracking(canTrack);
     await _onPersistentStatus(last, notify: false);
 
     // Stats regelmäßig aktualisieren
@@ -125,6 +134,18 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       _refreshStats();
     });
     await _refreshStats();
+  }
+
+  Future<void> _requestDisableBatteryOptimization() async {
+    if (Platform.isAndroid) {
+      try {
+        final isBatteryOptDisabled =
+            await DisableBatteryOptimization.isBatteryOptimizationDisabled;
+        if (isBatteryOptDisabled != true) {
+          await DisableBatteryOptimization.showDisableBatteryOptimizationSettings();
+        }
+      } catch (_) {}
+    }
   }
 
   Future<void> _loadDeploymentState() async {
@@ -348,13 +369,14 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       svc.invoke('statusChanged', {'status': st});
     }
 
-    final shouldTrack = await DeploymentState.shouldTrack(st);
-    if (shouldTrack && !await _hasBackgroundPermission()) {
+    // Tracking bleibt immer aktiv - nur Modus wird angepasst
+    if (!await _hasBackgroundPermission()) {
       await _offerBackgroundPermission(st);
       return;
     }
 
-    await _setBackgroundTracking(shouldTrack);
+    // Service sicherstellen und Tracking-Modus aktualisieren
+    await _setBackgroundTracking(true);
 
     if (notify) {
       try {
