@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
@@ -21,6 +22,14 @@ Future<void> main() async {
   // EDP-Client bereitstellen (falls möglich)
   if (hasConfig) {
     await EdpApi.initFromPrefs();
+
+    // Hintergrund-Service automatisch starten, damit Standort
+    // auch nach App-Neustart sofort im Hintergrund übertragen wird
+    final svc = FlutterBackgroundService();
+    if (!await svc.isRunning()) {
+      await svc.startService();
+      svc.invoke('setTracking', {'enabled': true});
+    }
   }
 
   runApp(MyApp(hasConfig: hasConfig));

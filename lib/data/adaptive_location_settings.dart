@@ -15,7 +15,8 @@ enum TrackingMode {
 class AdaptiveLocationSettings {
   static final _battery = Battery();
 
-  /// Bestimmt den optimalen Tracking-Modus
+  /// Bestimmt den optimalen Tracking-Modus.
+  /// Tracking läuft immer – im Hintergrund/Standby mit powerSaver.
   static Future<TrackingMode> determineMode({
     required DeploymentMode deployment,
     required int currentStatus,
@@ -37,12 +38,14 @@ class AdaptiveLocationSettings {
       return TrackingMode.balanced;
     }
 
-    // Bereitschaft (Status 1 = Einsatzbereit)
-    if (deployment == DeploymentMode.standby && currentStatus == 1) {
-      return TrackingMode.powerSaver;
+    // Einsatz mit Einsatzbereit-Status
+    if (deployment == DeploymentMode.deployed && currentStatus == 1) {
+      return TrackingMode.balanced;
     }
 
-    return TrackingMode.balanced;
+    // Alle anderen Fälle: Power Saver (Standby, inaktive Status)
+    // Damit wird auch im Hintergrund weiter getrackt, nur seltener
+    return TrackingMode.powerSaver;
   }
 
   /// Erstellt LocationSettings basierend auf Tracking-Modus

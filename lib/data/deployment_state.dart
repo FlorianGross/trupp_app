@@ -70,25 +70,14 @@ class DeploymentState {
     return elapsed ~/ (60 * 1000);
   }
 
-  /// Bestimmt ob GPS-Tracking aktiv sein soll basierend auf Modus und Status
+  /// Bestimmt ob GPS-Tracking aktiv sein soll.
+  /// Tracking ist immer aktiv (mit adaptiver Frequenz), damit der Standort
+  /// auch im Hintergrund dauerhaft übertragen wird.
   static Future<bool> shouldTrack(int currentStatus) async {
-    final mode = await getMode();
-
-    // Im Standby nur bei Status 1 (Einsatzbereit)
-    if (mode == DeploymentMode.standby) {
-      return currentStatus == 1;
-    }
-
-    // Im Einsatz bei Status 1, 3, 7
-    if (mode == DeploymentMode.deployed) {
-      return [1, 3, 7].contains(currentStatus);
-    }
-
-    // Rückweg: nur bei Status 7 (Transport)
-    if (mode == DeploymentMode.returning) {
-      return currentStatus == 7;
-    }
-
-    return false;
+    // Immer tracken – Frequenz wird über AdaptiveLocationSettings gesteuert
+    return true;
   }
+
+  /// Prüft ob der aktuelle Status ein "aktiver Einsatz"-Status ist (hohe Frequenz)
+  static bool isActiveStatus(int status) => [1, 3, 7].contains(status);
 }
