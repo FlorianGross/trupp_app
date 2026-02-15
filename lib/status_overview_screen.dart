@@ -23,6 +23,10 @@ import 'data/location_queue.dart';
 import 'data/location_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
+import 'main.dart' show themeNotifier, toggleTheme;
+import 'map_screen.dart';
+
+enum _ConnectionState { unknown, connected, degraded, disconnected }
 
 class StatusOverview extends StatefulWidget {
   const StatusOverview({super.key});
@@ -54,6 +58,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   // Stats
   Map<String, int> _stats = {'pending': 0, 'total': 0};
+
+  // Verbindungsstatus
+  _ConnectionState _connectionState = _ConnectionState.unknown;
+  Timer? _connectionCheckTimer;
 
   // Tracking ist immer gewünscht, sobald konfiguriert
   bool get _trackingDesired => true;
@@ -96,6 +104,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     WidgetsBinding.instance.removeObserver(this);
     _tempStatusTimer?.cancel();
     _statsRefreshTimer?.cancel();
+    _connectionCheckTimer?.cancel();
     _infoCtrl.dispose();
     _animationController.dispose();
     super.dispose();
@@ -172,11 +181,33 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     await _setBackgroundTracking(canTrack);
     await _onPersistentStatus(last, notify: false);
 
-    // Stats regelmäßig aktualisieren
+    // Stats und Verbindungsstatus regelmäßig aktualisieren
     _statsRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _refreshStats();
     });
+    _connectionCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _checkConnection();
+    });
     await _refreshStats();
+    await _checkConnection();
+  }
+
+  Future<void> _checkConnection() async {
+    try {
+      final result = await EdpApi.instance.probe();
+      final pending = _stats['pending'] ?? 0;
+      if (!mounted) return;
+      setState(() {
+        if (result.ok) {
+          _connectionState = pending > 0 ? _ConnectionState.degraded : _ConnectionState.connected;
+        } else {
+          _connectionState = _ConnectionState.disconnected;
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _connectionState = _ConnectionState.disconnected);
+    }
   }
 
   Future<void> _requestDisableBatteryOptimization() async {
@@ -766,13 +797,16 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       builder: (_) => PlatformWidget(
         material: (_, _) => Container(
           padding: const EdgeInsets.all(20),
+          color: _isDark ? Theme.of(context).colorScheme.surface : null,
           child: _buildMenuContent(),
         ),
         cupertino: (_, _) => Container(
           padding: const EdgeInsets.all(20),
-          decoration: const BoxDecoration(
-            color: CupertinoColors.systemBackground,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+          decoration: BoxDecoration(
+            color: _isDark
+                ? CupertinoColors.darkBackgroundGray
+                : CupertinoColors.systemBackground,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
           ),
           child: _buildMenuContent(),
         ),
@@ -823,11 +857,35 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             },
           ),
           _buildMenuItem(
+            icon: isMaterial(context) ? Icons.map : CupertinoIcons.map_fill,
+            title: 'Live-Karte',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                platformPageRoute(
+                  context: context,
+                  builder: (_) => const MapScreen(),
+                ),
+              );
+            },
+          ),
+          _buildMenuItem(
             icon: isMaterial(context) ? Icons.download : CupertinoIcons.arrow_down_circle,
             title: 'GPX Export',
             onTap: () {
               Navigator.pop(context);
               _exportGpx();
+            },
+          ),
+          _buildMenuItem(
+            icon: themeNotifier.value == ThemeMode.dark
+                ? (isMaterial(context) ? Icons.light_mode : CupertinoIcons.sun_max_fill)
+                : (isMaterial(context) ? Icons.dark_mode : CupertinoIcons.moon_fill),
+            title: themeNotifier.value == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
+            onTap: () {
+              Navigator.pop(context);
+              toggleTheme();
             },
           ),
         ],
@@ -934,14 +992,21 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     );
   }
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+
   @override
   Widget build(BuildContext context) {
+    final scaffoldBg = _isDark
+        ? Theme.of(context).scaffoldBackgroundColor
+        : (isMaterial(context) ? Colors.grey[100] : CupertinoColors.systemGroupedBackground);
+    final appBarBg = _isDark ? Colors.red.shade900 : Colors.red.shade800;
+
     return PlatformScaffold(
-      backgroundColor: isMaterial(context) ? Colors.grey[100] : CupertinoColors.systemGroupedBackground,
+      backgroundColor: scaffoldBg,
       appBar: PlatformAppBar(
         title: const Text('Status'),
         material: (_, _) => MaterialAppBarData(
-          backgroundColor: Colors.red.shade800,
+          backgroundColor: appBarBg,
           elevation: 0,
           centerTitle: true,
           actions: [
@@ -956,7 +1021,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           ],
         ),
         cupertino: (_, _) => CupertinoNavigationBarData(
-          backgroundColor: Colors.red.shade800,
+          backgroundColor: appBarBg,
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -995,10 +1060,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               ),
               Container(
                 decoration: BoxDecoration(
-                  color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
+                  color: _isDark
+                      ? Theme.of(context).colorScheme.surface
+                      : (isMaterial(context) ? Colors.white : CupertinoColors.systemBackground),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
+                      color: Colors.black.withOpacity(_isDark ? 0.2 : 0.05),
                       blurRadius: 8,
                       offset: const Offset(0, -2),
                     ),
@@ -1050,6 +1117,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             ),
 
             const Spacer(),
+
+            // Verbindungsstatus-Indikator
+            _buildConnectionDot(),
+            const SizedBox(width: 8),
 
             // Tracking Indicator (nur wenn aktiv)
             if (_bgTrackingActive) ...[
@@ -1122,14 +1193,60 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     return Icons.battery_full;
   }
 
+  Widget _buildConnectionDot() {
+    Color dotColor;
+    String tooltip;
+    switch (_connectionState) {
+      case _ConnectionState.connected:
+        dotColor = Colors.greenAccent;
+        tooltip = 'Verbunden';
+        break;
+      case _ConnectionState.degraded:
+        dotColor = Colors.orangeAccent;
+        tooltip = 'Warteschlange';
+        break;
+      case _ConnectionState.disconnected:
+        dotColor = Colors.redAccent;
+        tooltip = 'Offline';
+        break;
+      case _ConnectionState.unknown:
+        dotColor = Colors.grey;
+        tooltip = 'Prüfe...';
+        break;
+    }
+
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(
+          color: dotColor,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: dotColor.withOpacity(0.6),
+              blurRadius: 4,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // Essentielle Info (nur Trupp, Leiter, aktueller Status, Queue kompakt)
   Widget _buildEssentialInfo() {
+    final cardBg = _isDark
+        ? Theme.of(context).colorScheme.surface
+        : (isMaterial(context) ? Colors.white : CupertinoColors.systemBackground);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
+          color: cardBg,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
@@ -1253,11 +1370,15 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   // Collapsible Nachrichtenfeld
   Widget _buildMessageSection() {
+    final cardBg = _isDark
+        ? Theme.of(context).colorScheme.surface
+        : (isMaterial(context) ? Colors.white : CupertinoColors.systemBackground);
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Container(
         decoration: BoxDecoration(
-          color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
+          color: cardBg,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Column(
