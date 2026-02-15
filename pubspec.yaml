@@ -54,6 +54,7 @@ dependencies:
   url_launcher: ^6.3.2
   battery_plus: ^7.0.0
   connectivity_plus: ^6.1.4
+  wakelock_plus: ^4.0.0
 
 dev_dependencies:
   flutter_test:

@@ -25,6 +25,8 @@ import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
 import 'main.dart' show themeNotifier, toggleTheme;
 import 'map_screen.dart';
+import 'status_history_screen.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 enum _ConnectionState { unknown, connected, degraded, disconnected }
 
@@ -62,6 +64,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Verbindungsstatus
   _ConnectionState _connectionState = _ConnectionState.unknown;
   Timer? _connectionCheckTimer;
+
+  // Einsatz-Timer
+  Timer? _deploymentTickTimer;
+  int _deploymentStartMs = 0;
 
   // Tracking ist immer gewünscht, sobald konfiguriert
   bool get _trackingDesired => true;
@@ -105,6 +111,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     _tempStatusTimer?.cancel();
     _statsRefreshTimer?.cancel();
     _connectionCheckTimer?.cancel();
+    _deploymentTickTimer?.cancel();
     _infoCtrl.dispose();
     _animationController.dispose();
     super.dispose();
@@ -229,7 +236,41 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       deployment: _deploymentMode,
       currentStatus: status,
     );
+
+    // Einsatz-Timer laden
+    if (_deploymentMode == DeploymentMode.deployed) {
+      final prefs = await SharedPreferences.getInstance();
+      _deploymentStartMs = prefs.getInt('deployment_start_ms') ?? 0;
+      _startDeploymentTimer();
+      WakelockPlus.enable();
+    } else {
+      _deploymentStartMs = 0;
+      _deploymentTickTimer?.cancel();
+      WakelockPlus.disable();
+    }
+
     setState(() {});
+  }
+
+  void _startDeploymentTimer() {
+    _deploymentTickTimer?.cancel();
+    _deploymentTickTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  String _formatDeploymentDuration() {
+    if (_deploymentStartMs == 0) return '';
+    final elapsed = DateTime.now().millisecondsSinceEpoch - _deploymentStartMs;
+    if (elapsed < 0) return '';
+    final totalSec = elapsed ~/ 1000;
+    final h = totalSec ~/ 3600;
+    final m = (totalSec % 3600) ~/ 60;
+    final s = totalSec % 60;
+    if (h > 0) {
+      return '${h}h ${m.toString().padLeft(2, '0')}m';
+    }
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Future<int> _getCurrentStatus() async {
@@ -543,6 +584,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Future<void> _onStatusPressed(int st) async {
+    // Haptic Feedback sofort auslösen
+    _hapticForStatus(st);
+
     if (!await _hasWhileInUsePermission()) {
       final granted = await _requestWhileInUseWithRationale();
       if (!granted) {
@@ -551,6 +595,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       }
       await Future.delayed(const Duration(milliseconds: 500));
     }
+
+    // Statuswechsel in History aufnehmen
+    StatusHistory.add(st);
 
     if (_isTempStatus(st)) {
       await _onTempStatus(st);
@@ -618,6 +665,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       newMode == DeploymentMode.deployed ? 'Einsatz gestartet' : 'Einsatz beendet',
       success: true,
     );
+  }
+
+  /// Haptic Feedback je nach Status-Typ
+  void _hapticForStatus(int st) {
+    if (st == 0) {
+      HapticFeedback.heavyImpact();
+    } else if (_isTempStatus(st)) {
+      HapticFeedback.lightImpact();
+    } else {
+      HapticFeedback.mediumImpact();
+    }
   }
 
   Future<void> _sendSds(String text) async {
@@ -852,6 +910,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 platformPageRoute(
                   context: context,
                   builder: (_) => const ConfigScreen(),
+                ),
+              );
+            },
+          ),
+          _buildMenuItem(
+            icon: isMaterial(context) ? Icons.history : CupertinoIcons.clock_fill,
+            title: 'Statusverlauf',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                platformPageRoute(
+                  context: context,
+                  builder: (_) => const StatusHistoryScreen(),
                 ),
               );
             },
@@ -1115,6 +1187,27 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 letterSpacing: 0.8,
               ),
             ),
+
+            // Einsatz-Timer
+            if (isDeployed && _deploymentStartMs > 0) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _formatDeploymentDuration(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ),
+            ],
 
             const Spacer(),
 
