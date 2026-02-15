@@ -53,6 +53,7 @@ dependencies:
   web_socket_channel: ^3.0.3
   url_launcher: ^6.3.2
   battery_plus: ^7.0.0
+  connectivity_plus: ^6.1.4
 
 dev_dependencies:
   flutter_test:
