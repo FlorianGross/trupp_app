@@ -1,7 +1,5 @@
 // lib/screens/ConfigScreen.dart
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'status_overview_screen.dart';
@@ -97,14 +95,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     );
   }
 
-  BoxDecoration _cupertinoBox({required bool missing}) {
-    return BoxDecoration(
-      color: missing ? const Color(0xffffebee) : const Color(0xfff5f5f5),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(color: missing ? Colors.red : const Color(0xffe0e0e0)),
-    );
-  }
-
   Widget _requiredField({
     required String label,
     required TextEditingController controller,
@@ -118,54 +108,14 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     String? validator(String? v) =>
         (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null;
 
-    if (isMaterial(context)) {
-      return PlatformTextFormField(
-        controller: controller,
-        autovalidateMode: autoMode,
-        validator: validator,
-        keyboardType: keyboardType,
-        onChanged: (_) => setState(() {}),
-        material: (_, __) => MaterialTextFormFieldData(
-          decoration: _materialDecoration(label, missing: missing),
-        ),
-      );
-    } else {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 6),
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF616161), fontWeight: FontWeight.w500),
-            ),
-          ),
-          Container(
-            decoration: _cupertinoBox(missing: missing),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: PlatformTextFormField(
-              controller: controller,
-              autovalidateMode: autoMode,
-              validator: validator,
-              keyboardType: keyboardType,
-              onChanged: (_) => setState(() {}),
-              cupertino: (_, __) => CupertinoTextFormFieldData(decoration: null),
-              material: (_, __) => MaterialTextFormFieldData(
-                decoration: const InputDecoration(border: InputBorder.none),
-              ),
-            ),
-          ),
-          if (_showAllErrors && missing)
-            const Padding(
-              padding: EdgeInsets.only(left: 4, top: 4),
-              child: Text(
-                'Pflichtfeld',
-                style: TextStyle(color: Colors.red, fontSize: 12),
-              ),
-            ),
-        ],
-      );
-    }
+    return TextFormField(
+      controller: controller,
+      autovalidateMode: autoMode,
+      validator: validator,
+      keyboardType: keyboardType,
+      onChanged: (_) => setState(() {}),
+      decoration: _materialDecoration(label, missing: missing),
+    );
   }
 
   Widget _optionalField({
@@ -173,40 +123,11 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     required TextEditingController controller,
     TextInputType? keyboardType,
   }) {
-    if (isMaterial(context)) {
-      return PlatformTextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        material: (_, __) => MaterialTextFormFieldData(
-          decoration: _materialDecoration(label, missing: false),
-        ),
-      );
-    } else {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 4, bottom: 6),
-            child: Text(
-              label,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF616161), fontWeight: FontWeight.w500),
-            ),
-          ),
-          Container(
-            decoration: _cupertinoBox(missing: false),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            child: PlatformTextFormField(
-              controller: controller,
-              keyboardType: keyboardType,
-              cupertino: (_, __) => CupertinoTextFormFieldData(decoration: null),
-              material: (_, __) => MaterialTextFormFieldData(
-                decoration: const InputDecoration(border: InputBorder.none),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboardType,
+      decoration: _materialDecoration(label, missing: false),
+    );
   }
 
   Future<void> _saveConfig() async {
@@ -255,8 +176,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
               await api.updateConfig(cfg);
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
-                  platformPageRoute(
-                    context: context,
+                  MaterialPageRoute(
                     builder: (_) => const StatusOverview(),
                   ),
                       (_) => false,
@@ -270,8 +190,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         await api.updateConfig(cfg);
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
-            platformPageRoute(
-              context: context,
+            MaterialPageRoute(
               builder: (_) => const StatusOverview(),
             ),
                 (_) => false,
@@ -286,18 +205,18 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   }
 
   void _showErrorDialog(String msg, {VoidCallback? onRetry}) {
-    showPlatformDialog(
+    showDialog(
       context: context,
-      builder: (_) => PlatformAlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Fehler'),
         content: Text(msg),
         actions: [
           if (onRetry != null)
-            PlatformDialogAction(
+            TextButton(
               child: const Text('Abbrechen'),
               onPressed: () => Navigator.of(context).pop(),
             ),
-          PlatformDialogAction(
+          TextButton(
             child: Text(onRetry != null ? 'Trotzdem speichern' : 'OK'),
             onPressed: () {
               Navigator.of(context).pop();
@@ -335,44 +254,26 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             style: TextStyle(fontSize: 13, color: Color(0xFF616161), fontWeight: FontWeight.w500),
           ),
         ),
-        PlatformWidget(
-          material: (_, __) => SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'https', label: Text('HTTPS')),
-              ButtonSegment(value: 'http', label: Text('HTTP')),
-            ],
-            selected: {_selectedProtocol},
-            onSelectionChanged: (s) => setState(() => _selectedProtocol = s.first),
-            style: ButtonStyle(
-              backgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return Colors.red.shade800;
-                }
-                return Colors.grey.shade200;
-              }),
-              foregroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) {
-                  return Colors.white;
-                }
-                return Colors.black87;
-              }),
-            ),
-          ),
-          cupertino: (_, __) => CupertinoSlidingSegmentedControl<String>(
-            groupValue: _selectedProtocol,
-            onValueChanged: (v) => setState(() => _selectedProtocol = v ?? 'https'),
-            children: const {
-              'https': Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text('HTTPS'),
-              ),
-              'http': Padding(
-                padding: EdgeInsets.symmetric(horizontal: 20),
-                child: Text('HTTP'),
-              ),
-            },
-            thumbColor: Colors.red.shade800,
-            backgroundColor: CupertinoColors.systemGrey5,
+        SegmentedButton<String>(
+          segments: const [
+            ButtonSegment(value: 'https', label: Text('HTTPS')),
+            ButtonSegment(value: 'http', label: Text('HTTP')),
+          ],
+          selected: {_selectedProtocol},
+          onSelectionChanged: (s) => setState(() => _selectedProtocol = s.first),
+          style: ButtonStyle(
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return Colors.red.shade800;
+              }
+              return Colors.grey.shade200;
+            }),
+            foregroundColor: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.selected)) {
+                return Colors.white;
+              }
+              return Colors.black87;
+            }),
           ),
         ),
       ],
@@ -380,122 +281,64 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   }
 
   void _openScannerSheet() {
-    showPlatformModalSheet(
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) {
         bool handled = false;
-        return PlatformWidget(
-          material: (_, __) => Container(
-            height: MediaQuery.of(context).size.height * 0.75,
-            decoration: const BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 16),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+        return SizedBox(
+          height: MediaQuery.of(context).size.height * 0.75,
+          child: Column(
+            children: [
+              const SizedBox(height: 16),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  'QR-Code scannen',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red.shade800,
-                  ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'QR-Code scannen',
+                style: TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red.shade800,
                 ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: MobileScanner(
-                        onDetect: (capture) async {
-                          if (handled) return;
-                          final code = capture.barcodes.firstOrNull?.rawValue;
-                          if (code == null) return;
-                          try {
-                            final uri = Uri.parse(code);
-                            handled = true;
-                            if (Navigator.of(context).canPop()) {
-                              Navigator.of(context).pop();
-                            }
-                            await _applyConfigFromUri(uri);
-                          } catch (e) {
-                            _showErrorDialog('Fehler beim Lesen des QR-Codes: $e');
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: MobileScanner(
+                      onDetect: (capture) async {
+                        if (handled) return;
+                        final code = capture.barcodes.firstOrNull?.rawValue;
+                        if (code == null) return;
+                        try {
+                          final uri = Uri.parse(code);
+                          handled = true;
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
                           }
-                        },
-                      ),
+                          await _applyConfigFromUri(uri);
+                        } catch (e) {
+                          _showErrorDialog('Fehler beim Lesen des QR-Codes: $e');
+                        }
+                      },
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
-              ],
-            ),
-          ),
-          cupertino: (_, __) => Container(
-            height: MediaQuery.of(context).size.height * 0.75,
-            decoration: const BoxDecoration(
-              color: CupertinoColors.systemBackground,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Column(
-              children: [
-                const SizedBox(height: 16),
-                Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: CupertinoColors.systemGrey3,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'QR-Code scannen',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.red.shade800,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: MobileScanner(
-                        onDetect: (capture) async {
-                          if (handled) return;
-                          final code = capture.barcodes.firstOrNull?.rawValue;
-                          if (code == null) return;
-                          try {
-                            final uri = Uri.parse(code);
-                            handled = true;
-                            if (Navigator.of(context).canPop()) {
-                              Navigator.of(context).pop();
-                            }
-                            await _applyConfigFromUri(uri);
-                          } catch (e) {
-                            _showErrorDialog('Fehler beim Lesen des QR-Codes: $e');
-                          }
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-              ],
-            ),
+              ),
+              const SizedBox(height: 20),
+            ],
           ),
         );
       },
@@ -504,43 +347,28 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
 
   @override
   Widget build(BuildContext context) {
-    return PlatformScaffold(
-      backgroundColor: isMaterial(context) ? Colors.grey[100] : CupertinoColors.systemGroupedBackground,
-      appBar: PlatformAppBar(
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
         title: const Text('Konfiguration'),
-        material: (_, __) => MaterialAppBarData(
-          backgroundColor: Colors.red.shade800,
-          elevation: 0,
-          centerTitle: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.qr_code_scanner),
-              tooltip: 'Per QR übernehmen',
-              onPressed: _openScannerSheet,
-            ),
-          ],
-        ),
-        cupertino: (_, __) => CupertinoNavigationBarData(
-          backgroundColor: Colors.red.shade800,
-          trailing: GestureDetector(
-            onTap: _openScannerSheet,
-            child: const Icon(CupertinoIcons.qrcode_viewfinder, color: Colors.white),
+        backgroundColor: Colors.red.shade800,
+        elevation: 0,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code_scanner),
+            tooltip: 'Per QR übernehmen',
+            onPressed: _openScannerSheet,
           ),
-        ),
+        ],
       ),
       body: SafeArea(
         bottom: true,
         child: FadeTransition(
           opacity: _fadeAnimation,
-          child: PlatformWidget(
-            material: (_, __) => Material(
-              color: Colors.grey[100],
-              child: _buildForm(),
-            ),
-            cupertino: (_, __) => Container(
-              color: CupertinoColors.systemGroupedBackground,
-              child: _buildForm(),
-            ),
+          child: Material(
+            color: Colors.grey[100],
+            child: _buildForm(),
           ),
         ),
       ),
@@ -601,24 +429,17 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             ),
           ),
           const SizedBox(height: 28),
-          PlatformElevatedButton(
+          ElevatedButton.icon(
             onPressed: _saveConfig,
-            child: const Text('Speichern und fortfahren'),
-            material: (_, __) => MaterialElevatedButtonData(
-              icon: const Icon(Icons.save),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade800,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(54),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+            icon: const Icon(Icons.save),
+            label: const Text('Speichern und fortfahren'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-            ),
-            cupertino: (_, __) => CupertinoElevatedButtonData(
-              color: Colors.red.shade800,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              borderRadius: BorderRadius.circular(12),
             ),
           ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
@@ -628,29 +449,13 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   }
 
   Widget _buildQRCard() {
-    return PlatformWidget(
-      material: (_, __) => Card(
-        elevation: 2,
-        shadowColor: Colors.black26,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: _buildQRCardContent(),
+    return Card(
+      elevation: 2,
+      shadowColor: Colors.black26,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
       ),
-      cupertino: (_, __) => Container(
-        decoration: BoxDecoration(
-          color: CupertinoColors.systemBackground,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: _buildQRCardContent(),
-      ),
+      child: _buildQRCardContent(),
     );
   }
 
@@ -668,7 +473,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  isMaterial(context) ? Icons.qr_code : CupertinoIcons.qrcode,
+                  Icons.qr_code,
                   color: Colors.red.shade800,
                   size: 28,
                 ),
@@ -686,24 +491,17 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             ],
           ),
           const SizedBox(height: 16),
-          PlatformElevatedButton(
+          ElevatedButton.icon(
             onPressed: _openScannerSheet,
-            child: const Text('QR-Code scannen'),
-            material: (_, __) => MaterialElevatedButtonData(
-              icon: const Icon(Icons.qr_code_scanner),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade800,
-                foregroundColor: Colors.white,
-                minimumSize: const Size.fromHeight(50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
+            icon: const Icon(Icons.qr_code_scanner),
+            label: const Text('QR-Code scannen'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
               ),
-            ),
-            cupertino: (_, __) => CupertinoElevatedButtonData(
-              color: Colors.red.shade800,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              borderRadius: BorderRadius.circular(12),
             ),
           ),
         ],

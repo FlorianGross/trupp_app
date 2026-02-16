@@ -1,9 +1,7 @@
 // lib/screens/system_check_screen.dart
 import 'dart:io';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -391,7 +389,6 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
         check.actionLabel = 'Konfigurieren';
         check.action = () {
           Navigator.pop(context);
-          // Config-Screen sollte vom Haupt-Screen geöffnet werden
         };
       }
     } catch (e) {
@@ -428,9 +425,9 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   }
 
   void _showAccuracyTips() {
-    showPlatformDialog(
+    showDialog(
       context: context,
-      builder: (_) => PlatformAlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('GPS-Genauigkeit verbessern'),
         content: const Text(
           'Tipps für bessere GPS-Genauigkeit:\n\n'
@@ -442,11 +439,11 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
               '• "Hohe Genauigkeit" in Standort-Einstellungen',
         ),
         actions: [
-          PlatformDialogAction(
+          TextButton(
             child: const Text('OK'),
             onPressed: () => Navigator.pop(context),
           ),
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Einstellungen'),
             onPressed: () {
               Navigator.pop(context);
@@ -474,13 +471,13 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   IconData _getStatusIcon(CheckStatus status) {
     switch (status) {
       case CheckStatus.ok:
-        return isMaterial(context) ? Icons.check_circle : CupertinoIcons.check_mark_circled_solid;
+        return Icons.check_circle;
       case CheckStatus.warning:
-        return isMaterial(context) ? Icons.warning : CupertinoIcons.exclamationmark_triangle_fill;
+        return Icons.warning;
       case CheckStatus.error:
-        return isMaterial(context) ? Icons.error : CupertinoIcons.xmark_circle_fill;
+        return Icons.error;
       case CheckStatus.checking:
-        return isMaterial(context) ? Icons.hourglass_empty : CupertinoIcons.hourglass;
+        return Icons.hourglass_empty;
     }
   }
 
@@ -488,32 +485,20 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   Widget build(BuildContext context) {
     final allOk = _errorCount == 0 && _warningCount == 0 && !_isChecking;
 
-    return PlatformScaffold(
-      backgroundColor: isMaterial(context) ? Colors.grey[100] : CupertinoColors.systemGroupedBackground,
-      appBar: PlatformAppBar(
+    return Scaffold(
+      backgroundColor: Colors.grey[100],
+      appBar: AppBar(
         title: const Text('System-Check'),
-        material: (_, _) => MaterialAppBarData(
-          backgroundColor: allOk ? Colors.green.shade800 : Colors.red.shade800,
-          elevation: 0,
-          centerTitle: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.refresh),
-              onPressed: _isChecking ? null : _runAllChecks,
-              tooltip: 'Erneut prüfen',
-            ),
-          ],
-        ),
-        cupertino: (_, _) => CupertinoNavigationBarData(
-          backgroundColor: allOk ? Colors.green.shade800 : Colors.red.shade800,
-          trailing: GestureDetector(
-            onTap: _isChecking ? null : _runAllChecks,
-            child: Icon(
-              CupertinoIcons.refresh,
-              color: _isChecking ? Colors.white.withOpacity(0.5) : Colors.white,
-            ),
+        backgroundColor: allOk ? Colors.green.shade800 : Colors.red.shade800,
+        elevation: 0,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _isChecking ? null : _runAllChecks,
+            tooltip: 'Erneut prüfen',
           ),
-        ),
+        ],
       ),
       body: SafeArea(
         child: Column(
@@ -546,9 +531,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
       child: Column(
         children: [
           Icon(
-            allOk
-                ? (isMaterial(context) ? Icons.check_circle : CupertinoIcons.check_mark_circled_solid)
-                : (isMaterial(context) ? Icons.warning : CupertinoIcons.exclamationmark_triangle_fill),
+            allOk ? Icons.check_circle : Icons.warning,
             color: Colors.white,
             size: 48,
           ),
@@ -621,13 +604,13 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   }
 
   Widget _buildLoadingState() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          PlatformCircularProgressIndicator(),
-          const SizedBox(height: 16),
-          const Text(
+          CircularProgressIndicator(),
+          SizedBox(height: 16),
+          Text(
             'Prüfe System-Einstellungen...',
             style: TextStyle(fontSize: 16),
           ),
@@ -651,7 +634,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: _getStatusColor(check.status).withOpacity(0.3),
@@ -722,20 +705,14 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                child: PlatformElevatedButton(
+                child: ElevatedButton(
                   onPressed: check.action,
-                  child: Text(check.actionLabel!),
-                  material: (_, _) => MaterialElevatedButtonData(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _getStatusColor(check.status),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                    ),
-                  ),
-                  cupertino: (_, _) => CupertinoElevatedButtonData(
-                    color: _getStatusColor(check.status),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _getStatusColor(check.status),
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
+                  child: Text(check.actionLabel!),
                 ),
               ),
             ],

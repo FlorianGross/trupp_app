@@ -2,11 +2,9 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -569,9 +567,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               : 'Sprechwunsch von $trupp - Bitte melden!';
 
           await EdpApi.instance.sendSdsText(sdsText);
-          //print('Automatische SDS gesendet: $sdsText');
         } catch (sdsError) {
-          //print('SDS-Fehler bei Status $st: $sdsError');
           // SDS-Fehler ist nicht kritisch, Status wurde trotzdem gesendet
         }
       }
@@ -607,20 +603,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Future<void> _offerBackgroundPermission(int st) async {
-    final res = await showPlatformDialog<bool>(
+    final res = await showDialog<bool>(
       context: context,
-      builder: (_) => PlatformAlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Hintergrundortung'),
         content: const Text(
           'Damit bei Status 1, 3 und 7 auch bei geschlossener App der Standort gesendet wird, '
               'benötigt die App die „Immer"-Berechtigung.\n\nJetzt anfragen?',
         ),
         actions: [
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Später'),
             onPressed: () => Navigator.pop(context, false),
           ),
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Erlauben'),
             onPressed: () => Navigator.pop(context, true),
           ),
@@ -701,17 +697,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Future<void> _clearQueue() async {
-    final confirm = await showPlatformDialog<bool>(
+    final confirm = await showDialog<bool>(
       context: context,
-      builder: (_) => PlatformAlertDialog(
+      builder: (_) => AlertDialog(
         title: const Text('Warteschlange löschen?'),
         content: const Text('Alle gespeicherten Positionen werden gelöscht.'),
         actions: [
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Abbrechen'),
             onPressed: () => Navigator.pop(context, false),
           ),
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Löschen'),
             onPressed: () => Navigator.pop(context, true),
           ),
@@ -727,77 +723,24 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   void _showSnackbar(String msg, {bool success = true}) {
-    if (isMaterial(context)) {
-      final color = success ? Colors.green : Colors.red;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(msg),
-          backgroundColor: color,
-          duration: const Duration(seconds: 2),
-        ),
-      );
-    } else {
-      final overlay = Overlay.of(context);
-      final overlayEntry = OverlayEntry(
-        builder: (context) => Positioned(
-          top: MediaQuery.of(context).padding.top + 8,
-          left: 16,
-          right: 16,
-          child: Material(
-            color: Colors.transparent,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: success ? CupertinoColors.systemGreen : CupertinoColors.systemRed,
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.2),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    success ? CupertinoIcons.check_mark_circled_solid : CupertinoIcons.exclamationmark_triangle_fill,
-                    color: Colors.white,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      msg,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      );
-
-      overlay.insert(overlayEntry);
-      Future.delayed(const Duration(seconds: 2), () {
-        overlayEntry.remove();
-      });
-    }
+    final color = success ? Colors.green : Colors.red;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: color,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void _showInfoDialog({required String title, required String msg}) {
-    showPlatformDialog(
+    showDialog(
       context: context,
-      builder: (_) => PlatformAlertDialog(
+      builder: (_) => AlertDialog(
         title: Text(title),
         content: Text(msg),
         actions: [
-          PlatformDialogAction(
+          TextButton(
             child: const Text('OK'),
             onPressed: () => Navigator.pop(context),
           ),
@@ -810,13 +753,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     required String title,
     required String msg,
   }) async {
-    await showPlatformDialog(
+    await showDialog(
       context: context,
-      builder: (_) => PlatformAlertDialog(
+      builder: (_) => AlertDialog(
         title: Text(title),
         content: Text(msg),
         actions: [
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Verstanden'),
             onPressed: () => Navigator.pop(context),
           ),
@@ -829,17 +772,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     required String title,
     required String msg,
   }) async {
-    final res = await showPlatformDialog<bool>(
+    final res = await showDialog<bool>(
       context: context,
-      builder: (_) => PlatformAlertDialog(
+      builder: (_) => AlertDialog(
         title: Text(title),
         content: Text(msg),
         actions: [
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Abbrechen'),
             onPressed: () => Navigator.pop(context, false),
           ),
-          PlatformDialogAction(
+          TextButton(
             child: const Text('Weiter'),
             onPressed: () => Navigator.pop(context, true),
           ),
@@ -850,24 +793,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   void _showMenu() {
-    showPlatformModalSheet(
+    showModalBottomSheet(
       context: context,
-      builder: (_) => PlatformWidget(
-        material: (_, _) => Container(
-          padding: const EdgeInsets.all(20),
-          color: _isDark ? Theme.of(context).colorScheme.surface : null,
-          child: _buildMenuContent(),
-        ),
-        cupertino: (_, _) => Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: _isDark
-                ? CupertinoColors.darkBackgroundGray
-                : CupertinoColors.systemBackground,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-          ),
-          child: _buildMenuContent(),
-        ),
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(20),
+        color: _isDark ? Theme.of(context).colorScheme.surface : null,
+        child: _buildMenuContent(),
       ),
     );
   }
@@ -887,63 +818,51 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           ),
           const SizedBox(height: 16),
           _buildMenuItem(
-            icon: isMaterial(context) ? Icons.health_and_safety : CupertinoIcons.checkmark_shield,
+            icon: Icons.health_and_safety,
             title: 'System-Check',
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                platformPageRoute(
-                  context: context,
-                  builder: (_) => const SystemCheckScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const SystemCheckScreen()),
               );
             },
           ),
           _buildMenuItem(
-            icon: isMaterial(context) ? Icons.settings : CupertinoIcons.settings,
+            icon: Icons.settings,
             title: 'Konfiguration',
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                platformPageRoute(
-                  context: context,
-                  builder: (_) => const ConfigScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const ConfigScreen()),
               );
             },
           ),
           _buildMenuItem(
-            icon: isMaterial(context) ? Icons.history : CupertinoIcons.clock_fill,
+            icon: Icons.history,
             title: 'Statusverlauf',
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                platformPageRoute(
-                  context: context,
-                  builder: (_) => const StatusHistoryScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const StatusHistoryScreen()),
               );
             },
           ),
           _buildMenuItem(
-            icon: isMaterial(context) ? Icons.map : CupertinoIcons.map_fill,
+            icon: Icons.map,
             title: 'Live-Karte',
             onTap: () {
               Navigator.pop(context);
               Navigator.push(
                 context,
-                platformPageRoute(
-                  context: context,
-                  builder: (_) => const MapScreen(),
-                ),
+                MaterialPageRoute(builder: (_) => const MapScreen()),
               );
             },
           ),
           _buildMenuItem(
-            icon: isMaterial(context) ? Icons.download : CupertinoIcons.arrow_down_circle,
+            icon: Icons.download,
             title: 'GPX Export',
             onTap: () {
               Navigator.pop(context);
@@ -952,8 +871,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           ),
           _buildMenuItem(
             icon: themeNotifier.value == ThemeMode.dark
-                ? (isMaterial(context) ? Icons.light_mode : CupertinoIcons.sun_max_fill)
-                : (isMaterial(context) ? Icons.dark_mode : CupertinoIcons.moon_fill),
+                ? Icons.light_mode
+                : Icons.dark_mode,
             title: themeNotifier.value == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
             onTap: () {
               Navigator.pop(context);
@@ -985,8 +904,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 style: const TextStyle(fontSize: 16),
               ),
             ),
-            Icon(
-              isMaterial(context) ? Icons.chevron_right : CupertinoIcons.chevron_right,
+            const Icon(
+              Icons.chevron_right,
               color: Colors.grey,
               size: 20,
             ),
@@ -1000,14 +919,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     final deeplink =
         'truppapp://config?protocol=$protocol&server=$server:$port&token=$token&issi=$issi&trupp=$trupp&leiter=$leiter';
 
-    showPlatformModalSheet(
+    showModalBottomSheet(
       context: context,
-      builder: (_) => Container(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+      ),
+      builder: (_) => Padding(
         padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: isMaterial(context) ? Colors.white : CupertinoColors.systemBackground,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-        ),
         child: SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1037,24 +955,18 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
-                child: PlatformElevatedButton(
+                child: ElevatedButton(
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: deeplink));
                     if (mounted) Navigator.pop(context);
                     _showSnackbar('Link kopiert', success: true);
                   },
-                  child: const Text('Link kopieren'),
-                  material: (_, _) => MaterialElevatedButtonData(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade800,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                    ),
-                  ),
-                  cupertino: (_, _) => CupertinoElevatedButtonData(
-                    color: Colors.red.shade800,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade800,
+                    foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
+                  child: const Text('Link kopieren'),
                 ),
               ),
             ],
@@ -1070,47 +982,26 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Widget build(BuildContext context) {
     final scaffoldBg = _isDark
         ? Theme.of(context).scaffoldBackgroundColor
-        : (isMaterial(context) ? Colors.grey[100] : CupertinoColors.systemGroupedBackground);
+        : Colors.grey[100];
     final appBarBg = _isDark ? Colors.red.shade900 : Colors.red.shade800;
 
-    return PlatformScaffold(
+    return Scaffold(
       backgroundColor: scaffoldBg,
-      appBar: PlatformAppBar(
+      appBar: AppBar(
         title: const Text('Status'),
-        material: (_, _) => MaterialAppBarData(
-          backgroundColor: appBarBg,
-          elevation: 0,
-          centerTitle: true,
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.qr_code, size: 22),
-              onPressed: _showQrCode,
-            ),
-            IconButton(
-              icon: const Icon(Icons.more_vert, size: 22),
-              onPressed: _showMenu,
-            ),
-          ],
-        ),
-        cupertino: (_, _) => CupertinoNavigationBarData(
-          backgroundColor: appBarBg,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              GestureDetector(
-                onTap: _showQrCode,
-                child: const Padding(
-                  padding: EdgeInsets.only(right: 12),
-                  child: Icon(CupertinoIcons.qrcode, color: Colors.white, size: 22),
-                ),
-              ),
-              GestureDetector(
-                onTap: _showMenu,
-                child: const Icon(CupertinoIcons.ellipsis, color: Colors.white, size: 22),
-              ),
-            ],
+        backgroundColor: appBarBg,
+        elevation: 0,
+        centerTitle: true,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.qr_code, size: 22),
+            onPressed: _showQrCode,
           ),
-        ),
+          IconButton(
+            icon: const Icon(Icons.more_vert, size: 22),
+            onPressed: _showMenu,
+          ),
+        ],
       ),
       body: SafeArea(
         child: FadeTransition(
@@ -1134,7 +1025,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 decoration: BoxDecoration(
                   color: _isDark
                       ? Theme.of(context).colorScheme.surface
-                      : (isMaterial(context) ? Colors.white : CupertinoColors.systemBackground),
+                      : Colors.white,
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(_isDark ? 0.2 : 0.05),
@@ -1223,16 +1114,16 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
+                child: const Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isMaterial(context) ? Icons.gps_fixed : CupertinoIcons.location_fill,
+                      Icons.gps_fixed,
                       color: Colors.white,
                       size: 14,
                     ),
-                    const SizedBox(width: 4),
-                    const Text(
+                    SizedBox(width: 4),
+                    Text(
                       'GPS',
                       style: TextStyle(
                         color: Colors.white,
@@ -1332,7 +1223,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Widget _buildEssentialInfo() {
     final cardBg = _isDark
         ? Theme.of(context).colorScheme.surface
-        : (isMaterial(context) ? Colors.white : CupertinoColors.systemBackground);
+        : Colors.white;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1349,14 +1240,14 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               children: [
                 Expanded(
                   child: _buildCompactInfo(
-                    icon: isMaterial(context) ? Icons.group : CupertinoIcons.person_2_fill,
+                    icon: Icons.group,
                     label: trupp,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildCompactInfo(
-                    icon: isMaterial(context) ? Icons.person : CupertinoIcons.person_fill,
+                    icon: Icons.person,
                     label: leiter,
                   ),
                 ),
@@ -1413,7 +1304,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        isMaterial(context) ? Icons.storage : CupertinoIcons.tray_arrow_up,
+                        Icons.storage,
                         size: 16,
                         color: _stats['pending']! > 0
                             ? Colors.orange.shade800
@@ -1465,7 +1356,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Widget _buildMessageSection() {
     final cardBg = _isDark
         ? Theme.of(context).colorScheme.surface
-        : (isMaterial(context) ? Colors.white : CupertinoColors.systemBackground);
+        : Colors.white;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1485,7 +1376,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 child: Row(
                   children: [
                     Icon(
-                      isMaterial(context) ? Icons.message : CupertinoIcons.chat_bubble_fill,
+                      Icons.message,
                       color: Colors.red.shade800,
                       size: 18,
                     ),
@@ -1519,31 +1410,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 child: Row(
                   children: [
                     Expanded(
-                      child: PlatformTextFormField(
+                      child: TextFormField(
                         controller: _infoCtrl,
-                        hintText: 'Nachricht eingeben...',
-                        material: (_, _) => MaterialTextFormFieldData(
-                          decoration: InputDecoration(
-                            hintText: 'Nachricht eingeben...',
-                            filled: true,
-                            fillColor: Colors.grey.shade50,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                              vertical: 12,
-                            ),
-                          ),
-                        ),
-                        cupertino: (_, _) => CupertinoTextFormFieldData(
-                          decoration: BoxDecoration(
-                            color: CupertinoColors.systemGrey6,
+                        decoration: InputDecoration(
+                          hintText: 'Nachricht eingeben...',
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
                           ),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          placeholder: 'Nachricht eingeben...',
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 12,
+                          ),
                         ),
                       ),
                     ),

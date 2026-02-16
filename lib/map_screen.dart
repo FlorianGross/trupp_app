@@ -1,9 +1,7 @@
 // lib/map_screen.dart
 import 'dart:async';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
-import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
@@ -79,17 +77,12 @@ class _MapScreenState extends State<MapScreen> {
     // Startposition: aktuelle Position oder Deutschland-Mitte
     final center = _currentPosition ?? const LatLng(51.1657, 10.4515);
 
-    return PlatformScaffold(
-      appBar: PlatformAppBar(
+    return Scaffold(
+      appBar: AppBar(
         title: const Text('Karte'),
-        material: (_, _) => MaterialAppBarData(
-          backgroundColor: appBarBg,
-          elevation: 0,
-          centerTitle: true,
-        ),
-        cupertino: (_, _) => CupertinoNavigationBarData(
-          backgroundColor: appBarBg,
-        ),
+        backgroundColor: appBarBg,
+        elevation: 0,
+        centerTitle: true,
       ),
       body: Stack(
         children: [
