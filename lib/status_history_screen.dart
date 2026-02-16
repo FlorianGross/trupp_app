@@ -1,8 +1,6 @@
 // lib/status_history_screen.dart
 import 'dart:convert';
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'keypad_widget.dart';
@@ -105,17 +103,12 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final appBarBg = isDark ? Colors.red.shade900 : Colors.red.shade800;
 
-    return PlatformScaffold(
-      appBar: PlatformAppBar(
+    return Scaffold(
+      appBar: AppBar(
         title: const Text('Statusverlauf'),
-        material: (_, _) => MaterialAppBarData(
-          backgroundColor: appBarBg,
-          elevation: 0,
-          centerTitle: true,
-        ),
-        cupertino: (_, _) => CupertinoNavigationBarData(
-          backgroundColor: appBarBg,
-        ),
+        backgroundColor: appBarBg,
+        elevation: 0,
+        centerTitle: true,
       ),
       body: _entries.isEmpty
           ? const Center(child: Text('Noch keine Statuswechsel'))

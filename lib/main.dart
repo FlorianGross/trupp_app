@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:trupp_app/deep_link_handler.dart';
@@ -6,7 +5,6 @@ import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
 import 'status_overview_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'package:trupp_app/data/edp_api.dart';
 
 // Globaler NavigatorKey
@@ -86,23 +84,14 @@ class MyApp extends StatelessWidget {
     return ValueListenableBuilder<ThemeMode>(
       valueListenable: themeNotifier,
       builder: (_, themeMode, __) {
-        final isDark = themeMode == ThemeMode.dark;
         return DeepLinkHandler(
           navigatorKey: navigatorKey,
-          child: PlatformApp(
+          child: MaterialApp(
             debugShowCheckedModeBanner: false,
             navigatorKey: navigatorKey,
-            material: (_, __) => MaterialAppData(
-              theme: _lightTheme,
-              darkTheme: _darkTheme,
-              themeMode: themeMode,
-            ),
-            cupertino: (_, __) => CupertinoAppData(
-              theme: CupertinoThemeData(
-                brightness: isDark ? Brightness.dark : Brightness.light,
-                primaryColor: Colors.red.shade800,
-              ),
-            ),
+            theme: _lightTheme,
+            darkTheme: _darkTheme,
+            themeMode: themeMode,
             home: hasConfig ? const StatusOverview() : const ConfigScreen(),
           ),
         );

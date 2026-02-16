@@ -1,12 +1,10 @@
 import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter_platform_widgets/flutter_platform_widgets.dart';
 import 'ConfigScreen.dart';
 
 class DeepLinkHandler extends StatefulWidget {
   final Widget child;
-  final GlobalKey<NavigatorState> navigatorKey; // ◀ NavigatorKey annehmen
+  final GlobalKey<NavigatorState> navigatorKey;
 
   const DeepLinkHandler({
     super.key,
@@ -46,17 +44,17 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
       final ctx = widget.navigatorKey.currentContext;
       if (nav == null || ctx == null) return;
 
-      final confirmed = await showPlatformDialog<bool>(
+      final confirmed = await showDialog<bool>(
         context: ctx,
-        builder: (_) => PlatformAlertDialog(
+        builder: (_) => AlertDialog(
           title: const Text('Konfiguration übernehmen?'),
           content: const Text('Möchtest du die Konfiguration anwenden?'),
           actions: [
-            PlatformDialogAction(
+            TextButton(
               onPressed: () => Navigator.of(ctx).pop(false),
               child: const Text('Nein'),
             ),
-            PlatformDialogAction(
+            TextButton(
               onPressed: () => Navigator.of(ctx).pop(true),
               child: const Text('Ja'),
             ),
@@ -66,13 +64,11 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
 
       if (confirmed == true) {
         nav.pushAndRemoveUntil(
-          platformPageRoute(
-            context: ctx,
+          MaterialPageRoute(
             builder: (_) => ConfigScreenWithPrefill(initialDeepLink: uri),
           ),
               (_) => false,
         );
-
       }
     }
   }
