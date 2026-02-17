@@ -28,7 +28,13 @@ Future<void> toggleTheme() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initializeBackgroundService();
+
+  try {
+    await initializeBackgroundService();
+  } catch (_) {
+    // Background-Service wird auf dem Simulator nicht unterstützt
+  }
+
   await _loadThemePreference();
 
   final prefs = await SharedPreferences.getInstance();
@@ -40,10 +46,14 @@ Future<void> main() async {
 
     // Hintergrund-Service automatisch starten, damit Standort
     // auch nach App-Neustart sofort im Hintergrund übertragen wird
-    final svc = FlutterBackgroundService();
-    if (!await svc.isRunning()) {
-      await svc.startService();
-      svc.invoke('setTracking', {'enabled': true});
+    try {
+      final svc = FlutterBackgroundService();
+      if (!await svc.isRunning()) {
+        await svc.startService();
+        svc.invoke('setTracking', {'enabled': true});
+      }
+    } catch (_) {
+      // Service-Start fehlgeschlagen (z.B. Simulator)
     }
   }
 

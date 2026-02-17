@@ -491,14 +491,18 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Future<void> _setBackgroundTracking(bool enabled) async {
-    final svc = FlutterBackgroundService();
+    try {
+      final svc = FlutterBackgroundService();
 
-    if (enabled && !await svc.isRunning()) {
-      await svc.startService();
-    }
+      if (enabled && !await svc.isRunning()) {
+        await svc.startService();
+      }
 
-    if (await svc.isRunning()) {
-      svc.invoke('setTracking', {'enabled': enabled});
+      if (await svc.isRunning()) {
+        svc.invoke('setTracking', {'enabled': enabled});
+      }
+    } catch (_) {
+      // Background-Service nicht verfügbar (z.B. Simulator)
     }
 
     setState(() => _bgTrackingActive = enabled);
