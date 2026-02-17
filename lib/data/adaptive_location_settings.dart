@@ -22,7 +22,12 @@ class AdaptiveLocationSettings {
     required DeploymentMode deployment,
     required int currentStatus,
   }) async {
-    final batteryLevel = await _battery.batteryLevel;
+    int batteryLevel;
+    try {
+      batteryLevel = await _battery.batteryLevel;
+    } catch (_) {
+      batteryLevel = 100; // Fallback (z.B. Simulator)
+    }
 
     // Kritischer Akku → immer Power Saver
     if (batteryLevel < 15) {
