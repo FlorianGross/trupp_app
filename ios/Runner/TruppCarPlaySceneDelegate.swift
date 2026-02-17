@@ -7,18 +7,15 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
 
     private var interfaceController: CPInterfaceController?
 
-    // Status-Definitionen (identisch zu Android Auto)
-    private let statusMap: [(num: Int, text: String, color: UIColor)] = [
-        (0, "Dringend", .systemRed),
-        (1, "Einsatzbereit", .systemGreen),
-        (2, "Wache", .systemBlue),
-        (3, "Auftrag", .systemGreen),
-        (4, "Ziel erreicht", .systemYellow),
-        (5, "Sprechwunsch", .systemBlue),
-        (6, "Nicht Einsatzb.", .systemRed),
-        (7, "Transport", .systemGreen),
-        (8, "Ziel Erreicht", .systemYellow),
-        (9, "Sonstiges", .systemBlue),
+    // Status-Definitionen (ohne 0, 5, 9 – nur fahrrelevante Status)
+    private let statusMap: [(num: Int, text: String, sfSymbol: String, color: UIColor)] = [
+        (1, "Einsatzbereit", "antenna.radiowaves.left.and.right", .systemGreen),
+        (2, "Wache", "house.fill", .systemBlue),
+        (3, "Auftrag", "checkmark.rectangle.fill", .systemOrange),
+        (4, "Ziel erreicht", "mappin.circle.fill", .systemPurple),
+        (6, "Nicht bereit", "nosign", .systemGray),
+        (7, "Transport", "shippingbox.fill", .systemIndigo),
+        (8, "Angekommen", "flag.fill", .systemPink),
     ]
 
     private var currentStatus: Int = 1
@@ -62,7 +59,11 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
 
         for entry in statusMap {
             let isActive = entry.num == currentStatus
-            let image = createStatusImage(color: entry.color, active: isActive)
+            let image = createStatusImage(
+                sfSymbol: entry.sfSymbol,
+                color: entry.color,
+                active: isActive
+            )
 
             let button = CPGridButton(
                 titleVariants: ["\(entry.num) \(entry.text)"],
@@ -78,21 +79,20 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
         return template
     }
 
-    private func createStatusImage(color: UIColor, active: Bool) -> UIImage {
-        let size = CGSize(width: 44, height: 44)
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { ctx in
-            if active {
+    private func createStatusImage(sfSymbol: String, color: UIColor, active: Bool) -> UIImage {
+        let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+        guard let symbol = UIImage(systemName: sfSymbol, withConfiguration: config) else {
+            // Fallback: farbiger Kreis falls Symbol nicht verfügbar
+            let size = CGSize(width: 44, height: 44)
+            let renderer = UIGraphicsImageRenderer(size: size)
+            return renderer.image { ctx in
                 color.setFill()
                 ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
-            } else {
-                color.withAlphaComponent(0.3).setFill()
-                ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
-                color.setStroke()
-                ctx.cgContext.setLineWidth(2)
-                ctx.cgContext.strokeEllipse(in: CGRect(x: 1, y: 1, width: 42, height: 42))
             }
         }
+
+        let tintColor = active ? color : color.withAlphaComponent(0.4)
+        return symbol.withTintColor(tintColor, renderingMode: .alwaysOriginal)
     }
 
     // MARK: - Status Handling
