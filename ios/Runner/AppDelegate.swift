@@ -57,4 +57,24 @@ import flutter_background_service_ios
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
+
+  // CarPlay-Scene programmatisch registrieren (statt über Info.plist UIApplicationSceneManifest)
+  override func application(
+      _ application: UIApplication,
+      configurationForConnecting connectingSceneSession: UISceneSession,
+      options: UIScene.ConnectionOptions
+  ) -> UISceneConfiguration {
+    if connectingSceneSession.role == .carTemplateApplication {
+      let config = UISceneConfiguration(
+        name: "TruppCarPlay",
+        sessionRole: .carTemplateApplication
+      )
+      config.delegateClass = TruppCarPlaySceneDelegate.self
+      return config
+    }
+    return UISceneConfiguration(
+      name: "Default Configuration",
+      sessionRole: connectingSceneSession.role
+    )
+  }
 }
