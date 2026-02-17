@@ -68,7 +68,7 @@ final _quality = LocationQualityFilter(
   maxAccuracyM: _minAccuracyMeters,
   minDistanceM: _minDistanceMeters,
   minInterval: _minSendInterval,
-  maxJumpSpeedMs: 20.0,
+  maxJumpSpeedMs: 55.0,  // ~200 km/h - Einsatzfahrzeuge fahren schnell
   heartbeatInterval: const Duration(seconds: 30),
 );
 

@@ -49,9 +49,6 @@ class LocationQualityFilter {
         if (v > maxJumpSpeedMs) return false;
       }
     }
-    print("LocationQualityFilter: Position accepted (d=${_lastAccepted != null ? Geolocator.distanceBetween(
-      _lastAccepted!.latitude, _lastAccepted!.longitude,
-      p.latitude, p.longitude).toStringAsFixed(1) : 'N/A'} m, acc=${acc.toStringAsFixed(1)} m).");
     return true;
   }
 

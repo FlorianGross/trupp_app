@@ -202,9 +202,10 @@ class EdpApi {
     }
   }
 
-  /// Testet die Konfiguration über /setstatus mit Status=1 (Health-Check).
-  Future<EdpResult> probe() {
-    final url = _uri('setstatus', {'issi': _config.issi, 'status': '1'});
+  /// Testet die Verbindung zum Server (nutzt aktuellen Status statt hardcoded).
+  Future<EdpResult> probe({int? currentStatus}) {
+    final st = currentStatus ?? 1;
+    final url = _uri('setstatus', {'issi': _config.issi, 'status': '$st'});
     return _getWithRetry(url);
   }
 

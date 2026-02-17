@@ -207,7 +207,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _checkConnection() async {
     try {
-      final result = await EdpApi.instance.probe();
+      final result = await EdpApi.instance.probe(currentStatus: selectedStatus);
       final pending = _stats['pending'] ?? 0;
       if (!mounted) return;
       setState(() {
