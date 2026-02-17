@@ -127,6 +127,23 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _onAppResumed();
+    } else if (state == AppLifecycleState.paused ||
+               state == AppLifecycleState.inactive) {
+      _onAppPaused();
+    }
+  }
+
+  /// Wird aufgerufen wenn die App in den Hintergrund geht.
+  /// Stellt sicher, dass der Background-Service aktiv ist und trackt.
+  Future<void> _onAppPaused() async {
+    final svc = FlutterBackgroundService();
+    if (!await svc.isRunning()) {
+      await svc.startService();
+      // Kurz warten damit der Service seine Listener einrichten kann
+      await Future.delayed(const Duration(milliseconds: 500));
+    }
+    if (await svc.isRunning()) {
+      svc.invoke('setTracking', {'enabled': true});
     }
   }
 

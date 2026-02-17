@@ -16,7 +16,8 @@ class AdaptiveLocationSettings {
   static final _battery = Battery();
 
   /// Bestimmt den optimalen Tracking-Modus.
-  /// Tracking läuft immer – im Hintergrund/Standby mit powerSaver.
+  /// Aktive Status (1, 3, 7) bekommen IMMER mindestens balanced,
+  /// unabhängig vom Deployment-Modus.
   static Future<TrackingMode> determineMode({
     required DeploymentMode deployment,
     required int currentStatus,
@@ -28,9 +29,14 @@ class AdaptiveLocationSettings {
       return TrackingMode.powerSaver;
     }
 
-    // Im aktiven Einsatz (Status 3 = Auftrag, 7 = Transport)
-    if (deployment == DeploymentMode.deployed && [3, 7].contains(currentStatus)) {
+    // Aktive Einsatz-Status (3 = Auftrag, 7 = Transport) → hohe Genauigkeit
+    if ([3, 7].contains(currentStatus)) {
       return batteryLevel > 30 ? TrackingMode.highAccuracy : TrackingMode.balanced;
+    }
+
+    // Einsatzbereit (Status 1) → ausgewogen (immer GPS, nicht nur Funk)
+    if (currentStatus == 1) {
+      return TrackingMode.balanced;
     }
 
     // Rückweg
@@ -38,13 +44,7 @@ class AdaptiveLocationSettings {
       return TrackingMode.balanced;
     }
 
-    // Einsatz mit Einsatzbereit-Status
-    if (deployment == DeploymentMode.deployed && currentStatus == 1) {
-      return TrackingMode.balanced;
-    }
-
-    // Alle anderen Fälle: Power Saver (Standby, inaktive Status)
-    // Damit wird auch im Hintergrund weiter getrackt, nur seltener
+    // Alle anderen Status (0, 2, 4, 5, 6, 8, 9): Power Saver
     return TrackingMode.powerSaver;
   }
 
@@ -54,7 +54,7 @@ class AdaptiveLocationSettings {
       return AndroidSettings(
         accuracy: mode == TrackingMode.highAccuracy
             ? LocationAccuracy.high
-            : (mode == TrackingMode.balanced ? LocationAccuracy.medium : LocationAccuracy.low),
+            : LocationAccuracy.medium,  // Auch powerSaver: GPS statt nur Funk
         distanceFilter: _getDistanceFilter(mode),
         intervalDuration: _getInterval(mode),
         forceLocationManager: mode == TrackingMode.highAccuracy,
@@ -64,13 +64,12 @@ class AdaptiveLocationSettings {
       return AppleSettings(
         accuracy: mode == TrackingMode.highAccuracy
             ? LocationAccuracy.best
-            : (mode == TrackingMode.balanced
-            ? LocationAccuracy.best
-            : LocationAccuracy.lowest),
+            : LocationAccuracy.bestForNavigation,  // GPS auch im Hintergrund
         activityType: ActivityType.otherNavigation,
         distanceFilter: _getDistanceFilter(mode),
-        pauseLocationUpdatesAutomatically: mode == TrackingMode.powerSaver,
-        showBackgroundLocationIndicator: mode != TrackingMode.powerSaver,
+        pauseLocationUpdatesAutomatically: false,  // Nie automatisch pausieren
+        showBackgroundLocationIndicator: true,      // Immer Indikator zeigen
+        allowBackgroundLocationUpdates: true,       // Hintergrund-Updates erlauben
       );
     } else {
       return LocationSettings(
