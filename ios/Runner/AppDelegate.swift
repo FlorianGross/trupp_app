@@ -58,26 +58,4 @@ import flutter_background_service_ios
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // CarPlay-Scene programmatisch registrieren
-  // HINWEIS: TruppCarPlaySceneDelegate.swift muss noch über Xcode zum Projekt hinzugefügt werden
-  // (Rechtsklick Runner → Add Files to "Runner" → TruppCarPlaySceneDelegate.swift auswählen)
-  override func application(
-      _ application: UIApplication,
-      configurationForConnecting connectingSceneSession: UISceneSession,
-      options: UIScene.ConnectionOptions
-  ) -> UISceneConfiguration {
-    if let delegateClass = NSClassFromString("Runner.TruppCarPlaySceneDelegate") as? UIResponder.Type,
-       connectingSceneSession.role.rawValue == "CPTemplateApplicationSceneSessionRoleApplication" {
-      let config = UISceneConfiguration(
-        name: "TruppCarPlay",
-        sessionRole: connectingSceneSession.role
-      )
-      config.delegateClass = delegateClass
-      return config
-    }
-    return UISceneConfiguration(
-      name: "Default Configuration",
-      sessionRole: connectingSceneSession.role
-    )
-  }
 }
