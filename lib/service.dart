@@ -176,9 +176,12 @@ String _getNotificationContent({bool isWaiting = false}) {
 
 Future<void> _heartbeatTick(ServiceInstance service) async {
   try {
-    Position? pos = await Geolocator.getLastKnownPosition();
-    pos ??= await Geolocator.getCurrentPosition(
-      locationSettings: AdaptiveLocationSettings.buildSettings(_trackingMode),
+    // Immer frische Position holen - nie veralteten Cache senden
+    final pos = await Geolocator.getCurrentPosition(
+      locationSettings: LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      ),
     );
 
     await _sendPositionIfOk(service, pos, forceByHeartbeat: true);
@@ -387,6 +390,8 @@ Future<void> onStart(ServiceInstance service) async {
   /// GPS bleibt aktiv mit reduzierter Frequenz.
   Future<void> switchToPowerSaver() async {
     _trackingMode = TrackingMode.powerSaver;
+    trackingEnabled = true;
+
     // Stream mit neuen (sparsamen) Einstellungen neu starten
     await sub?.cancel();
     sub = null;
@@ -399,6 +404,12 @@ Future<void> onStart(ServiceInstance service) async {
       onError: (_) {},
       cancelOnError: false,
     );
+
+    // Timer sicherstellen (falls noch nicht gestartet)
+    _scheduleNextHeartbeat(service);
+    _schedulePeriodicModeCheck(service);
+    _schedulePeriodicFlush(service);
+    _startConnectivityListener();
 
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
@@ -450,6 +461,12 @@ Future<void> onStart(ServiceInstance service) async {
     await stopTracking();
     await service.stopSelf();
   });
+
+  // Auto-Start: Tracking sofort nach Initialisierung starten
+  // Behebt Race-Condition wenn setTracking-Event vor Listener-Setup eintrifft
+  if (await _hasValidConfig()) {
+    await startTracking();
+  }
 }
 
 const _flushInterval = Duration(minutes: 5);
