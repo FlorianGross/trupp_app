@@ -207,7 +207,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _checkConnection() async {
     try {
-      final result = await EdpApi.instance.probe(currentStatus: selectedStatus);
+      // Aktuellen Standort als Ping senden (kein Status-Seiteneffekt)
+      double? lat, lon;
+      try {
+        final pos = await Geolocator.getLastKnownPosition();
+        if (pos != null) {
+          lat = pos.latitude;
+          lon = pos.longitude;
+        }
+      } catch (_) {}
+
+      final result = await EdpApi.instance.probe(lat: lat, lon: lon);
       final pending = _stats['pending'] ?? 0;
       if (!mounted) return;
       setState(() {

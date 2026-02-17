@@ -202,10 +202,13 @@ class EdpApi {
     }
   }
 
-  /// Testet die Verbindung zum Server (nutzt aktuellen Status statt hardcoded).
-  Future<EdpResult> probe({int? currentStatus}) {
-    final st = currentStatus ?? 1;
-    final url = _uri('setstatus', {'issi': _config.issi, 'status': '$st'});
+  /// Testet die Verbindung zum Server via GPS-Ping (kein Status-Seiteneffekt).
+  Future<EdpResult> probe({double? lat, double? lon}) {
+    if (lat != null && lon != null) {
+      return sendGps(lat: lat, lon: lon);
+    }
+    // Fallback: GPS-Endpoint mit letzter bekannter Position (0,0 = ungültig aber Server antwortet)
+    final url = _uri('gpsposition', {'issi': _config.issi, 'lat': '0', 'lon': '0'});
     return _getWithRetry(url);
   }
 
