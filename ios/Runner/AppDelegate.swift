@@ -1,5 +1,6 @@
 import app_links
 import flutter_background_service_ios
+import CarPlay
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -64,7 +65,8 @@ import flutter_background_service_ios
       configurationForConnecting connectingSceneSession: UISceneSession,
       options: UIScene.ConnectionOptions
   ) -> UISceneConfiguration {
-    if connectingSceneSession.role == .carTemplateApplication {
+    if #available(iOS 14.0, *),
+       connectingSceneSession.role == .carTemplateApplication {
       let config = UISceneConfiguration(
         name: "TruppCarPlay",
         sessionRole: .carTemplateApplication
