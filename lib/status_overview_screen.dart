@@ -25,6 +25,7 @@ import 'main.dart' show themeNotifier, toggleTheme;
 import 'map_screen.dart';
 import 'status_history_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
+import 'iot_car_helper.dart';
 
 enum _ConnectionState { unknown, connected, degraded, disconnected }
 
@@ -101,6 +102,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     );
     _animationController.forward();
     _initialize();
+
+    // Car-Integration: Status-Änderungen von Android Auto / CarPlay empfangen
+    IotCarHelper.initialize((status) {
+      if (status >= 0 && status <= 9) {
+        _onStatusPressed(status);
+      }
+    });
   }
 
   @override
@@ -594,6 +602,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
     // Statuswechsel in History aufnehmen
     StatusHistory.add(st);
+
+    // Status an Car-Display senden (Android Auto / CarPlay)
+    IotCarHelper.sendStatusToIot(st);
 
     if (_isTempStatus(st)) {
       await _onTempStatus(st);

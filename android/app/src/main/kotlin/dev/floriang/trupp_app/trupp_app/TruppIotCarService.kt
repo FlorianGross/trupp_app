@@ -8,19 +8,20 @@ import android.content.Intent
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
+import android.os.Build
 
 /**
  * IOT Car App Service - direkt im Auto-System
  * Keine Notifications, nur Status-Buttons
  */
-class TruppIotCarService : CarAppService() {  // ← Erbt von CarAppService
+class TruppIotCarService : CarAppService() {
 
     override fun createHostValidator(): HostValidator {
-        return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR  // ← Erlaubt Android Auto
+        return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
     }
 
     override fun onCreateSession(): Session {
-        return TruppIotSession()  // ← Muss Session zurückgeben
+        return TruppIotSession()
     }
 }
 
@@ -30,12 +31,13 @@ class TruppIotCarService : CarAppService() {  // ← Erbt von CarAppService
 class TruppIotSession : Session() {
 
     private lateinit var mainScreen: TruppIotScreen
+    private var receiver: BroadcastReceiver? = null
 
     override fun onCreateScreen(intent: Intent): Screen {
         mainScreen = TruppIotScreen(carContext)
 
         // BroadcastReceiver für Status-Updates von Flutter
-        val receiver = object : BroadcastReceiver() {
+        receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 val status = intent?.getIntExtra("status", -1) ?: return
                 if (status >= 0) {
@@ -44,12 +46,24 @@ class TruppIotSession : Session() {
             }
         }
 
-        // Receiver registrieren
-        carContext.registerReceiver(
-            receiver,
-            IntentFilter("dev.floriang.trupp_app.STATUS_UPDATE")
-        )
+        // Receiver registrieren (Android 14+ benötigt Export-Flag)
+        val filter = IntentFilter("dev.floriang.trupp_app.STATUS_UPDATE")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            carContext.registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            carContext.registerReceiver(receiver, filter)
+        }
 
         return mainScreen
+    }
+
+    override fun onCarConfigurationChanged(newConfiguration: android.content.res.Configuration) {
+        super.onCarConfigurationChanged(newConfiguration)
+    }
+
+    fun onDestroy() {
+        try {
+            receiver?.let { carContext.unregisterReceiver(it) }
+        } catch (_: Exception) {}
     }
 }
