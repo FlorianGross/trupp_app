@@ -1,6 +1,5 @@
 import app_links
 import flutter_background_service_ios
-import CarPlay
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -59,19 +58,21 @@ import CarPlay
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 
-  // CarPlay-Scene programmatisch registrieren (statt über Info.plist UIApplicationSceneManifest)
+  // CarPlay-Scene programmatisch registrieren
+  // HINWEIS: TruppCarPlaySceneDelegate.swift muss noch über Xcode zum Projekt hinzugefügt werden
+  // (Rechtsklick Runner → Add Files to "Runner" → TruppCarPlaySceneDelegate.swift auswählen)
   override func application(
       _ application: UIApplication,
       configurationForConnecting connectingSceneSession: UISceneSession,
       options: UIScene.ConnectionOptions
   ) -> UISceneConfiguration {
-    if #available(iOS 14.0, *),
-       connectingSceneSession.role == .carTemplateApplication {
+    if let delegateClass = NSClassFromString("Runner.TruppCarPlaySceneDelegate") as? UIResponder.Type,
+       connectingSceneSession.role.rawValue == "CPTemplateApplicationSceneSessionRoleApplication" {
       let config = UISceneConfiguration(
         name: "TruppCarPlay",
-        sessionRole: .carTemplateApplication
+        sessionRole: connectingSceneSession.role
       )
-      config.delegateClass = TruppCarPlaySceneDelegate.self
+      config.delegateClass = delegateClass
       return config
     }
     return UISceneConfiguration(
