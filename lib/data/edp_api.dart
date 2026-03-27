@@ -234,6 +234,12 @@ class EdpApi {
     return _getWithRetry(url);
   }
 
+  /// Sendet eine SDS-Nachricht im Namen einer anderen ISSI (für Melde-Editor).
+  Future<EdpResult> sendSdsForIssi(String issi, String text) {
+    final url = _uri('incommingsds', {'issi': issi, 'text': text});
+    return _getWithRetry(url);
+  }
+
   /// Bequemlichkeit: ist die gespeicherte Konfiguration verwendbar?
   static Future<bool> hasValidConfigInPrefs() async {
     final prefs = await SharedPreferences.getInstance();

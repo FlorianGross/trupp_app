@@ -23,6 +23,7 @@ import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
 import 'main.dart' show themeNotifier, toggleTheme;
 import 'map_screen.dart';
+import 'staerke_editor_screen.dart';
 import 'status_history_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'iot_car_helper.dart';
@@ -51,6 +52,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   bool _showMessageField = false; // Collapsible message field
+  bool _showStaerkeField = false; // Collapsible eigene Stärke
+
+  // Eigene Stärke: Führung / Unterführer / Mannschaft
+  int _eigeneF = 0;
+  int _eigeneU = 0;
+  int _eigeneM = 0;
+  bool _isSendingStaerke = false;
 
   // Deployment & Tracking State
   DeploymentMode _deploymentMode = DeploymentMode.standby;
@@ -729,6 +737,31 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
   }
 
+  Future<void> _sendEigeneStaerke() async {
+    setState(() => _isSendingStaerke = true);
+    try {
+      // Fahrzeugbezeichnung aus eigener ISSI ableiten (wenn 5-stellig)
+      final decoded = IssiHelper.isValidIssi(issi) ? IssiHelper.decode(issi) : trupp;
+      final text = '$decoded Stärke: $_eigeneF/$_eigeneU/$_eigeneM';
+      final res = await EdpApi.instance.sendSdsText(text);
+      if (!mounted) return;
+      if (res.ok) {
+        _showSnackbar('Eigene Stärke gesendet', success: true);
+        setState(() {
+          _eigeneF = 0;
+          _eigeneU = 0;
+          _eigeneM = 0;
+        });
+      } else {
+        _showSnackbar('Fehler: ${res.statusCode}', success: false);
+      }
+    } catch (e) {
+      if (mounted) _showSnackbar('Fehler: $e', success: false);
+    } finally {
+      if (mounted) setState(() => _isSendingStaerke = false);
+    }
+  }
+
   Future<void> _exportGpx() async {
     try {
       final path = await GpxExporter.exportAllFixesToGpx();
@@ -859,6 +892,18 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             ),
           ),
           const SizedBox(height: 16),
+          _buildMenuItem(
+            icon: Icons.assignment_ind,
+            title: 'Melde-Editor',
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const StaerkeEditorScreen()),
+              );
+            },
+          ),
           _buildMenuItem(
             icon: Icons.health_and_safety,
             title: 'System-Check',
@@ -1057,6 +1102,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                       _buildCompactStatusBar(),
                       const SizedBox(height: 8),
                       _buildEssentialInfo(),
+                      const SizedBox(height: 8),
+                      _buildEigeneStaerkeSection(),
                       const SizedBox(height: 8),
                       _buildMessageSection(),
                     ],
@@ -1391,6 +1438,237 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           ),
         ),
       ],
+    );
+  }
+
+  // Collapsible Eigene-Stärke-Sektion
+  Widget _buildEigeneStaerkeSection() {
+    final cardBg = _isDark
+        ? Theme.of(context).colorScheme.surface
+        : Colors.white;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          children: [
+            InkWell(
+              onTap: () =>
+                  setState(() => _showStaerkeField = !_showStaerkeField),
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child: Row(
+                  children: [
+                    Icon(Icons.groups, color: Colors.red.shade800, size: 18),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Eigene Stärke melden',
+                        style: TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                    Icon(
+                      _showStaerkeField
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                      color: Colors.grey,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            if (_showStaerkeField) ...[
+              const Divider(height: 1),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildStaerkeCounter(
+                            abbr: 'F',
+                            label: 'Führung',
+                            value: _eigeneF,
+                            onChanged: (v) => setState(() => _eigeneF = v),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildStaerkeCounter(
+                            abbr: 'U',
+                            label: 'Unterführer',
+                            value: _eigeneU,
+                            onChanged: (v) => setState(() => _eigeneU = v),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildStaerkeCounter(
+                            abbr: 'M',
+                            label: 'Mannschaft',
+                            value: _eigeneM,
+                            onChanged: (v) => setState(() => _eigeneM = v),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Vorschau
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.grey.shade200),
+                      ),
+                      child: Text(
+                        () {
+                          final decoded = IssiHelper.isValidIssi(issi)
+                              ? IssiHelper.decode(issi)
+                              : trupp;
+                          return '$decoded Stärke: $_eigeneF/$_eigeneU/$_eigeneM';
+                        }(),
+                        style: const TextStyle(
+                            fontSize: 12, fontFamily: 'monospace'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Material(
+                        color: Colors.red.shade800,
+                        borderRadius: BorderRadius.circular(10),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: _isSendingStaerke ? null : _sendEigeneStaerke,
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            child: Center(
+                              child: _isSendingStaerke
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                          color: Colors.white),
+                                    )
+                                  : const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.send,
+                                            color: Colors.white, size: 18),
+                                        SizedBox(width: 8),
+                                        Text(
+                                          'Stärke senden',
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontWeight: FontWeight.w600,
+                                            fontSize: 15,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStaerkeCounter({
+    required String abbr,
+    required String label,
+    required int value,
+    required void Function(int) onChanged,
+  }) {
+    return Column(
+      children: [
+        Text(
+          abbr,
+          style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              color: Colors.grey.shade600),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, color: Colors.grey),
+          textAlign: TextAlign.center,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 6),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _miniCounterBtn(
+              icon: Icons.remove,
+              onTap: value > 0 ? () => onChanged(value - 1) : null,
+              primary: false,
+            ),
+            SizedBox(
+              width: 30,
+              child: Text(
+                '$value',
+                textAlign: TextAlign.center,
+                style:
+                    const TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
+              ),
+            ),
+            _miniCounterBtn(
+              icon: Icons.add,
+              onTap: () => onChanged(value + 1),
+              primary: true,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _miniCounterBtn({
+    required IconData icon,
+    required VoidCallback? onTap,
+    required bool primary,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: (primary && onTap != null)
+              ? Colors.red.shade800
+              : Colors.grey.shade200,
+          borderRadius: BorderRadius.circular(6),
+        ),
+        child: Icon(
+          icon,
+          size: 15,
+          color: (primary && onTap != null)
+              ? Colors.white
+              : (onTap != null ? Colors.black87 : Colors.grey.shade400),
+        ),
+      ),
     );
   }
 
