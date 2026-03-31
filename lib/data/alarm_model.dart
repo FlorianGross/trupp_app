@@ -20,7 +20,6 @@ class AlarmData {
   final String ort;        // Ort
   final String mittel;     // Einsatzmittel (bereinigt)
   final String ts;         // RFC3339-Zeitstempel des Eingangs
-  final String issi;
 
   const AlarmData({
     required this.issi,
@@ -35,7 +34,6 @@ class AlarmData {
     required this.ort,
     required this.mittel,
     required this.ts,
-    required this.issi,
   });
 
   factory AlarmData.fromJson(Map<String, dynamic> json) {
@@ -52,7 +50,6 @@ class AlarmData {
       ort:      json['ort']      as String? ?? '',
       mittel:   json['mittel']   as String? ?? '',
       ts:       json['ts']       as String? ?? '',
-      issi:     json['issi']     as String? ?? '',
     );
   }
 

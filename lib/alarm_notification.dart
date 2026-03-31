@@ -53,8 +53,6 @@ class AlarmNotificationService {
       playSound: true,
       enableVibration: true,
       enableLights: true,
-      // Alarm-Kanal darf DND umgehen
-      bypassDnd: true,
     );
     await _plugin
         .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
