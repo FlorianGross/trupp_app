@@ -5,6 +5,7 @@ import 'package:trupp_app/alarm_notification.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
+import 'data/alarm_model.dart';
 import 'status_overview_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
