@@ -29,6 +29,9 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'iot_car_helper.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'alarm_overview_screen.dart';
+import 'alarm_detail_screen.dart';
+import 'alarm_notification.dart';
+import 'alarm_overlay.dart' show kOverlayOpenDetail;
 import 'data/alarm_store.dart';
 import 'data/alarm_service.dart';
 
@@ -200,6 +203,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
     await _refreshAlarmBadge();
 
+    // Overlay-Detail-Flag: wenn aus dem Alarm-Overlay auf "Details" getippt wurde
+    await _checkOverlayDetailRequest();
+
     // Periodisches DB-Cleanup (einmal pro App-Resume, max alle 24h)
     await _maybeCleanupDatabase();
   }
@@ -306,6 +312,22 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         }
       } catch (_) {}
     }
+  }
+
+  Future<void> _checkOverlayDetailRequest() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload();
+      if (prefs.getBool(kOverlayOpenDetail) != true) return;
+      await prefs.remove(kOverlayOpenDetail);
+
+      final alarm = await AlarmNotificationService.getPendingAlarm();
+      if (alarm == null || !mounted) return;
+
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => AlarmDetailScreen(alarm: alarm)),
+      );
+    } catch (_) {}
   }
 
   Future<void> _requestOverlayPermission() async {
