@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:trupp_app/alarm_detail_screen.dart';
 import 'package:trupp_app/alarm_notification.dart';
+import 'package:trupp_app/alarm_overview_screen.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
@@ -41,11 +41,13 @@ Future<void> main() async {
   await _loadThemePreference();
 
   // Benachrichtigungs-Plugin im Haupt-Isolate initialisieren.
-  // onTap öffnet die AlarmDetailScreen wenn die App aus einer Notification heraus gestartet wird.
+  // Tap auf "Details" oder Notification-Body öffnet die Alarm-Übersicht.
   await AlarmNotificationService.initialize(
     onTap: (alarm) {
       navigatorKey.currentState?.push(
-        MaterialPageRoute(builder: (_) => AlarmDetailScreen(alarm: alarm)),
+        MaterialPageRoute(
+          builder: (_) => AlarmOverviewScreen(highlightAlarm: alarm),
+        ),
       );
     },
   );
@@ -114,12 +116,12 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    // Nach dem ersten Frame: ggf. Alarm-Detail öffnen (Kaltstart via Notification)
+    // Nach dem ersten Frame: ggf. Alarm-Übersicht öffnen (Kaltstart via Notification)
     if (widget.pendingAlarm != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         navigatorKey.currentState?.push(
           MaterialPageRoute(
-            builder: (_) => AlarmDetailScreen(alarm: widget.pendingAlarm!),
+            builder: (_) => AlarmOverviewScreen(highlightAlarm: widget.pendingAlarm),
           ),
         );
       });

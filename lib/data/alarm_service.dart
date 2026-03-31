@@ -20,6 +20,7 @@ import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alarm_model.dart';
+import 'alarm_store.dart';
 import '../alarm_notification.dart';
 
 typedef AlarmReceivedCallback = void Function(AlarmData alarm);
@@ -59,6 +60,7 @@ class AlarmService {
         final alarm = AlarmData.fromJson(record.data);
         if (alarm.issi != issi) return; // Sicherheitsprüfung, falls Filter serverseitig nicht greift
 
+        await AlarmStore.add(alarm);
         final shown = await AlarmNotificationService.show(alarm);
         if (shown) {
           onNew?.call(alarm);
