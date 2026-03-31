@@ -3,7 +3,10 @@
 // Übersicht aller empfangenen EDP-Alarme (neueste zuerst).
 // Einzelner Alarm → AlarmDetailScreen.
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 
 import 'alarm_detail_screen.dart';
 import 'data/alarm_model.dart';
@@ -23,11 +26,29 @@ class AlarmOverviewScreen extends StatefulWidget {
 class _AlarmOverviewScreenState extends State<AlarmOverviewScreen> {
   List<AlarmData> _alarms = [];
   bool _loading = true;
+  StreamSubscription? _newAlarmSub;
 
   @override
   void initState() {
     super.initState();
     _load();
+    // Neuen Alarm sofort oben einfügen ohne erneuten Netzwerk-Call
+    _newAlarmSub = FlutterBackgroundService().on('newAlarm').listen((data) {
+      if (data == null || !mounted) return;
+      try {
+        final alarm = AlarmData.fromJson(Map<String, dynamic>.from(data));
+        if (_alarms.isEmpty ||
+            _alarms.first.deduplicationKey != alarm.deduplicationKey) {
+          setState(() => _alarms.insert(0, alarm));
+        }
+      } catch (_) {}
+    });
+  }
+
+  @override
+  void dispose() {
+    _newAlarmSub?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {

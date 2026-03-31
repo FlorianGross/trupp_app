@@ -8,12 +8,22 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'data/alarm_model.dart';
+import 'data/edp_api.dart';
 import 'alarm_notification.dart';
 
-class AlarmDetailScreen extends StatelessWidget {
+class AlarmDetailScreen extends StatefulWidget {
   final AlarmData alarm;
 
   const AlarmDetailScreen({super.key, required this.alarm});
+
+  @override
+  State<AlarmDetailScreen> createState() => _AlarmDetailScreenState();
+}
+
+class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
+  AlarmData get alarm => widget.alarm;
+  int? _lastSentStatus;
+  bool _sendingStatus = false;
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +45,7 @@ class AlarmDetailScreen extends StatelessWidget {
         child: Column(
           children: [
             Expanded(child: _buildContent(context)),
+            _buildStatusButtons(context),
             _buildNavigateButton(context),
           ],
         ),
@@ -79,6 +90,65 @@ class AlarmDetailScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  // ---------------------------------------------------------------------------
+  // FMS-Status-Schnellwahl
+  // ---------------------------------------------------------------------------
+
+  static const _statusLabels = {
+    3: ('S3', 'Einsatz'),
+    4: ('S4', 'Ankunft'),
+    7: ('S7', 'Transport'),
+    8: ('S8', 'Zielort'),
+  };
+
+  Widget _buildStatusButtons(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+      child: Row(
+        children: _statusLabels.entries.map((e) {
+          final code = e.key;
+          final label = e.value.$1;
+          final sub = e.value.$2;
+          final isActive = _lastSentStatus == code;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 3),
+              child: _StatusButton(
+                label: label,
+                sublabel: sub,
+                active: isActive,
+                loading: _sendingStatus && isActive,
+                onTap: _sendingStatus ? null : () => _sendStatus(code),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Future<void> _sendStatus(int code) async {
+    setState(() { _sendingStatus = true; _lastSentStatus = code; });
+    try {
+      final api = EdpApi.instance;
+      final result = await api.sendStatus(code);
+      if (!mounted) return;
+      final msg = result.ok
+          ? 'Status ${_statusLabels[code]!.$1} gesendet'
+          : 'Fehler (HTTP ${result.statusCode})';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Kein EDP-Server konfiguriert.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sendingStatus = false);
+    }
   }
 
   Widget _buildNavigateButton(BuildContext context) {
@@ -164,6 +234,72 @@ class _AlarmHeader extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Status-Button-Widget
+// ---------------------------------------------------------------------------
+
+class _StatusButton extends StatelessWidget {
+  final String label;
+  final String sublabel;
+  final bool active;
+  final bool loading;
+  final VoidCallback? onTap;
+
+  const _StatusButton({
+    required this.label,
+    required this.sublabel,
+    required this.active,
+    required this.loading,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: active ? Colors.white : Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: active ? Colors.white : Colors.white38,
+            width: active ? 2 : 1,
+          ),
+        ),
+        child: loading
+            ? const Center(
+                child: SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: TextStyle(
+                      color: active ? Colors.red.shade900 : Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                  Text(
+                    sublabel,
+                    style: TextStyle(
+                      color: active ? Colors.red.shade700 : Colors.white70,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ),
+      ),
     );
   }
 }

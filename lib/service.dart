@@ -287,7 +287,12 @@ Future<void> onStart(ServiceInstance service) async {
   final pbUrl = prefs.getString(AlarmService.kPbUrlKey) ?? '';
   final ownIssi = prefs.getString('issi') ?? '';
   if (pbUrl.isNotEmpty && ownIssi.isNotEmpty) {
-    await AlarmService.start(pbUrl: pbUrl, issi: ownIssi);
+    await AlarmService.start(
+      pbUrl: pbUrl,
+      issi: ownIssi,
+      // Neuen Alarm an den Haupt-Isolate weiterleiten (Badge + Realtime-Liste)
+      onNew: (alarm) => service.invoke('newAlarm', alarm.toJson()),
+    );
   }
 
   _currentStatus = await _readStatusFromPrefs();
