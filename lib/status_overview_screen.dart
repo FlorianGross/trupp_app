@@ -27,6 +27,8 @@ import 'staerke_editor_screen.dart';
 import 'status_history_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'iot_car_helper.dart';
+import 'alarm_overview_screen.dart';
+import 'data/alarm_store.dart';
 
 enum _ConnectionState { unknown, connected, degraded, disconnected }
 
@@ -75,6 +77,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Einsatz-Timer
   Timer? _deploymentTickTimer;
   int _deploymentStartMs = 0;
+
+  // Alarmierungs-Badge + Realtime-Listener
+  int _alarmUnread = 0;
+  StreamSubscription? _alarmEventSub;
 
   // Tracking ist immer gewünscht, sobald konfiguriert
   bool get _trackingDesired => true;
@@ -126,6 +132,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     _statsRefreshTimer?.cancel();
     _connectionCheckTimer?.cancel();
     _deploymentTickTimer?.cancel();
+    _alarmEventSub?.cancel();
     _infoCtrl.dispose();
     _animationController.dispose();
     super.dispose();
@@ -157,6 +164,21 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   /// Wird aufgerufen wenn die App wieder in den Vordergrund kommt.
   /// Flusht die Queue sofort und aktualisiert den GPS-Tracking-Modus.
+  Future<void> _refreshAlarmBadge() async {
+    final count = await AlarmStore.unreadCount();
+    if (mounted) setState(() => _alarmUnread = count);
+  }
+
+  Future<void> _openAlarmOverview() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const AlarmOverviewScreen()),
+    );
+    // Badge zurücksetzen nachdem Nutzer die Übersicht besucht hat
+    await AlarmStore.markAllSeen();
+    if (mounted) setState(() => _alarmUnread = 0);
+  }
+
   Future<void> _onAppResumed() async {
     // Queue sofort flushen (Daten die im Hintergrund aufgelaufen sind)
     try {
@@ -173,6 +195,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     if (canTrack) {
       await _setBackgroundTracking(true);
     }
+
+    await _refreshAlarmBadge();
 
     // Periodisches DB-Cleanup (einmal pro App-Resume, max alle 24h)
     await _maybeCleanupDatabase();
@@ -195,6 +219,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     await _updateBatteryLevel();
     await _ensureNotificationPermission();
     await _checkLocationServicesSilently();
+    await _refreshAlarmBadge();
 
     final prefs = await SharedPreferences.getInstance();
     final firstRun = !(prefs.getBool('onboarded') ?? false);
@@ -223,6 +248,11 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     _statsRefreshTimer = Timer.periodic(const Duration(seconds: 10), (_) {
       _refreshStats();
     });
+
+    // Alarm-Badge live aktualisieren wenn Background-Service einen neuen Alarm meldet
+    _alarmEventSub = FlutterBackgroundService()
+        .on('newAlarm')
+        .listen((_) => _refreshAlarmBadge());
     _connectionCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _checkConnection();
     });
@@ -1080,6 +1110,39 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         elevation: 0,
         centerTitle: true,
         actions: [
+          // Alarm-Glocke mit Badge
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.campaign_outlined, size: 24),
+                tooltip: 'Alarmierungen',
+                onPressed: _openAlarmOverview,
+              ),
+              if (_alarmUnread > 0)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: IgnorePointer(
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        _alarmUnread > 99 ? '99+' : '$_alarmUnread',
+                        style: TextStyle(
+                          color: Colors.red.shade800,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             icon: const Icon(Icons.qr_code, size: 22),
             onPressed: _showQrCode,

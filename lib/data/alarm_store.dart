@@ -55,5 +55,29 @@ class AlarmStore {
   static Future<void> clear() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kKey);
+    await prefs.remove(_kSeenKey);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Ungelesene-Badge-Verwaltung
+  // ---------------------------------------------------------------------------
+
+  static const _kSeenKey = 'alarm_seen_count';
+
+  /// Anzahl Alarme die der Nutzer noch nicht in der Übersicht gesehen hat.
+  static Future<int> unreadCount() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final total = (await getAll(prefs: prefs)).length;
+    final seen = prefs.getInt(_kSeenKey) ?? 0;
+    return (total - seen).clamp(0, 999);
+  }
+
+  /// Markiert alle aktuellen Alarme als gelesen (Badge zurücksetzen).
+  static Future<void> markAllSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    final total = (await getAll(prefs: prefs)).length;
+    await prefs.setInt(_kSeenKey, total);
   }
 }
