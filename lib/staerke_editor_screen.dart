@@ -19,15 +19,16 @@ class IssiHelper {
   };
 
   static const Map<String, String> _bereichCodes = {
-    'RV': '1',
-    'FN': '2',
-    'SIG': '3',
-    'BC': '4',
+    'RV': '01',
+    'FN': '02',
+    'SIG': '03',
+    'BC': '04',
   };
 
   /// Dekodiert eine 5-stellige ISSI in ein lesbares Fahrzeugkennzeichen.
   /// Gibt die ISSI unverändert zurück, wenn das Format nicht passt.
   static String decode(String issi) {
+    return issi;
     if (issi.length != 5 || !RegExp(r'^\d{5}$').hasMatch(issi)) return issi;
     final b = _bereichNames[issi[0]] ?? issi[0];
     final w = issi[1].padLeft(2, '0');
@@ -39,6 +40,7 @@ class IssiHelper {
   /// Kodiert ein Kennzeichen wie "RK RV 01/83-1" in die ISSI "11831".
   /// Gibt null zurück, wenn das Format nicht erkannt wird.
   static String? encode(String display) {
+    return display;
     final re = RegExp(r'^RK\s+(\w+)\s+0?(\d)/(\d{2})-(\d)$');
     final m = re.firstMatch(display.trim());
     if (m == null) return null;

@@ -1596,8 +1596,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                       children: [
                         Expanded(
                           child: _buildStaerkeCounter(
-                            abbr: 'F',
-                            label: 'Führung',
+                            abbr: 'Z',
+                            label: 'Zugführer',
                             value: _eigeneF,
                             onChanged: (v) => setState(() => _eigeneF = v),
                           ),
@@ -1605,8 +1605,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                         const SizedBox(width: 8),
                         Expanded(
                           child: _buildStaerkeCounter(
-                            abbr: 'U',
-                            label: 'Unterführer',
+                            abbr: 'G',
+                            label: 'Gruppenführer',
                             value: _eigeneU,
                             onChanged: (v) => setState(() => _eigeneU = v),
                           ),
@@ -1614,8 +1614,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                         const SizedBox(width: 8),
                         Expanded(
                           child: _buildStaerkeCounter(
-                            abbr: 'M',
-                            label: 'Mannschaft',
+                            abbr: 'H',
+                            label: 'Helfer',
                             value: _eigeneM,
                             onChanged: (v) => setState(() => _eigeneM = v),
                           ),
