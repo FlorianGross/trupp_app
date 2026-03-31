@@ -5,19 +5,22 @@
 //   Parameter : "<%EINSATZNUMMER%>|<%SONDERSIGNAL%>|<%STICHWORT%>|<%STICHWORT_KLARTEXT%>|<%MELDUNG%>|<%OBJEKTNAME%>|<%STRASSE%>|<%HAUSNUMMER%>|<%ORT%>|<%EINSATZMITTEL%>"
 //                ^^^ äußere Anführungszeichen sind PFLICHT damit Leerzeichen in Feldern nicht splitten
 //
-// Alarmierungs-Konfiguration:
-//   backend_url   = https://example.org   ← TruppApp-Backend-URL
-//   backend_token = mein-token            ← API-Token
-//   Wenn gesetzt, sendet edp_logger nach dem Schreiben der Logdatei einen
-//   GET-Request an {backend_url}/{backend_token}/alarm?issi={WERT}&...
-//   Das alarmiert das Gerät, welches in der TruppApp als {WERT}-ISSI konfiguriert ist.
+// Alarmierungs-Konfiguration (edp_logger.ini):
+//   pb_url   = https://pb.example.org   ← PocketBase-Instanz-URL
+//   pb_token = <optional>               ← PocketBase Admin-/API-Token (falls createRule nicht leer)
+//
+// Bei gesetztem pb_url erzeugt edp_logger beim Einsatz einen Datensatz in der
+// PocketBase-Collection "alarms" (POST /api/collections/alarms/records).
+// Die TruppApp abonniert diese Collection per Realtime-Subscription und
+// alarmiert das Gerät mit der passenden ISSI sofort.
 
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,7 +30,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-// 10 Felder, pipe-getrennt, 142 Zeichen Parameterlänge
+// 10 Felder, pipe-getrennt
 var fieldNames = []string{
 	"EINSATZNUMMER",      //  1
 	"SONDERSIGNAL",       //  2
@@ -46,16 +49,16 @@ var fieldNames = []string{
 // ---------------------------------------------------------------------------
 
 type Config struct {
-	LogDir       string
-	LogPrefix    string
-	DateFmt      string
-	TimeFmt      string
-	Separator    string
-	Rotate       string
-	Console      bool
-	EDPValue     bool
-	BackendURL   string // TruppApp-Backend-URL, z.B. "https://example.org"
-	BackendToken string // API-Token für das TruppApp-Backend
+	LogDir      string
+	LogPrefix   string
+	DateFmt     string
+	TimeFmt     string
+	Separator   string
+	Rotate      string
+	Console     bool
+	EDPValue    bool
+	PocketBaseURL   string // PocketBase-Instanz-URL, z.B. "https://pb.example.org"
+	PocketBaseToken string // Optionaler Bearer-Token (falls createRule nicht leer ist)
 }
 
 func programDataDir() string {
@@ -78,16 +81,16 @@ func exeDir() string {
 
 func defaultConfig() *Config {
 	return &Config{
-		LogDir:       filepath.Join(programDataDir(), "EDPLogger", "logs"),
-		LogPrefix:    "einsatz",
-		DateFmt:      "2006-01-02",
-		TimeFmt:      "15:04:05",
-		Separator:    " | ",
-		Rotate:       "daily",
-		Console:      false,
-		EDPValue:     false,
-		BackendURL:   "",
-		BackendToken: "",
+		LogDir:          filepath.Join(programDataDir(), "EDPLogger", "logs"),
+		LogPrefix:       "einsatz",
+		DateFmt:         "2006-01-02",
+		TimeFmt:         "15:04:05",
+		Separator:       " | ",
+		Rotate:          "daily",
+		Console:         false,
+		EDPValue:        false,
+		PocketBaseURL:   "",
+		PocketBaseToken: "",
 	}
 }
 
@@ -135,11 +138,11 @@ func loadConfig() *Config {
 	}
 	cfg.Console = strings.ToLower(sec.Key("console").String()) == "true"
 	cfg.EDPValue = strings.ToLower(sec.Key("edp_value").String()) == "true"
-	if v := sec.Key("backend_url").String(); v != "" {
-		cfg.BackendURL = strings.TrimRight(v, "/")
+	if v := sec.Key("pb_url").String(); v != "" {
+		cfg.PocketBaseURL = strings.TrimRight(v, "/")
 	}
-	if v := sec.Key("backend_token").String(); v != "" {
-		cfg.BackendToken = v
+	if v := sec.Key("pb_token").String(); v != "" {
+		cfg.PocketBaseToken = v
 	}
 	return cfg
 }
@@ -158,11 +161,11 @@ func writeDefaultIni(path string) {
 			"console      = false\n"+
 			"; true wenn EDP 'Wert' als ersten Parameter voranstellt\n"+
 			"edp_value    = false\n\n"+
-			"; --- TruppApp Alarmierung ---\n"+
-			"; Wenn backend_url und backend_token gesetzt sind, wird beim Einsatz das\n"+
-			"; Gerät mit der ISSI (EDP-'Wert'-Parameter) über die TruppApp alarmiert.\n"+
-			"; backend_url   = https://example.org\n"+
-			"; backend_token = mein-token\n",
+			"; --- TruppApp Alarmierung via PocketBase ---\n"+
+			"; PocketBase-Instanz-URL (ohne abschließenden Slash)\n"+
+			"; pb_url   = https://pb.example.org\n"+
+			"; Optionaler Bearer-Token wenn die Collection createRule nicht leer ist\n"+
+			"; pb_token = dein-admin-oder-api-token\n",
 	), 0644)
 }
 
@@ -209,7 +212,6 @@ func writeFallback(origPath string, writeErr error, entry string) {
 // ---------------------------------------------------------------------------
 
 func cleanValue(s string) string {
-	// EDP schreibt \r\n in mehrzeilige Felder (EINSATZMITTEL, RÜCKMELDUNGEN etc.)
 	s = strings.ReplaceAll(s, "\r\n", " / ")
 	s = strings.ReplaceAll(s, "\r", " ")
 	s = strings.ReplaceAll(s, "\n", " / ")
@@ -234,14 +236,11 @@ func parseFields(raw string) map[string]string {
 // ---------------------------------------------------------------------------
 
 // cleanSignal entfernt das EDP-Präfix "0=" / "1=" aus dem Sondersignal-Feld.
-// Aus "1=Mit Sondersignal" wird "Mit Sondersignal".
 func cleanSignal(s string) string {
 	return regexp.MustCompile(`^\d+=`).ReplaceAllString(s, "")
 }
 
-// cleanMittel extrahiert aus dem EDP-Einsatzmittel-Block (enthält Zeitstempel,
-// Status-Zähler etc.) nur die reinen Fahrzeug-Rufnamen.
-// Trennzeichen zwischen den Fahrzeugen ist " / " (unser \r\n-Ersatz).
+// cleanMittel extrahiert aus dem EDP-Einsatzmittel-Block nur die reinen Fahrzeug-Rufnamen.
 func cleanMittel(s string) string {
 	dateRe := regexp.MustCompile(`\d{2}\.\d{2}\.\d{4}`)
 	timeRe := regexp.MustCompile(`\d{2}:\d{2}:\d{2}`)
@@ -315,40 +314,70 @@ func writeLog(path, entry string) error {
 }
 
 // ---------------------------------------------------------------------------
-// TruppApp Alarm
+// PocketBase Alarmierung
 // ---------------------------------------------------------------------------
 
-// sendAlarm sendet einen Alarm über das TruppApp-Backend an das Gerät mit der
-// angegebenen ISSI (vehicleID). Der Backend-Server stellt den Alarm für die
-// TruppApp zum Abruf bereit (GET /{token}/alarm?issi=...).
-// Fehler werden in startup.log protokolliert, blockieren aber nicht.
+// alarmRecord ist das JSON-Payload für POST /api/collections/alarms/records.
+// Entspricht der PocketBase-Collection "alarms".
+type alarmRecord struct {
+	ISSI      string `json:"issi"`
+	ENR       string `json:"enr"`
+	Signal    string `json:"signal"`
+	Stichwort string `json:"stichwort"`
+	Klartext  string `json:"klartext"`
+	Meldung   string `json:"meldung"`
+	Objekt    string `json:"objekt"`
+	Strasse   string `json:"strasse"`
+	HNR       string `json:"hnr"`
+	Ort       string `json:"ort"`
+	Mittel    string `json:"mittel"`
+	TS        string `json:"ts"`
+}
+
+// sendAlarm erzeugt einen Alarm-Datensatz in PocketBase für das Gerät mit der
+// angegebenen ISSI (vehicleID). Die TruppApp empfängt ihn per Realtime-Subscription.
+// Fehler werden in startup.log protokolliert, blockieren aber den Ablauf nicht.
 func sendAlarm(fields map[string]string, vehicleID string, cfg *Config) {
-	if cfg.BackendURL == "" || cfg.BackendToken == "" || vehicleID == "" {
+	if cfg.PocketBaseURL == "" || vehicleID == "" {
 		return
 	}
 
-	q := url.Values{}
-	q.Set("issi", vehicleID)
-	q.Set("enr", g(fields, "EINSATZNUMMER"))
-	q.Set("signal", cleanSignal(g(fields, "SONDERSIGNAL")))
-	q.Set("stichwort", g(fields, "STICHWORT"))
-	q.Set("klartext", g(fields, "STICHWORT_KLARTEXT"))
-	q.Set("meldung", g(fields, "MELDUNG"))
-	q.Set("objekt", g(fields, "OBJEKTNAME"))
-	q.Set("strasse", g(fields, "STRASSE"))
-	q.Set("hnr", g(fields, "HAUSNUMMER"))
-	q.Set("ort", g(fields, "ORT"))
-	q.Set("mittel", cleanMittel(g(fields, "EINSATZMITTEL")))
-	q.Set("ts", time.Now().UTC().Format(time.RFC3339))
+	record := alarmRecord{
+		ISSI:      vehicleID,
+		ENR:       g(fields, "EINSATZNUMMER"),
+		Signal:    cleanSignal(g(fields, "SONDERSIGNAL")),
+		Stichwort: g(fields, "STICHWORT"),
+		Klartext:  g(fields, "STICHWORT_KLARTEXT"),
+		Meldung:   g(fields, "MELDUNG"),
+		Objekt:    g(fields, "OBJEKTNAME"),
+		Strasse:   g(fields, "STRASSE"),
+		HNR:       g(fields, "HAUSNUMMER"),
+		Ort:       g(fields, "ORT"),
+		Mittel:    cleanMittel(g(fields, "EINSATZMITTEL")),
+		TS:        time.Now().UTC().Format(time.RFC3339),
+	}
 
-	endpoint := cfg.BackendURL + "/" + cfg.BackendToken + "/alarm?" + q.Encode()
+	body, err := json.Marshal(record)
+	if err != nil {
+		return
+	}
+
+	url := cfg.PocketBaseURL + "/api/collections/alarms/records"
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if cfg.PocketBaseToken != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.PocketBaseToken)
+	}
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Get(endpoint)
+	resp, err := client.Do(req)
 	if err != nil {
 		d := filepath.Join(programDataDir(), "EDPLogger")
 		if f, ferr := openAppend(filepath.Join(d, "startup.log")); ferr == nil {
-			fmt.Fprintf(f, "[%s] ALARM-FEHLER: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
+			fmt.Fprintf(f, "[%s] PB-ALARM-FEHLER: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
 			f.Close()
 		}
 		return
@@ -356,7 +385,7 @@ func sendAlarm(fields map[string]string, vehicleID string, cfg *Config) {
 	defer resp.Body.Close()
 
 	if cfg.Console {
-		fmt.Printf("[ALARM] HTTP %d → ISSI %s\n", resp.StatusCode, vehicleID)
+		fmt.Printf("[ALARM] PocketBase HTTP %d → ISSI %s\n", resp.StatusCode, vehicleID)
 	}
 }
 
@@ -384,16 +413,10 @@ func main() {
 		entry = fmt.Sprintf("[%s] WARNUNG: Kein Argument übergeben.",
 			time.Now().Format("2006-01-02 15:04:05"))
 	default:
-		// Auto-Erkennung:
-		//   1 Arg  → direkt der Pipe-String
-		//   2+ Args → args[0] = EDP-"Wert" (Fahrzeug-ID), args[len-1] = Pipe-String
-		//             (EDP hängt den Wert vorne an, quoted Pipe-String kommt danach)
 		var pipeArg string
 		if len(args) == 1 {
 			pipeArg = args[0]
 		} else {
-			// Letztes Argument ist immer der Pipe-String (quoted, enthält |)
-			// Alles davor = EDP-Wert, mit Leerzeichen zusammengefügt
 			pipeArg = args[len(args)-1]
 			vehicleID = strings.TrimSpace(strings.Join(args[:len(args)-1], " "))
 		}
@@ -407,7 +430,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Gerät mit der ISSI (vehicleID) über das TruppApp-Backend alarmieren
+	// Gerät mit der ISSI (vehicleID) über PocketBase alarmieren
 	if fields != nil {
 		sendAlarm(fields, vehicleID, cfg)
 	}

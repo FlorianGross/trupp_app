@@ -4,6 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'status_overview_screen.dart';
 import 'data/edp_api.dart';
+import 'data/alarm_service.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -20,6 +21,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   final truppController = TextEditingController();
   final leiterController = TextEditingController();
   final issiController = TextEditingController();
+  final pbUrlController = TextEditingController();
 
   String _selectedProtocol = 'https';
   bool _autoSaveAfterScan = false;
@@ -34,6 +36,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     truppController.dispose();
     leiterController.dispose();
     issiController.dispose();
+    pbUrlController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -50,6 +53,10 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       curve: Curves.easeInOut,
     );
     _animationController.forward();
+
+    AlarmService.loadPbUrl().then((url) {
+      if (url != null && mounted) pbUrlController.text = url;
+    });
 
     if (widget is ConfigScreenWithPrefill) {
       final uri = (widget as ConfigScreenWithPrefill).initialDeepLink;
@@ -174,6 +181,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 'Trotzdem speichern?',
             onRetry: () async {
               await api.updateConfig(cfg);
+              await AlarmService.savePbUrl(pbUrlController.text.trim());
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(
@@ -188,6 +196,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         }
 
         await api.updateConfig(cfg);
+        await AlarmService.savePbUrl(pbUrlController.text.trim());
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
@@ -235,6 +244,9 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     truppController.text = uri.queryParameters['trupp'] ?? '';
     leiterController.text = uri.queryParameters['leiter'] ?? '';
     issiController.text = uri.queryParameters['issi'] ?? '';
+    if (uri.queryParameters.containsKey('pb_url')) {
+      pbUrlController.text = uri.queryParameters['pb_url']!;
+    }
     final proto = uri.queryParameters['protocol'];
     if (proto != null) _selectedProtocol = proto;
 
@@ -416,6 +428,31 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           _optionalField(
             label: 'Ansprechpartner',
             controller: leiterController,
+          ),
+          const SizedBox(height: 24),
+          const Padding(
+            padding: EdgeInsets.only(left: 4, bottom: 8),
+            child: Text(
+              'Alarmierung (optional)',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black87,
+              ),
+            ),
+          ),
+          _optionalField(
+            label: 'PocketBase-URL (z. B. https://pb.example.org)',
+            controller: pbUrlController,
+            keyboardType: TextInputType.url,
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              'Wenn gesetzt, empfängt dieses Gerät EDP-Alarmierungen in Echtzeit.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            ),
           ),
           const SizedBox(height: 12),
           Padding(
