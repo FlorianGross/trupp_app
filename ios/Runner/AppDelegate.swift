@@ -1,5 +1,6 @@
 import app_links
 import flutter_background_service_ios
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -12,12 +13,25 @@ import flutter_background_service_ios
   ) -> Bool {
     SwiftFlutterBackgroundServicePlugin.taskIdentifier = "dev.floriang.truppsapp.background.refresh"
 
+    // Delegate setzen, damit Notifications auch im Vordergrund angezeigt werden
+    // und damit flutter_local_notifications Tap-Events korrekt empfängt.
+    UNUserNotificationCenter.current().delegate = self
+
     // Retrieve the link from parameters
     if let url = AppLinks.shared.getLink(launchOptions: launchOptions) {
       AppLinks.shared.handleLink(url: url)
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+  }
+
+  // Wenn die App im Vordergrund ist: Notification trotzdem als Banner + Ton anzeigen
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    willPresent notification: UNNotification,
+    withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+  ) {
+    completionHandler([.banner, .list, .sound, .badge])
   }
 
   // Wird aufgerufen sobald der Flutter-Engine initialisiert ist (UIScene-Lifecycle)
