@@ -13,6 +13,8 @@ import 'data/location_quality.dart';
 import 'data/location_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
+import 'data/alarm_service.dart';
+import 'alarm_notification.dart';
 
 // Globale Variablen für Service-Isolate
 int _currentStatus = 0;
@@ -279,6 +281,15 @@ Future<void> onStart(ServiceInstance service) async {
 
   await EdpApi.ensureInitialized();
 
+  // Benachrichtigungs-Plugin und PocketBase-Alarm-Subscription initialisieren
+  await AlarmNotificationService.initialize();
+  final prefs = await SharedPreferences.getInstance();
+  final pbUrl = prefs.getString(AlarmService.kPbUrlKey) ?? '';
+  final ownIssi = prefs.getString('issi') ?? '';
+  if (pbUrl.isNotEmpty && ownIssi.isNotEmpty) {
+    await AlarmService.start(pbUrl: pbUrl, issi: ownIssi);
+  }
+
   _currentStatus = await _readStatusFromPrefs();
   _deploymentMode = await DeploymentState.getMode();
   _trackingMode = await AdaptiveLocationSettings.determineMode(
@@ -434,6 +445,8 @@ Future<void> onStart(ServiceInstance service) async {
 
     _flushTimer?.cancel();
     _flushTimer = null;
+
+    await AlarmService.stop();
 
     _connectivitySub?.cancel();
     _connectivitySub = null;
