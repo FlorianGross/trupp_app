@@ -13,7 +13,11 @@ import 'data/location_quality.dart';
 import 'data/location_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
+import 'package:pocketbase/pocketbase.dart';
+
 import 'data/alarm_service.dart';
+import 'data/alarm_store.dart';
+import 'data/alarm_model.dart';
 import 'alarm_notification.dart';
 
 // Globale Variablen für Service-Isolate
@@ -540,8 +544,47 @@ Future<bool> onIosBackground(ServiceInstance service) async {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 300);
       await _markFlushedNow();
     }
+
+    // 4) PocketBase-Poll: neue Alarme holen (iOS kann keine SSE-Verbindung halten)
+    await _pollAlarms();
   } catch (_) {}
   return true;
+}
+
+/// Pollt die neuesten Alarme aus PocketBase und zeigt ggf. eine Benachrichtigung.
+/// Wird im iOS-Background-Fetch aufgerufen, da SSE dort nicht läuft.
+Future<void> _pollAlarms() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    final pbUrl = prefs.getString(AlarmService.kPbUrlKey) ?? '';
+    final ownIssi = prefs.getString('issi') ?? '';
+    if (pbUrl.isEmpty || ownIssi.isEmpty) return;
+
+    await AlarmNotificationService.initialize();
+
+    // Letzten bekannten Alarm-Timestamp lesen
+    final lastTs = prefs.getString('ios_bg_last_alarm_ts') ?? '';
+
+    final pb = PocketBase(pbUrl);
+    final result = await pb.collection('alarms').getList(
+      page: 1,
+      perPage: 5,
+      filter: 'issi = "$ownIssi"',
+      sort: '-created',
+    );
+
+    if (result.items.isEmpty) return;
+
+    final latestRecord = result.items.first;
+    final latestTs = latestRecord.created;
+    if (latestTs == lastTs) return; // Kein neuer Alarm
+
+    final alarm = AlarmData.fromJson(latestRecord.data);
+    await AlarmStore.add(alarm);
+    await AlarmNotificationService.show(alarm);
+
+    await prefs.setString('ios_bg_last_alarm_ts', latestTs);
+  } catch (_) {}
 }
 
 Future<void> initializeBackgroundService() async {

@@ -2,10 +2,8 @@
 //
 // Verwaltet lokale Alarmbenachrichtigungen via flutter_local_notifications.
 //
-// Verwendung:
-//   1. AlarmNotificationService.initialize() in main() aufrufen.
-//   2. AlarmNotificationService.show(alarm) aus dem Hintergrundservice aufrufen.
-//   3. onNotificationTap registrieren, um beim Antippen die Detail-Ansicht zu öffnen.
+// Android: category=alarm → zeigt über DND/Fokus; fullScreenIntent → über gesperrtem Bildschirm.
+// iOS:     timeSensitive → bricht durch Fokus-Modi; critical (falls Entitlement vorhanden) → DND.
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -20,39 +18,33 @@ const _kNotificationId = 42;
 const _kLastAlarmKey = 'last_alarm_key';
 const _kPendingAlarmJson = 'pending_alarm_json';
 
-/// Wird aufgerufen wenn der Nutzer auf die Benachrichtigung (Body) tippt.
-/// Registrierung in main() via [AlarmNotificationService.initialize].
 typedef AlarmTapCallback = void Function(AlarmData alarm);
 
 class AlarmNotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
-
   static AlarmTapCallback? _onTap;
 
-  /// Initialisierung – einmalig in main() aufrufen.
-  ///
-  /// [onTap] wird aufgerufen wenn der Nutzer die Benachrichtigung antippt
-  /// (nicht die Aktions-Buttons). Typischerweise Navigation zur Detail-Ansicht.
+  /// Einmalig in main() + onStart (background isolate) aufrufen.
   static Future<void> initialize({AlarmTapCallback? onTap}) async {
     _onTap = onTap;
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // requestCriticalPermission: iOS erlaubt Critical Alerts nur mit Apple-Entitlement.
+    // Die Anfrage schadet nicht – ohne Entitlement wird sie still ignoriert.
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
+      requestCriticalPermission: true,
     );
 
     await _plugin.initialize(
-      const InitializationSettings(
-        android: androidSettings,
-        iOS: iosSettings,
-      ),
+      const InitializationSettings(android: androidSettings, iOS: iosSettings),
       onDidReceiveNotificationResponse: _onNotificationResponse,
       onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
     );
 
-    // Android-Kanal anlegen (Importance.max = Heads-Up-Notification)
+    // Alarm-Kanal: Importance.max + Alarm-Kategorie → bricht durch DND auf Android
     const channel = AndroidNotificationChannel(
       _kChannelId,
       _kChannelName,
@@ -61,25 +53,19 @@ class AlarmNotificationService {
       playSound: true,
       enableVibration: true,
       enableLights: true,
+      // Alarm-Kanal darf DND umgehen
+      bypassDnd: true,
     );
     await _plugin
-        .resolvePlatformSpecificImplementation<
-            AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
         ?.createNotificationChannel(channel);
   }
 
-  /// Zeigt eine Alarmbenachrichtigung an.
-  ///
-  /// Prüft Deduplizierung gegen [_kLastAlarmKey] in SharedPreferences,
-  /// damit dieselbe Alarmierung nicht mehrfach erscheint.
-  /// Gibt [true] zurück wenn der Alarm tatsächlich neu und angezeigt wurde.
   static Future<bool> show(AlarmData alarm) async {
     final prefs = await SharedPreferences.getInstance();
     final lastKey = prefs.getString(_kLastAlarmKey) ?? '';
     if (lastKey == alarm.deduplicationKey) return false;
 
-    // Alarm persistieren damit nach Benachrichtigungs-Tap die Detail-Ansicht
-    // auch dann öffnet wenn die App gerade kalt gestartet wird.
     await prefs.setString(_kPendingAlarmJson, alarm.toJsonString());
     await prefs.setString(_kLastAlarmKey, alarm.deduplicationKey);
 
@@ -89,8 +75,12 @@ class AlarmNotificationService {
       channelDescription: _kChannelDesc,
       importance: Importance.max,
       priority: Priority.max,
+      // Über dem Sperrbildschirm anzeigen und Bildschirm einschalten
       fullScreenIntent: true,
+      // Kategorie „alarm" → Android erlaubt Anzeige trotz DND/Fokus
+      category: AndroidNotificationCategory.alarm,
       ticker: alarm.shortTitle,
+      visibility: NotificationVisibility.public,
       styleInformation: BigTextStyleInformation(
         alarm.notificationBody,
         contentTitle: '🚨 ${alarm.shortTitle}',
@@ -110,14 +100,14 @@ class AlarmNotificationService {
           cancelNotification: true,
         ),
       ],
-      // Payload = maps-URL, wird von Aktions-Buttons genutzt
-      // (weiterleitung erfolgt via onDidReceiveBackgroundNotificationResponse)
     );
 
     const iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
+      // timeSensitive bricht durch Focus-Modi (Nicht stören etc.) auf iOS 15+
+      // critical würde zusätzlich DND umgehen – benötigt Apple-Entitlement
       interruptionLevel: InterruptionLevel.timeSensitive,
     );
 
@@ -132,8 +122,6 @@ class AlarmNotificationService {
     return true;
   }
 
-  /// Liest den letzten (ggf. noch offenen) Alarm aus SharedPreferences.
-  /// Gibt null zurück wenn kein Alarm gespeichert ist.
   static Future<AlarmData?> getPendingAlarm() async {
     final prefs = await SharedPreferences.getInstance();
     final json = prefs.getString(_kPendingAlarmJson);
@@ -141,22 +129,14 @@ class AlarmNotificationService {
     return AlarmData.tryParseJsonString(json);
   }
 
-  /// Löscht den gespeicherten ausstehenden Alarm (nach Anzeige in der UI).
   static Future<void> clearPendingAlarm() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_kPendingAlarmJson);
   }
 
-  // ---------------------------------------------------------------------------
-  // Interne Callbacks
-  // ---------------------------------------------------------------------------
+  static void _onNotificationResponse(NotificationResponse response) =>
+      _handleResponse(response);
 
-  /// Aufgerufen wenn App im Vordergrund ist und Nutzer auf Notification tippt.
-  static void _onNotificationResponse(NotificationResponse response) {
-    _handleResponse(response);
-  }
-
-  /// Verarbeitet Notification-Response (Tap oder Aktions-Button).
   static void _handleResponse(NotificationResponse response) {
     if (response.actionId == 'navigate') {
       final mapsUrl = response.payload;
@@ -165,7 +145,6 @@ class AlarmNotificationService {
       }
       return;
     }
-    // Tap auf Notification-Body oder "Details"-Button → App öffnen + Detail-Ansicht
     if (_onTap != null) {
       getPendingAlarm().then((alarm) {
         if (alarm != null) _onTap!(alarm);
@@ -174,12 +153,9 @@ class AlarmNotificationService {
   }
 }
 
-/// Hintergrund-Callback für Notification-Actions wenn App beendet ist.
-/// Muss als @pragma('vm:entry-point') in einem eigenen top-level-Kontext stehen.
 @pragma('vm:entry-point')
-void onBackgroundNotificationResponse(NotificationResponse response) {
-  _onBackgroundNotificationResponse(response);
-}
+void onBackgroundNotificationResponse(NotificationResponse response) =>
+    _onBackgroundNotificationResponse(response);
 
 void _onBackgroundNotificationResponse(NotificationResponse response) {
   if (response.actionId == 'navigate') {
@@ -188,6 +164,4 @@ void _onBackgroundNotificationResponse(NotificationResponse response) {
       launchUrl(Uri.parse(mapsUrl), mode: LaunchMode.externalApplication);
     }
   }
-  // "Details"-Button oder Body-Tap startet die App über den normalen App-Start-Flow;
-  // main() liest dann getPendingAlarm() aus und zeigt die Detail-Ansicht.
 }

@@ -1,6 +1,7 @@
 // lib/screens/ConfigScreen.dart
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'status_overview_screen.dart';
 import 'data/edp_api.dart';
@@ -22,6 +23,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   final leiterController = TextEditingController();
   final issiController = TextEditingController();
   final pbUrlController = TextEditingController();
+  final elwIssiController = TextEditingController();
 
   String _selectedProtocol = 'https';
   bool _autoSaveAfterScan = false;
@@ -37,6 +39,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     leiterController.dispose();
     issiController.dispose();
     pbUrlController.dispose();
+    elwIssiController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -56,6 +59,11 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
 
     AlarmService.loadPbUrl().then((url) {
       if (url != null && mounted) pbUrlController.text = url;
+    });
+
+    SharedPreferences.getInstance().then((prefs) {
+      final elwIssi = prefs.getString('elw_issi') ?? '';
+      if (elwIssi.isNotEmpty && mounted) elwIssiController.text = elwIssi;
     });
 
     if (widget is ConfigScreenWithPrefill) {
@@ -182,6 +190,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             onRetry: () async {
               await api.updateConfig(cfg);
               await AlarmService.savePbUrl(pbUrlController.text.trim());
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('elw_issi', elwIssiController.text.trim());
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(
@@ -197,6 +207,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
 
         await api.updateConfig(cfg);
         await AlarmService.savePbUrl(pbUrlController.text.trim());
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('elw_issi', elwIssiController.text.trim());
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
@@ -246,6 +258,9 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     issiController.text = uri.queryParameters['issi'] ?? '';
     if (uri.queryParameters.containsKey('pb_url')) {
       pbUrlController.text = uri.queryParameters['pb_url']!;
+    }
+    if (uri.queryParameters.containsKey('elw_issi')) {
+      elwIssiController.text = uri.queryParameters['elw_issi']!;
     }
     final proto = uri.queryParameters['protocol'];
     if (proto != null) _selectedProtocol = proto;
@@ -451,6 +466,20 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             padding: const EdgeInsets.only(left: 4),
             child: Text(
               'Wenn gesetzt, empfängt dieses Gerät EDP-Alarmierungen in Echtzeit.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _optionalField(
+            label: 'ELW-ISSI (für Ablehnung per SDS)',
+            controller: elwIssiController,
+            keyboardType: TextInputType.number,
+          ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 4),
+            child: Text(
+              'ISSI des Einsatzleitwagens – bei Einsatzablehnung wird die SDS dorthin gesendet.',
               style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
             ),
           ),
