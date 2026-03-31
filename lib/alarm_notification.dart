@@ -6,7 +6,7 @@
 // iOS:     timeSensitive → bricht durch Fokus-Modi; critical (falls Entitlement vorhanden) → DND.
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart' hide NotificationVisibility;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -51,13 +51,13 @@ class AlarmNotificationService {
         .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
         ?.requestPermissions(alert: true, badge: true, sound: true, critical: true);
 
-    const iosCategory = DarwinNotificationCategory(
+    final iosCategory = DarwinNotificationCategory(
       _kIosCategoryId,
       actions: [
         DarwinNotificationAction.plain(
           'navigate',
           'Navigieren',
-          options: {DarwinNotificationActionOption.foreground},
+          options: const {DarwinNotificationActionOption.foreground},
         ),
         DarwinNotificationAction.plain(
           'open',
@@ -65,11 +65,11 @@ class AlarmNotificationService {
           options: {DarwinNotificationActionOption.foreground},
         ),
       ],
-      options: {DarwinNotificationCategoryOption.hiddenPreviewShowTitle},
+      options: const {DarwinNotificationCategoryOption.hiddenPreviewShowTitle},
     );
     await _plugin
         .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
-        ?.initialize(iosSettings, notificationCategories: [iosCategory]);
+        ?.initialize(iosSettings);
 
     // Alarm-Kanal: Importance.max + Alarm-Kategorie → bricht durch DND auf Android
     const channel = AndroidNotificationChannel(
@@ -153,7 +153,6 @@ class AlarmNotificationService {
           overlayTitle: alarm.shortTitle,
           overlayContent: alarm.address.isNotEmpty ? alarm.address : alarm.notificationBody,
           flag: OverlayFlag.defaultFlag,
-          visibility: NotificationVisibility.visibilityPublic,
           positionGravity: PositionGravity.auto,
           height: WindowSize.matchParent,
           width: WindowSize.matchParent,
