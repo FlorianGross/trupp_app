@@ -6,6 +6,7 @@
 // iOS:     timeSensitive → bricht durch Fokus-Modi; critical (falls Entitlement vorhanden) → DND.
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -15,6 +16,7 @@ const _kChannelId = 'trupp_alarm';
 const _kChannelName = 'Alarmierungen';
 const _kChannelDesc = 'EDP-Einsatzalarmierungen';
 const _kNotificationId = 42;
+const _kIosCategoryId = 'trupp_alarm_category';
 const _kLastAlarmKey = 'last_alarm_key';
 const _kPendingAlarmJson = 'pending_alarm_json';
 
@@ -43,6 +45,31 @@ class AlarmNotificationService {
       onDidReceiveNotificationResponse: _onNotificationResponse,
       onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
     );
+
+    // iOS: Notification-Kategorie mit Aktions-Buttons registrieren
+    await _plugin
+        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+        ?.requestPermissions(alert: true, badge: true, sound: true, critical: true);
+
+    const iosCategory = DarwinNotificationCategory(
+      _kIosCategoryId,
+      actions: [
+        DarwinNotificationAction.plain(
+          'navigate',
+          'Navigieren',
+          options: {DarwinNotificationActionOption.foreground},
+        ),
+        DarwinNotificationAction.plain(
+          'open',
+          'Details',
+          options: {DarwinNotificationActionOption.foreground},
+        ),
+      ],
+      options: {DarwinNotificationCategoryOption.hiddenPreviewShowTitle},
+    );
+    await _plugin
+        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
+        ?.initialize(iosSettings, notificationCategories: [iosCategory]);
 
     // Alarm-Kanal: Importance.max + Alarm-Kategorie → bricht durch DND auf Android
     const channel = AndroidNotificationChannel(
@@ -107,6 +134,7 @@ class AlarmNotificationService {
       // timeSensitive bricht durch Focus-Modi (Nicht stören etc.) auf iOS 15+
       // critical würde zusätzlich DND umgehen – benötigt Apple-Entitlement
       interruptionLevel: InterruptionLevel.timeSensitive,
+      categoryIdentifier: _kIosCategoryId,
     );
 
     await _plugin.show(
@@ -116,6 +144,23 @@ class AlarmNotificationService {
       NotificationDetails(android: androidDetails, iOS: iosDetails),
       payload: alarm.mapsUrl,
     );
+
+    // Android: Overlay über anderen Apps anzeigen (erfordert SYSTEM_ALERT_WINDOW)
+    try {
+      if (await FlutterOverlayWindow.isPermissionGranted()) {
+        await FlutterOverlayWindow.showOverlay(
+          enableDrag: false,
+          overlayTitle: alarm.shortTitle,
+          overlayContent: alarm.address.isNotEmpty ? alarm.address : alarm.notificationBody,
+          flag: OverlayFlag.defaultFlag,
+          visibility: NotificationVisibility.visibilityPublic,
+          positionGravity: PositionGravity.auto,
+          height: WindowSize.matchParent,
+          width: WindowSize.matchParent,
+        );
+        await FlutterOverlayWindow.shareData(alarm.toJsonString());
+      }
+    } catch (_) {}
 
     return true;
   }

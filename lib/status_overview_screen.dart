@@ -27,8 +27,10 @@ import 'staerke_editor_screen.dart';
 import 'status_history_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'iot_car_helper.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'alarm_overview_screen.dart';
 import 'data/alarm_store.dart';
+import 'data/alarm_service.dart';
 
 enum _ConnectionState { unknown, connected, degraded, disconnected }
 
@@ -237,6 +239,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     // Batterie-Optimierung deaktivieren für dauerhaftes Hintergrund-Tracking
     await _requestDisableBatteryOptimization();
 
+    // Overlay-Permission anfordern (Android: "Über anderen Apps anzeigen")
+    // Nur relevant wenn Alarmierung konfiguriert ist
+    if (Platform.isAndroid && await AlarmService.isConfigured()) {
+      await _requestOverlayPermission();
+    }
+
     final last = prefs.getInt('lastStatus') ?? 1;
 
     // Tracking immer starten (mit adaptiver Frequenz)
@@ -298,6 +306,37 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         }
       } catch (_) {}
     }
+  }
+
+  Future<void> _requestOverlayPermission() async {
+    try {
+      if (await FlutterOverlayWindow.isPermissionGranted()) return;
+      if (!mounted) return;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: const Text('Popup-Erlaubnis'),
+          content: const Text(
+            'Damit Alarmierungen als Popup über anderen Apps angezeigt werden, '
+            'wird die Berechtigung „Über anderen Apps einblenden" benötigt.\n\n'
+            'Bitte die App in der folgenden Einstellung zulassen.',
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Überspringen'),
+              onPressed: () => Navigator.of(context).pop(false),
+            ),
+            TextButton(
+              child: const Text('Einstellung öffnen'),
+              onPressed: () => Navigator.of(context).pop(true),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) {
+        await FlutterOverlayWindow.requestPermission();
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadDeploymentState() async {
