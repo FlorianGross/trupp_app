@@ -36,6 +36,9 @@ class AlarmStore {
   /// Gibt alle gespeicherten Alarme zurück (neueste zuerst).
   static Future<List<AlarmData>> getAll({SharedPreferences? prefs}) async {
     prefs ??= await SharedPreferences.getInstance();
+    // Explizit neu laden, damit Schreibvorgänge aus dem Background-Service-
+    // Isolate im Haupt-Isolate sichtbar werden (SharedPreferences cached pro Isolate).
+    await prefs.reload();
     final raw = prefs.getString(_kKey);
     if (raw == null) return [];
     try {
