@@ -1,7 +1,6 @@
 // lib/alarm_detail_screen.dart
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'data/alarm_model.dart';
@@ -266,9 +265,6 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   }
 
   Future<void> _sendRejection(String reason) async {
-    final prefs = await SharedPreferences.getInstance();
-    final elwIssi = prefs.getString('elw_issi') ?? '';
-
     final text = [
       'ABLEHNUNG',
       'ENR: ${alarm.enr}',
@@ -278,8 +274,8 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
 
     try {
       final api = EdpApi.instance;
-      final result = elwIssi.isNotEmpty
-          ? await api.sendSdsForIssi(elwIssi, text)
+      final result = alarm.issi.isNotEmpty
+          ? await api.sendSdsForIssi(alarm.issi, text)
           : await api.sendSdsText(text);
       if (!mounted) return;
       if (result.ok) {
