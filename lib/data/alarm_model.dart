@@ -8,6 +8,7 @@
 import 'dart:convert';
 
 class AlarmData {
+  final String issi;       // ISSI des alarmierten Einsatzmittels
   final String enr;        // Einsatznummer
   final String signal;     // Sondersignal (bereinigt, ohne "0="-Präfix)
   final String stichwort;  // Stichwort
@@ -22,6 +23,7 @@ class AlarmData {
   final String issi;
 
   const AlarmData({
+    required this.issi,
     required this.enr,
     required this.signal,
     required this.stichwort,
@@ -38,6 +40,7 @@ class AlarmData {
 
   factory AlarmData.fromJson(Map<String, dynamic> json) {
     return AlarmData(
+      issi:     json['issi']     as String? ?? '',
       enr:      json['enr']      as String? ?? '',
       signal:   json['signal']   as String? ?? '',
       stichwort: json['stichwort'] as String? ?? '',
@@ -54,6 +57,7 @@ class AlarmData {
   }
 
   Map<String, dynamic> toJson() => {
+    'issi':      issi,
     'enr':       enr,
     'signal':    signal,
     'stichwort': stichwort,
