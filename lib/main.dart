@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:trupp_app/alarm_notification.dart';
+import 'package:trupp_app/alarm_overlay.dart';
 import 'package:trupp_app/alarm_overview_screen.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
@@ -8,6 +9,11 @@ import 'ConfigScreen.dart';
 import 'status_overview_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
+
+// Overlay-Entry-Point hier referenzieren, damit der Dart-Linker ihn nicht entfernt.
+// Die eigentliche Funktion liegt in alarm_overlay.dart.
+// ignore: unused_element
+final _overlayEntryPoint = overlayMain;
 
 // Globaler NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();

@@ -6,6 +6,7 @@
 // iOS:     timeSensitive → bricht durch Fokus-Modi; critical (falls Entitlement vorhanden) → DND.
 
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -145,6 +146,23 @@ class AlarmNotificationService {
       NotificationDetails(android: androidDetails, iOS: iosDetails),
       payload: alarm.mapsUrl,
     );
+
+    // Android: Overlay über anderen Apps anzeigen (erfordert SYSTEM_ALERT_WINDOW)
+    try {
+      if (await FlutterOverlayWindow.isPermissionGranted()) {
+        await FlutterOverlayWindow.showOverlay(
+          enableDrag: false,
+          overlayTitle: alarm.shortTitle,
+          overlayContent: alarm.address.isNotEmpty ? alarm.address : alarm.notificationBody,
+          flag: OverlayFlag.defaultFlag,
+          visibility: NotificationVisibility.visibilityPublic,
+          positionGravity: PositionGravity.auto,
+          height: WindowSize.matchParent,
+          width: WindowSize.matchParent,
+        );
+        await FlutterOverlayWindow.shareData(alarm.toJsonString());
+      }
+    } catch (_) {}
 
     return true;
   }
