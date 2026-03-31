@@ -51,6 +51,7 @@ dependencies:
   battery_plus: ^7.0.0
   connectivity_plus: ^6.1.4
   wakelock_plus: ^1.4.0
+  flutter_local_notifications: ^18.0.0
 
 dev_dependencies:
   flutter_test:

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:trupp_app/alarm_detail_screen.dart';
+import 'package:trupp_app/alarm_notification.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
@@ -37,6 +39,16 @@ Future<void> main() async {
 
   await _loadThemePreference();
 
+  // Benachrichtigungs-Plugin im Haupt-Isolate initialisieren.
+  // onTap öffnet die AlarmDetailScreen wenn die App aus einer Notification heraus gestartet wird.
+  await AlarmNotificationService.initialize(
+    onTap: (alarm) {
+      navigatorKey.currentState?.push(
+        MaterialPageRoute(builder: (_) => AlarmDetailScreen(alarm: alarm)),
+      );
+    },
+  );
+
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool('hasConfig') ?? false;
 
@@ -57,7 +69,10 @@ Future<void> main() async {
     }
   }
 
-  runApp(MyApp(hasConfig: hasConfig));
+  // Prüfen ob ein Alarm aus einer Notification-Tap geöffnet wurde (Kaltstart)
+  final pendingAlarm = await AlarmNotificationService.getPendingAlarm();
+
+  runApp(MyApp(hasConfig: hasConfig, pendingAlarm: pendingAlarm));
 }
 
 final _lightTheme = ThemeData(
@@ -84,10 +99,31 @@ final _darkTheme = ThemeData(
   ),
 );
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   final bool hasConfig;
+  final AlarmData? pendingAlarm;
 
-  const MyApp({super.key, required this.hasConfig});
+  const MyApp({super.key, required this.hasConfig, this.pendingAlarm});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  @override
+  void initState() {
+    super.initState();
+    // Nach dem ersten Frame: ggf. Alarm-Detail öffnen (Kaltstart via Notification)
+    if (widget.pendingAlarm != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        navigatorKey.currentState?.push(
+          MaterialPageRoute(
+            builder: (_) => AlarmDetailScreen(alarm: widget.pendingAlarm!),
+          ),
+        );
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,7 +138,7 @@ class MyApp extends StatelessWidget {
             theme: _lightTheme,
             darkTheme: _darkTheme,
             themeMode: themeMode,
-            home: hasConfig ? const StatusOverview() : const ConfigScreen(),
+            home: widget.hasConfig ? const StatusOverview() : const ConfigScreen(),
           ),
         );
       },

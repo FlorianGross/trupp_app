@@ -240,6 +240,17 @@ class EdpApi {
     return _getWithRetry(url);
   }
 
+  /// Fragt beim Backend nach einem ausstehenden Alarm für die eigene ISSI.
+  ///
+  /// Erwartet vom Backend:
+  ///   200 + JSON-Body → neuer Alarm vorhanden, Body enthält AlarmData-Felder
+  ///   204 No Content  → kein Alarm ausstehend
+  ///   4xx / 5xx       → Fehler
+  Future<EdpResult> pollAlarm() {
+    final url = _uri('getalarm', {'issi': _config.issi});
+    return _getWithRetry(url);
+  }
+
   /// Bequemlichkeit: ist die gespeicherte Konfiguration verwendbar?
   static Future<bool> hasValidConfigInPrefs() async {
     final prefs = await SharedPreferences.getInstance();

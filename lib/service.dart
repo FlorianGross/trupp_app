@@ -8,11 +8,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
+import 'data/alarm_model.dart';
 import 'data/edp_api.dart';
 import 'data/location_quality.dart';
 import 'data/location_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
+import 'alarm_notification.dart';
 
 // Globale Variablen für Service-Isolate
 int _currentStatus = 0;
@@ -75,6 +77,7 @@ final _quality = LocationQualityFilter(
 Timer? _hbTimer;
 Timer? _modeCheckTimer;
 Timer? _flushTimer;
+Timer? _alarmPollTimer;
 StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
 Future<int> _readStatusFromPrefs() async {
@@ -238,6 +241,30 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
   });
 }
 
+/// Alarm-Polling: alle 30 Sekunden nach ausstehenden Alarmierungen fragen.
+///
+/// Das Backend antwortet mit:
+///   200 + JSON → neuer Alarm → lokale Benachrichtigung anzeigen
+///   204         → kein Alarm → nichts tun
+void _scheduleAlarmPolling() {
+  _alarmPollTimer?.cancel();
+  _alarmPollTimer = Timer.periodic(const Duration(seconds: 30), (_) async {
+    try {
+      final api = EdpApi.instance;
+      final result = await api.pollAlarm();
+      if (!result.ok || result.statusCode == 204) return;
+
+      final body = result.body;
+      if (body == null || body.isEmpty) return;
+
+      final alarm = AlarmData.tryParseJsonString(body);
+      if (alarm == null) return;
+
+      await AlarmNotificationService.show(alarm);
+    } catch (_) {}
+  });
+}
+
 /// Periodischer Flush: alle 3 Minuten ausstehende Positionen an den Server senden
 void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer?.cancel();
@@ -278,6 +305,9 @@ Future<void> onStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await EdpApi.ensureInitialized();
+
+  // Benachrichtigungs-Plugin im Background-Isolate initialisieren
+  await AlarmNotificationService.initialize();
 
   _currentStatus = await _readStatusFromPrefs();
   _deploymentMode = await DeploymentState.getMode();
@@ -383,6 +413,7 @@ Future<void> onStart(ServiceInstance service) async {
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
     _schedulePeriodicFlush(service);
+    _scheduleAlarmPolling();
     _startConnectivityListener();
   }
 
@@ -409,6 +440,7 @@ Future<void> onStart(ServiceInstance service) async {
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
     _schedulePeriodicFlush(service);
+    _scheduleAlarmPolling();
     _startConnectivityListener();
 
     if (service is AndroidServiceInstance) {
@@ -434,6 +466,9 @@ Future<void> onStart(ServiceInstance service) async {
 
     _flushTimer?.cancel();
     _flushTimer = null;
+
+    _alarmPollTimer?.cancel();
+    _alarmPollTimer = null;
 
     _connectivitySub?.cancel();
     _connectivitySub = null;
