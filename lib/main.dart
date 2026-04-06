@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:trupp_app/alarm_notification.dart';
-import 'package:trupp_app/alarm_overlay.dart';
 import 'package:trupp_app/alarm_overview_screen.dart';
+import 'package:trupp_app/alarm_detail_screen.dart';
+import 'package:trupp_app/alarm_overlay.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
@@ -52,7 +53,7 @@ Future<void> main() async {
     onTap: (alarm) {
       navigatorKey.currentState?.push(
         MaterialPageRoute(
-          builder: (_) => AlarmOverviewScreen(highlightAlarm: alarm),
+          builder: (_) => AlarmDetailScreen(alarm: alarm),
         ),
       );
     },
@@ -127,7 +128,7 @@ class _MyAppState extends State<MyApp> {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         navigatorKey.currentState?.push(
           MaterialPageRoute(
-            builder: (_) => AlarmOverviewScreen(highlightAlarm: widget.pendingAlarm),
+            builder: (_) => AlarmDetailScreen(alarm: widget.pendingAlarm!),
           ),
         );
       });

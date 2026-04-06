@@ -8,9 +8,12 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/alarm_model.dart';
 import 'data/edp_api.dart';
+
+const kOverlayOpenDetail = 'overlay_open_detail';
 
 /// Entry-Point für das Overlay – muss vm:entry-point sein und in main.dart
 /// referenziert werden, damit der Flutter-Linker ihn nicht entfernt.
@@ -242,18 +245,43 @@ class _AlarmOverlayWidgetState extends State<AlarmOverlayWidget> {
 
   Widget _buildCloseButton() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-      child: SizedBox(
-        width: double.infinity,
-        child: TextButton(
-          onPressed: () => FlutterOverlayWindow.closeOverlay(),
-          style: TextButton.styleFrom(
-            foregroundColor: Colors.white54,
-            padding: const EdgeInsets.symmetric(vertical: 10),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: TextButton(
+              onPressed: () => FlutterOverlayWindow.closeOverlay(),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white38,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              child: const Text('Schließen'),
+            ),
           ),
-          child: const Text('Schließen'),
-        ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextButton(
+              onPressed: _openDetail,
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: const Color(0xFF2C2C2E),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              child: const Text('Details'),
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  Future<void> _openDetail() async {
+    // Flag setzen, damit die App nach dem Overlay-Schließen zur Detail-Ansicht navigiert
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(kOverlayOpenDetail, true);
+    await FlutterOverlayWindow.closeOverlay();
   }
 }
