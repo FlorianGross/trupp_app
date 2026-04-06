@@ -199,11 +199,19 @@ class AlarmNotificationService {
 void onBackgroundNotificationResponse(NotificationResponse response) =>
     _onBackgroundNotificationResponse(response);
 
-void _onBackgroundNotificationResponse(NotificationResponse response) {
+Future<void> _onBackgroundNotificationResponse(
+    NotificationResponse response) async {
   if (response.actionId == 'navigate') {
     final mapsUrl = response.payload;
     if (mapsUrl != null && mapsUrl.isNotEmpty) {
       launchUrl(Uri.parse(mapsUrl), mode: LaunchMode.externalApplication);
     }
+    return;
+  }
+  // 'open' (Details): Flag setzen, damit die App nach Wiederaufnahme zur
+  // Detail-Ansicht navigiert (analog zum Overlay-Mechanismus).
+  if (response.actionId == 'open') {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('overlay_open_detail', true);
   }
 }

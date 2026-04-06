@@ -32,6 +32,7 @@ import 'alarm_overview_screen.dart';
 import 'alarm_detail_screen.dart';
 import 'alarm_notification.dart';
 import 'alarm_overlay.dart' show kOverlayOpenDetail;
+import 'data/alarm_model.dart';
 import 'data/alarm_store.dart';
 import 'data/alarm_service.dart';
 
@@ -321,7 +322,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       if (prefs.getBool(kOverlayOpenDetail) != true) return;
       await prefs.remove(kOverlayOpenDetail);
 
-      final alarm = await AlarmNotificationService.getPendingAlarm();
+      final AlarmData? pending = await AlarmNotificationService.getPendingAlarm();
+      final alarm = pending ?? (await AlarmStore.getAll()).firstOrNull;
       if (alarm == null || !mounted) return;
 
       Navigator.of(context).push(
