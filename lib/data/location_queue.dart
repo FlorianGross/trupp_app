@@ -143,6 +143,18 @@ class LocationQueue {
     return rows.map(LocationFix.fromMap).toList();
   }
 
+  // ——— Zeitbereich (für Einsatz-Export) ———
+  Future<List<LocationFix>> byTimeRange({required int fromMs, required int toMs}) async {
+    final db = await _open();
+    final rows = await db.query(
+      _table,
+      where: 'ts_ms >= ? AND ts_ms <= ?',
+      whereArgs: [fromMs, toMs],
+      orderBy: 'ts_ms ASC, id ASC',
+    );
+    return rows.map(LocationFix.fromMap).toList();
+  }
+
   // ——— Flags setzen nach erfolgreichem Versand ———
   Future<void> markSentByIds(List<int> ids, {required int sentAtMs}) async {
     if (ids.isEmpty) return;

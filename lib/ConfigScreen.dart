@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'status_overview_screen.dart';
 import 'data/edp_api.dart';
 import 'data/alarm_service.dart';
+import 'data/profile_store.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -210,6 +211,58 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       }
     } else {
       setState(() => _showAllErrors = true);
+    }
+  }
+
+  Future<void> _saveAsProfile() async {
+    final server = '${hostController.text.trim()}:${portController.text.trim()}';
+    if (server.trim() == ':' || tokenController.text.trim().isEmpty || issiController.text.trim().isEmpty) {
+      _showErrorDialog('Bitte zuerst alle Pflichtfelder ausfüllen.');
+      return;
+    }
+
+    String profileName = '';
+    final nameResult = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final ctrl = TextEditingController();
+        return AlertDialog(
+          title: const Text('Profilname'),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            decoration: const InputDecoration(hintText: 'z. B. FF Musterstadt'),
+            onSubmitted: (v) => Navigator.pop(ctx, v),
+          ),
+          actions: [
+            TextButton(child: const Text('Abbrechen'), onPressed: () => Navigator.pop(ctx)),
+            TextButton(child: const Text('Speichern'), onPressed: () => Navigator.pop(ctx, ctrl.text)),
+          ],
+        );
+      },
+    );
+
+    profileName = nameResult?.trim() ?? '';
+    if (profileName.isEmpty) return;
+
+    final profile = AppProfile(
+      name: profileName,
+      protocol: _selectedProtocol,
+      server: server,
+      token: tokenController.text.trim(),
+      issi: issiController.text.trim(),
+      trupp: truppController.text.trim(),
+      leiter: leiterController.text.trim(),
+      pbUrl: pbUrlController.text.trim(),
+    );
+    await ProfileStore.save(profile);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Profil "$profileName" gespeichert'),
+          backgroundColor: Colors.green,
+        ),
+      );
     }
   }
 
@@ -477,6 +530,18 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _saveAsProfile,
+            icon: const Icon(Icons.person_add_alt_1),
+            label: const Text('Als Profil speichern'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade800,
+              side: BorderSide(color: Colors.red.shade800),
+              minimumSize: const Size.fromHeight(50),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
