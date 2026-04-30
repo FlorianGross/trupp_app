@@ -62,20 +62,22 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool('hasConfig') ?? false;
 
-  // EDP-Client bereitstellen (falls möglich)
   if (hasConfig) {
     await EdpApi.initFromPrefs();
 
-    // Hintergrund-Service automatisch starten, damit Standort
-    // auch nach App-Neustart sofort im Hintergrund übertragen wird
-    try {
-      final svc = FlutterBackgroundService();
-      if (!await svc.isRunning()) {
-        await svc.startService();
-        svc.invoke('setTracking', {'enabled': true});
-      }
-    } catch (_) {
-      // Service-Start fehlgeschlagen (z.B. Simulator)
+    // GPS-Übertragung nach jedem App-Start deaktiviert (muss explizit aktiviert werden)
+    await prefs.setBool('transmissionEnabled', false);
+
+    // Hintergrund-Service für Alarm-Empfang starten, auch ohne aktive GPS-Übertragung
+    final pbConfigured = (prefs.getString('pb_url') ?? '').isNotEmpty
+        && (prefs.getString('issi') ?? '').isNotEmpty;
+    if (pbConfigured) {
+      try {
+        final svc = FlutterBackgroundService();
+        if (!await svc.isRunning()) {
+          await svc.startService();
+        }
+      } catch (_) {}
     }
   }
 

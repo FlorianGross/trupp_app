@@ -24,6 +24,8 @@ import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
 import 'main.dart' show themeNotifier, toggleTheme;
 import 'map_screen.dart';
+import 'profiles_screen.dart';
+import 'data/profile_store.dart';
 import 'staerke_editor_screen.dart';
 import 'status_history_screen.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -90,8 +92,14 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Tracking ist immer gewünscht, sobald konfiguriert
   bool get _trackingDesired => true;
 
-  // Hintergrund-Tracking-Indikator
+  // Hintergrund-Tracking-Indikator (GPS-Übertragung aktiv)
   bool _bgTrackingActive = false;
+
+  // Auto-Deaktivierung in Minuten (0 = aus)
+  int _autoDeactivateMinutes = 0;
+
+  // Aktiver Profilname (für AppBar-Anzeige)
+  String _activeProfileName = '';
 
   // Kurzstatus 0/9/5 → nach 5s zurück
   bool _isTempStatus(int s) => s == 0 || s == 9 || s == 5;
@@ -154,15 +162,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   /// Wird aufgerufen wenn die App in den Hintergrund geht.
-  /// Stellt sicher, dass der Background-Service aktiv ist und trackt.
+  /// Stellt sicher, dass der Background-Service für Alarm-Empfang läuft.
+  /// GPS-Übertragung nur wenn der Nutzer sie explizit aktiviert hat.
   Future<void> _onAppPaused() async {
     final svc = FlutterBackgroundService();
-    if (!await svc.isRunning()) {
+    final alarmConfigured = await AlarmService.isConfigured();
+
+    // Service starten wenn nötig (für Alarmierung oder aktives Tracking)
+    if (!await svc.isRunning() && (alarmConfigured || _bgTrackingActive)) {
       await svc.startService();
-      // Kurz warten damit der Service seine Listener einrichten kann
       await Future.delayed(const Duration(milliseconds: 500));
     }
-    if (await svc.isRunning()) {
+
+    // GPS-Tracking nur wenn explizit aktiv
+    if (_bgTrackingActive && await svc.isRunning()) {
       svc.invoke('setTracking', {'enabled': true});
     }
   }
@@ -195,10 +208,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     await _updateBatteryLevel();
     await _refreshStats();
 
-    // Sicherstellen dass Tracking aktiv ist
-    final canTrack = await _hasBackgroundPermission();
-    if (canTrack) {
-      await _setBackgroundTracking(true);
+    // Tracking nur aufrechterhalten wenn es vorher aktiv war
+    if (_bgTrackingActive) {
+      final canTrack = await _hasBackgroundPermission();
+      if (canTrack) {
+        await _setBackgroundTracking(true);
+      }
     }
 
     await _refreshAlarmBadge();
@@ -252,10 +267,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
 
     final last = prefs.getInt('lastStatus') ?? 1;
+    final autoDeact = prefs.getInt('autoDeactivateMinutes') ?? 0;
 
-    // Tracking immer starten (mit adaptiver Frequenz)
-    final canTrack = await _hasBackgroundPermission();
-    await _setBackgroundTracking(canTrack);
+    final activeProfile = await ProfileStore.activeName() ?? '';
+
+    // GPS-Übertragungsstatus: main.dart hat transmissionEnabled auf false gesetzt,
+    // daher ist hier immer false (neu nach Neustart) – Service läuft evtl. für Alarmierung
+    if (mounted) setState(() {
+      _bgTrackingActive = false;
+      _autoDeactivateMinutes = autoDeact;
+      _activeProfileName = activeProfile;
+    });
     await _onPersistentStatus(last, notify: false);
 
     // Stats und Verbindungsstatus regelmäßig aktualisieren
@@ -591,20 +613,30 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _setBackgroundTracking(bool enabled) async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('transmissionEnabled', enabled);
+
       final svc = FlutterBackgroundService();
-
-      if (enabled && !await svc.isRunning()) {
-        await svc.startService();
+      if (enabled) {
+        if (!await svc.isRunning()) {
+          await svc.startService();
+        }
+        if (await svc.isRunning()) {
+          svc.invoke('setTracking', {'enabled': true});
+        }
+      } else {
+        if (await svc.isRunning()) {
+          svc.invoke('stopService', {});
+          // Kurz warten, dann Service für Alarm-Empfang neu starten falls konfiguriert
+          await Future.delayed(const Duration(milliseconds: 800));
+          if (await AlarmService.isConfigured() && !await svc.isRunning()) {
+            await svc.startService();
+          }
+        }
       }
+    } catch (_) {}
 
-      if (await svc.isRunning()) {
-        svc.invoke('setTracking', {'enabled': enabled});
-      }
-    } catch (_) {
-      // Background-Service nicht verfügbar (z.B. Simulator)
-    }
-
-    setState(() => _bgTrackingActive = enabled);
+    if (mounted) setState(() => _bgTrackingActive = enabled);
   }
 
   Future<void> _onPersistentStatus(int st, {bool notify = true}) async {
@@ -620,14 +652,15 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       svc.invoke('statusChanged', {'status': st});
     }
 
-    // Tracking bleibt immer aktiv - nur Modus wird angepasst
-    if (!await _hasBackgroundPermission()) {
-      await _offerBackgroundPermission(st);
-      return;
+    // Service nur starten wenn Nutzer explizit einen Status drückt (notify: true)
+    // oder der Service bereits läuft (aktiver Einsatz)
+    if (notify || _bgTrackingActive) {
+      if (!await _hasBackgroundPermission()) {
+        if (notify) await _offerBackgroundPermission(st);
+        return;
+      }
+      await _setBackgroundTracking(true);
     }
-
-    // Service sicherstellen und Tracking-Modus aktualisieren
-    await _setBackgroundTracking(true);
 
     if (notify) {
       try {
@@ -785,22 +818,136 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Future<void> _toggleDeploymentMode() async {
-    final newMode = _deploymentMode == DeploymentMode.deployed
-        ? DeploymentMode.standby
-        : DeploymentMode.deployed;
+    if (_deploymentMode == DeploymentMode.deployed) {
+      await _endDeploymentWithDialog();
+    } else {
+      // Einsatz starten
+      await DeploymentState.setMode(DeploymentMode.deployed);
+      _deploymentMode = DeploymentMode.deployed;
 
-    await DeploymentState.setMode(newMode);
-    _deploymentMode = newMode;
+      // Übertragung automatisch aktivieren wenn noch nicht aktiv
+      if (!_bgTrackingActive) {
+        final canTrack = await _hasBackgroundPermission();
+        if (canTrack) await _setBackgroundTracking(true);
+      }
+
+      final svc = FlutterBackgroundService();
+      if (await svc.isRunning()) {
+        svc.invoke('updateDeploymentMode', {'mode': DeploymentMode.deployed.name});
+      }
+      await _loadDeploymentState();
+      _showSnackbar('Einsatz gestartet', success: true);
+    }
+  }
+
+  Future<void> _endDeploymentWithDialog() async {
+    final startMs = _deploymentStartMs;
+    final endMs = DateTime.now().millisecondsSinceEpoch;
+    final durationMin = startMs > 0 ? (endMs - startMs) ~/ 60000 : 0;
+    final durationText = durationMin >= 60
+        ? '${durationMin ~/ 60} Std ${durationMin % 60} Min'
+        : '$durationMin Min';
+
+    bool exportGpx = false;
+    bool stopTracking = true;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Einsatz beenden?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (durationMin > 0)
+                Text(
+                  'Einsatzdauer: $durationText',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+              const SizedBox(height: 16),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('GPS-Track exportieren (GPX)'),
+                value: exportGpx,
+                onChanged: (v) => setDialogState(() => exportGpx = v ?? false),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Übertragung deaktivieren'),
+                value: stopTracking,
+                onChanged: (v) => setDialogState(() => stopTracking = v ?? true),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              child: const Text('Abbrechen'),
+              onPressed: () => Navigator.pop(ctx, false),
+            ),
+            FilledButton(
+              child: const Text('Beenden'),
+              onPressed: () => Navigator.pop(ctx, true),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    // GPX-Export vor dem Beenden (Positionen sind noch in der DB)
+    if (exportGpx && startMs > 0) {
+      try {
+        final path = await GpxExporter.exportDeploymentGpx(
+          startMs: startMs,
+          endMs: endMs,
+        );
+        if (mounted) {
+          await Share.shareXFiles([XFile(path)], text: 'Einsatz-Track');
+        }
+      } catch (e) {
+        if (mounted) _showSnackbar('Export fehlgeschlagen: $e', success: false);
+      }
+    }
+
+    // Deployment-Modus beenden
+    await DeploymentState.setMode(DeploymentMode.standby);
+    _deploymentMode = DeploymentMode.standby;
 
     final svc = FlutterBackgroundService();
     if (await svc.isRunning()) {
-      svc.invoke('updateDeploymentMode', {'mode': newMode.name});
+      svc.invoke('updateDeploymentMode', {'mode': DeploymentMode.standby.name});
+    }
+
+    if (stopTracking) {
+      await _setBackgroundTracking(false);
     }
 
     await _loadDeploymentState();
-    _showSnackbar(
-      newMode == DeploymentMode.deployed ? 'Einsatz gestartet' : 'Einsatz beendet',
-      success: true,
+    if (!mounted) return;
+    // SnackBar mit optionalem Replay-Link
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text('Einsatz beendet'),
+        backgroundColor: Colors.green,
+        action: startMs > 0
+            ? SnackBarAction(
+                label: 'Replay',
+                textColor: Colors.white,
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => MapScreen(
+                      replayFromMs: startMs,
+                      replayToMs: endMs,
+                    ),
+                  ),
+                ),
+              )
+            : null,
+      ),
     );
   }
 
@@ -958,6 +1105,64 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     return res ?? false;
   }
 
+  Future<void> _reloadConfig() async {
+    await EdpApi.initFromPrefs();
+    final prefs = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() {
+      protocol = prefs.getString('protocol') ?? protocol;
+      server = prefs.getString('server') ?? server;
+      token = prefs.getString('token') ?? token;
+      trupp = prefs.getString('trupp') ?? trupp;
+      leiter = prefs.getString('leiter') ?? leiter;
+      issi = prefs.getString('issi') ?? issi;
+    });
+  }
+
+  Future<void> _showAutoDeactivateDialog() async {
+    const options = [
+      (0, 'Aus'),
+      (30, '30 Minuten'),
+      (60, '1 Stunde'),
+      (120, '2 Stunden'),
+      (240, '4 Stunden'),
+      (480, '8 Stunden'),
+    ];
+
+    final selected = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Auto-Deaktivierung'),
+        children: options.map((opt) {
+          final (minutes, label) = opt;
+          return SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, minutes),
+            child: Row(
+              children: [
+                Radio<int>(
+                  value: minutes,
+                  groupValue: _autoDeactivateMinutes,
+                  onChanged: (_) => Navigator.pop(ctx, minutes),
+                ),
+                Text(label),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+
+    if (selected == null || !mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('autoDeactivateMinutes', selected);
+    setState(() => _autoDeactivateMinutes = selected);
+
+    final msg = selected == 0
+        ? 'Auto-Deaktivierung deaktiviert'
+        : 'Auto-Deaktivierung nach ${selected >= 60 ? '${selected ~/ 60}h' : '${selected}min'} Inaktivität';
+    _showSnackbar(msg, success: true);
+  }
+
   void _showMenu() {
     showModalBottomSheet(
       context: context,
@@ -1018,6 +1223,23 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             },
           ),
           _buildMenuItem(
+            icon: Icons.switch_account,
+            title: _activeProfileName.isNotEmpty
+                ? 'Profile  (${_activeProfileName})'
+                : 'Profile',
+            onTap: () async {
+              Navigator.pop(context);
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ProfilesScreen()),
+              );
+              // Profil könnte gewechselt worden sein → Config neu laden
+              final active = await ProfileStore.activeName() ?? '';
+              if (mounted) setState(() => _activeProfileName = active);
+              await _reloadConfig();
+            },
+          ),
+          _buildMenuItem(
             icon: Icons.history,
             title: 'Statusverlauf',
             onTap: () {
@@ -1041,10 +1263,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           ),
           _buildMenuItem(
             icon: Icons.download,
-            title: 'GPX Export',
+            title: 'GPX Export (Gesamt)',
             onTap: () {
               Navigator.pop(context);
               _exportGpx();
+            },
+          ),
+          _buildMenuItem(
+            icon: Icons.timer_off,
+            title: _autoDeactivateMinutes == 0
+                ? 'Auto-Deaktivierung: Aus'
+                : 'Auto-Deaktivierung: ${_autoDeactivateMinutes >= 60 ? '${_autoDeactivateMinutes ~/ 60}h' : '${_autoDeactivateMinutes}min'}',
+            onTap: () {
+              Navigator.pop(context);
+              _showAutoDeactivateDialog();
             },
           ),
           _buildMenuItem(
@@ -1319,27 +1551,43 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             _buildConnectionDot(),
             const SizedBox(width: 8),
 
-            // Tracking Indicator (nur wenn aktiv)
-            if (_bgTrackingActive) ...[
-              Container(
+            // Tracking Toggle (immer sichtbar, tippbar)
+            GestureDetector(
+              onTap: () async {
+                if (_bgTrackingActive) {
+                  await _setBackgroundTracking(false);
+                  _showSnackbar('Übertragung deaktiviert', success: false);
+                } else {
+                  final canTrack = await _hasBackgroundPermission();
+                  if (!canTrack) {
+                    await _requestBackgroundWithRationale();
+                    return;
+                  }
+                  await _setBackgroundTracking(true);
+                  _showSnackbar('Übertragung aktiviert', success: true);
+                }
+              },
+              child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
+                  color: _bgTrackingActive
+                      ? Colors.white.withOpacity(0.2)
+                      : Colors.black.withOpacity(0.25),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Row(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.gps_fixed,
-                      color: Colors.white,
+                      _bgTrackingActive ? Icons.gps_fixed : Icons.gps_off,
+                      color: _bgTrackingActive ? Colors.white : Colors.white54,
                       size: 14,
                     ),
-                    SizedBox(width: 4),
+                    const SizedBox(width: 4),
                     Text(
                       'GPS',
                       style: TextStyle(
-                        color: Colors.white,
+                        color: _bgTrackingActive ? Colors.white : Colors.white54,
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
                       ),
@@ -1347,8 +1595,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-            ],
+            ),
+            const SizedBox(width: 8),
 
             // Battery
             Container(

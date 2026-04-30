@@ -234,12 +234,27 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
   _modeCheckTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
     await _updateTrackingMode(service);
 
-    // Auto-Stop nur Deployment-Modus zurücksetzen, Tracking bleibt aktiv
+    // Konfigurierbarer Auto-Deaktivierungs-Timer
+    final prefs = await SharedPreferences.getInstance();
+    final autoDeactMin = prefs.getInt('autoDeactivateMinutes') ?? 0;
+    if (autoDeactMin > 0 && await DeploymentState.shouldAutoStop(inactiveMinutes: autoDeactMin)) {
+      await DeploymentState.setMode(DeploymentMode.standby);
+      _deploymentMode = DeploymentMode.standby;
+      await prefs.setBool('transmissionEnabled', false);
+      // Timers und Subscriptions kündigen bevor Service stoppt
+      _hbTimer?.cancel();
+      _flushTimer?.cancel();
+      _connectivitySub?.cancel();
+      await AlarmService.stop();
+      await service.stopSelf();
+      return;
+    }
+
+    // Fester Deployment-Reset nach 3 Stunden Inaktivität (Service bleibt aktiv)
     if (await DeploymentState.shouldAutoStop(inactiveMinutes: 180)) {
       await DeploymentState.setMode(DeploymentMode.standby);
       _deploymentMode = DeploymentMode.standby;
       await _updateTrackingMode(service);
-      // Tracking bleibt aktiv im Power-Saver-Modus
     }
   });
 }
@@ -484,10 +499,13 @@ Future<void> onStart(ServiceInstance service) async {
     await service.stopSelf();
   });
 
-  // Auto-Start: Tracking sofort nach Initialisierung starten
-  // Behebt Race-Condition wenn setTracking-Event vor Listener-Setup eintrifft
+  // Tracking nur starten wenn vom Nutzer explizit aktiviert
+  // (verhindert Auto-Start nach Neustart – Alarm-Subscription läuft bereits)
   if (await _hasValidConfig()) {
-    await startTracking();
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('transmissionEnabled') ?? false) {
+      await startTracking();
+    }
   }
 }
 
