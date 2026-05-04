@@ -4,8 +4,11 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'status_overview_screen.dart';
 import 'data/edp_api.dart';
+import 'data/edp_api_pro.dart';
 import 'data/alarm_service.dart';
 import 'data/profile_store.dart';
+import 'pro/pro_dashboard_screen.dart';
+import 'pro/issi_picker_screen.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -135,6 +138,67 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       controller: controller,
       keyboardType: keyboardType,
       decoration: _materialDecoration(label, missing: false),
+    );
+  }
+
+  /// ISSI-Feld mit optionalem Server-Picker-Button (Pro).
+  Widget _issiField() {
+    final missing = _isMissing(issiController);
+    final autoMode = _showAllErrors
+        ? AutovalidateMode.always
+        : AutovalidateMode.onUserInteraction;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: TextFormField(
+            controller: issiController,
+            autovalidateMode: autoMode,
+            validator: (v) =>
+                (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null,
+            keyboardType: TextInputType.number,
+            onChanged: (_) => setState(() {}),
+            decoration: _materialDecoration('ISSI*', missing: missing),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          height: 56,
+          child: OutlinedButton.icon(
+            onPressed: () async {
+              final api = EdpApiPro.instance;
+              if (api == null || !api.hasToken) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                        'Bitte zuerst Pro-API einrichten (AppBar → ★)'),
+                    backgroundColor: Colors.orange,
+                  ),
+                );
+                return;
+              }
+              final issi = await Navigator.push<String>(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => const IssiPickerScreen()),
+              );
+              if (issi != null && mounted) {
+                setState(() => issiController.text = issi);
+              }
+            },
+            icon: const Icon(Icons.radio, size: 18),
+            label: const Text('Server', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.red.shade800,
+              side: BorderSide(color: Colors.red.shade800),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -425,6 +489,15 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             tooltip: 'Per QR übernehmen',
             onPressed: _openScannerSheet,
           ),
+          IconButton(
+            icon: const Icon(Icons.star),
+            tooltip: 'Pro Funktionen',
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => const ProDashboardScreen()),
+            ),
+          ),
         ],
       ),
       body: SafeArea(
@@ -474,7 +547,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           const SizedBox(height: 16),
           _requiredField(label: 'Token*', controller: tokenController),
           const SizedBox(height: 16),
-          _requiredField(label: 'ISSI*', controller: issiController),
+          _issiField(),
           const SizedBox(height: 16),
           _optionalField(label: 'Truppname', controller: truppController),
           const SizedBox(height: 16),
