@@ -24,6 +24,11 @@ class EdpEinsatz {
   final DateTime? eroeff;
   final String? meldung;
   final String? prioritaet;
+  final String? meldender;
+  final DateTime? meldungseingang;
+  final String? bemerkung;
+  final String? ortsteil;
+  final String? einsatzart;
 
   const EdpEinsatz({
     required this.einsatznummer,
@@ -40,6 +45,11 @@ class EdpEinsatz {
     this.eroeff,
     this.meldung,
     this.prioritaet,
+    this.meldender,
+    this.meldungseingang,
+    this.bemerkung,
+    this.ortsteil,
+    this.einsatzart,
   });
 
   factory EdpEinsatz.fromJson(Map<String, dynamic> j) => EdpEinsatz(
@@ -54,9 +64,18 @@ class EdpEinsatz {
         koordy: (j['koordy'] as num?)?.toDouble(),
         status: j['status'] as String?,
         aktiv: j['aktiv'] as String?,
-        eroeff: j['eroeff'] != null ? DateTime.tryParse(j['eroeff'] as String) : null,
+        eroeff: j['eroeff'] != null
+            ? DateTime.tryParse(j['eroeff'] as String)
+            : null,
         meldung: j['meldung'] as String?,
         prioritaet: j['prioritaet'] as String?,
+        meldender: j['meldender'] as String?,
+        meldungseingang: j['meldungseingang'] != null
+            ? DateTime.tryParse(j['meldungseingang'] as String)
+            : null,
+        bemerkung: j['bemerkung'] as String?,
+        ortsteil: j['ortsteil'] as String?,
+        einsatzart: j['einsatzart'] as String?,
       );
 
   String get adresse {
@@ -86,10 +105,16 @@ class EdpEinsatzmittel {
   final String? status;
   final String? typ;
   final String? einsatz;
+  final String? einsatznummer;
   final int? besatzung0;
   final int? besatzung1;
   final int? besatzung2;
   final int? besatzungGes;
+  final double? koordX;
+  final double? koordY;
+  final String? wache;
+  final String? abschnitt;
+  final DateTime? zeitstempel;
 
   const EdpEinsatzmittel({
     required this.rufname,
@@ -97,26 +122,44 @@ class EdpEinsatzmittel {
     this.status,
     this.typ,
     this.einsatz,
+    this.einsatznummer,
     this.besatzung0,
     this.besatzung1,
     this.besatzung2,
     this.besatzungGes,
+    this.koordX,
+    this.koordY,
+    this.wache,
+    this.abschnitt,
+    this.zeitstempel,
   });
 
-  factory EdpEinsatzmittel.fromJson(Map<String, dynamic> j) => EdpEinsatzmittel(
+  factory EdpEinsatzmittel.fromJson(Map<String, dynamic> j) =>
+      EdpEinsatzmittel(
         rufname: (j['rufname'] as String?) ?? '',
         rufnameLang: j['rufnameLang'] as String?,
         status: j['status'] as String?,
         typ: j['typ'] as String?,
         einsatz: j['einsatz'] as String?,
+        einsatznummer: j['einsatznummer'] as String?,
         besatzung0: j['besatzung0'] as int?,
         besatzung1: j['besatzung1'] as int?,
         besatzung2: j['besatzung2'] as int?,
         besatzungGes: j['besatzungGes'] as int?,
+        koordX: (j['koordX'] as num?)?.toDouble(),
+        koordY: (j['koordY'] as num?)?.toDouble(),
+        wache: j['wache'] as String?,
+        abschnitt: j['abschnitt'] as String?,
+        zeitstempel: j['zeitstempel'] != null
+            ? DateTime.tryParse(j['zeitstempel'] as String)
+            : null,
       );
 
   String get displayName =>
       rufnameLang?.isNotEmpty == true ? '${rufnameLang!} ($rufname)' : rufname;
+
+  bool get hasCoordinates =>
+      koordX != null && koordY != null && koordX != 0.0 && koordY != 0.0;
 }
 
 class EdpTetraEndgeraet {
@@ -132,7 +175,8 @@ class EdpTetraEndgeraet {
     this.type = 0,
   });
 
-  factory EdpTetraEndgeraet.fromJson(Map<String, dynamic> j) => EdpTetraEndgeraet(
+  factory EdpTetraEndgeraet.fromJson(Map<String, dynamic> j) =>
+      EdpTetraEndgeraet(
         issi: (j['issi'] as String?) ?? '',
         rufname: j['rufname'] as String?,
         opta: j['opta'] as String?,
@@ -143,6 +187,73 @@ class EdpTetraEndgeraet {
     final name = rufname?.isNotEmpty == true ? rufname! : (opta ?? '');
     return name.isNotEmpty ? '$name ($issi)' : issi;
   }
+}
+
+class EdpVerlaufEintrag {
+  final int id;
+  final DateTime? addTimestamp;
+  final String? typ;
+  final String? von;
+  final String? an;
+  final String? eintrag;
+  final String? auftrag;
+  final String? abschnitt;
+
+  const EdpVerlaufEintrag({
+    required this.id,
+    this.addTimestamp,
+    this.typ,
+    this.von,
+    this.an,
+    this.eintrag,
+    this.auftrag,
+    this.abschnitt,
+  });
+
+  factory EdpVerlaufEintrag.fromJson(Map<String, dynamic> j) =>
+      EdpVerlaufEintrag(
+        id: (j['id'] as int?) ?? 0,
+        addTimestamp: j['addTimestamp'] != null
+            ? DateTime.tryParse(j['addTimestamp'] as String)
+            : null,
+        typ: j['typ'] as String?,
+        von: j['von'] as String?,
+        an: j['an'] as String?,
+        eintrag: j['eintrag'] as String?,
+        auftrag: j['auftrag'] as String?,
+        abschnitt: j['abschnitt'] as String?,
+      );
+}
+
+class EdpEinsatzabschnitt {
+  final int id;
+  final int? einsatznummer;
+  final String? bezeichnung;
+  final String? eal;
+  final String? kanal;
+  final String? rufname;
+  final String? zusatz;
+
+  const EdpEinsatzabschnitt({
+    required this.id,
+    this.einsatznummer,
+    this.bezeichnung,
+    this.eal,
+    this.kanal,
+    this.rufname,
+    this.zusatz,
+  });
+
+  factory EdpEinsatzabschnitt.fromJson(Map<String, dynamic> j) =>
+      EdpEinsatzabschnitt(
+        id: (j['id'] as int?) ?? 0,
+        einsatznummer: j['einsatznummer'] as int?,
+        bezeichnung: j['bezeichnung'] as String?,
+        eal: j['eal'] as String?,
+        kanal: j['kanal'] as String?,
+        rufname: j['rufname'] as String?,
+        zusatz: j['zusatz'] as String?,
+      );
 }
 
 class EdpProResult<T> {
@@ -230,8 +341,10 @@ class EdpApiPro {
       _accessToken = data['accessToken'] as String?;
       _refreshToken = data['refreshToken'] as String?;
       final prefs = await SharedPreferences.getInstance();
-      if (_accessToken != null) await prefs.setString(_kAccessToken, _accessToken!);
-      if (_refreshToken != null) await prefs.setString(_kRefreshToken, _refreshToken!);
+      if (_accessToken != null)
+        await prefs.setString(_kAccessToken, _accessToken!);
+      if (_refreshToken != null)
+        await prefs.setString(_kRefreshToken, _refreshToken!);
       return _accessToken != null;
     } catch (_) {
       return false;
@@ -256,8 +369,10 @@ class EdpApiPro {
       _accessToken = data['accessToken'] as String?;
       _refreshToken = data['refreshToken'] as String?;
       final prefs = await SharedPreferences.getInstance();
-      if (_accessToken != null) await prefs.setString(_kAccessToken, _accessToken!);
-      if (_refreshToken != null) await prefs.setString(_kRefreshToken, _refreshToken!);
+      if (_accessToken != null)
+        await prefs.setString(_kAccessToken, _accessToken!);
+      if (_refreshToken != null)
+        await prefs.setString(_kRefreshToken, _refreshToken!);
       return _accessToken != null;
     } catch (_) {
       return false;
@@ -292,13 +407,15 @@ class EdpApiPro {
     return resp;
   }
 
-  Future<EdpProResult<List<EdpEinsatz>>> getEinsaetze({String? status}) async {
+  Future<EdpProResult<List<EdpEinsatz>>> getEinsaetze(
+      {String? status}) async {
     try {
       final qp = <String, String>{};
       if (status != null) qp['status'] = status;
       final resp = await _get(_uri('einsaetze', qp.isEmpty ? null : qp));
       if (resp.statusCode != 200) {
-        return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
+        return EdpProResult.failure(
+            resp.statusCode, 'HTTP ${resp.statusCode}');
       }
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
       final raw = body['data'];
@@ -313,17 +430,29 @@ class EdpApiPro {
     }
   }
 
-  Future<EdpProResult<List<EdpEinsatzmittel>>> getEinsatzmittel() async {
+  Future<EdpProResult<List<EdpEinsatzmittel>>> getEinsatzmittel({
+    String? einsatznummer,
+    String? status,
+    String? wache,
+  }) async {
     try {
-      final resp = await _get(_uri('einsatzmittel'));
+      final qp = <String, String>{};
+      if (einsatznummer != null && einsatznummer.isNotEmpty)
+        qp['einsatznummer'] = einsatznummer;
+      if (status != null && status.isNotEmpty) qp['status'] = status;
+      if (wache != null && wache.isNotEmpty) qp['wache'] = wache;
+      final resp =
+          await _get(_uri('einsatzmittel', qp.isEmpty ? null : qp));
       if (resp.statusCode != 200) {
-        return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
+        return EdpProResult.failure(
+            resp.statusCode, 'HTTP ${resp.statusCode}');
       }
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
       final raw = body['data'];
       final items = raw is List
           ? raw
-              .map((e) => EdpEinsatzmittel.fromJson(e as Map<String, dynamic>))
+              .map((e) =>
+                  EdpEinsatzmittel.fromJson(e as Map<String, dynamic>))
               .toList()
           : <EdpEinsatzmittel>[];
       return EdpProResult.success(items);
@@ -340,7 +469,8 @@ class EdpApiPro {
       final resp =
           await _get(_uri('tetra-endgeraete', qp.isEmpty ? null : qp));
       if (resp.statusCode != 200) {
-        return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
+        return EdpProResult.failure(
+            resp.statusCode, 'HTTP ${resp.statusCode}');
       }
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
       final raw = body['data'];
@@ -350,6 +480,52 @@ class EdpApiPro {
                   EdpTetraEndgeraet.fromJson(e as Map<String, dynamic>))
               .toList()
           : <EdpTetraEndgeraet>[];
+      return EdpProResult.success(items);
+    } catch (e) {
+      return EdpProResult.failure(-1, e.toString());
+    }
+  }
+
+  Future<EdpProResult<List<EdpVerlaufEintrag>>> getEinsatzverlauf(
+      int einsatznummer) async {
+    try {
+      final resp = await _get(
+          _uri('einsatzverlauf', {'einsatznummer': einsatznummer.toString()}));
+      if (resp.statusCode != 200) {
+        return EdpProResult.failure(
+            resp.statusCode, 'HTTP ${resp.statusCode}');
+      }
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final raw = body['data'];
+      final items = raw is List
+          ? raw
+              .map((e) =>
+                  EdpVerlaufEintrag.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <EdpVerlaufEintrag>[];
+      return EdpProResult.success(items);
+    } catch (e) {
+      return EdpProResult.failure(-1, e.toString());
+    }
+  }
+
+  Future<EdpProResult<List<EdpEinsatzabschnitt>>> getEinsatzabschnitte(
+      int einsatznummer) async {
+    try {
+      final resp = await _get(_uri(
+          'einsatzabschnitte', {'einsatznummer': einsatznummer.toString()}));
+      if (resp.statusCode != 200) {
+        return EdpProResult.failure(
+            resp.statusCode, 'HTTP ${resp.statusCode}');
+      }
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final raw = body['data'];
+      final items = raw is List
+          ? raw
+              .map((e) =>
+                  EdpEinsatzabschnitt.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <EdpEinsatzabschnitt>[];
       return EdpProResult.success(items);
     } catch (e) {
       return EdpProResult.failure(-1, e.toString());
@@ -381,7 +557,8 @@ class EdpApiPro {
     }
   }
 
-  static Future<void> saveCredentials(String username, String password) async {
+  static Future<void> saveCredentials(
+      String username, String password) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_kProUser, username);
     await prefs.setString(_kProPass, password);

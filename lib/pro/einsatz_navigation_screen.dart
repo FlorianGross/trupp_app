@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/edp_api_pro.dart';
+import 'einsatz_detail_screen.dart';
 
 class EinsatzNavigationScreen extends StatefulWidget {
   const EinsatzNavigationScreen({super.key});
@@ -11,7 +12,8 @@ class EinsatzNavigationScreen extends StatefulWidget {
       _EinsatzNavigationScreenState();
 }
 
-class _EinsatzNavigationScreenState extends State<EinsatzNavigationScreen> {
+class _EinsatzNavigationScreenState
+    extends State<EinsatzNavigationScreen> {
   List<EdpEinsatz> _einsaetze = [];
   bool _loading = true;
   String? _error;
@@ -88,11 +90,19 @@ class _EinsatzNavigationScreenState extends State<EinsatzNavigationScreen> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
+  void _openDetail(EdpEinsatz e) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+          builder: (_) => EinsatzDetailScreen(einsatz: e)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Einsatznavigation'),
+        title: const Text('Einsätze'),
         backgroundColor: Colors.red.shade800,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -138,7 +148,8 @@ class _EinsatzNavigationScreenState extends State<EinsatzNavigationScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.error_outline, size: 48, color: Colors.red.shade400),
+              Icon(Icons.error_outline,
+                  size: 48, color: Colors.red.shade400),
               const SizedBox(height: 12),
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
@@ -155,11 +166,12 @@ class _EinsatzNavigationScreenState extends State<EinsatzNavigationScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.inbox_outlined, size: 48, color: Colors.grey.shade400),
+            Icon(Icons.inbox_outlined,
+                size: 48, color: Colors.grey.shade400),
             const SizedBox(height: 12),
             Text(
               _filter.isEmpty
-                  ? 'Keine aktiven Einsätze'
+                  ? 'Keine aktiven Einsätze'
                   : 'Keine Ergebnisse für "$_filter"',
               style: TextStyle(color: Colors.grey.shade600),
             ),
@@ -181,10 +193,11 @@ class _EinsatzNavigationScreenState extends State<EinsatzNavigationScreen> {
   Widget _buildCard(EdpEinsatz e) {
     return Card(
       elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => _navigate(e),
+        onTap: () => _openDetail(e),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: Row(
@@ -210,10 +223,12 @@ class _EinsatzNavigationScreenState extends State<EinsatzNavigationScreen> {
                           child: Text(
                             e.title,
                             style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 15),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15),
                           ),
                         ),
-                        if (e.prioritaet != null && e.prioritaet!.isNotEmpty)
+                        if (e.prioritaet != null &&
+                            e.prioritaet!.isNotEmpty)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 8, vertical: 2),
@@ -255,24 +270,33 @@ class _EinsatzNavigationScreenState extends State<EinsatzNavigationScreen> {
                                     color: Colors.grey.shade500)),
                           ],
                         const Spacer(),
-                        Icon(
-                          e.hasCoordinates
-                              ? Icons.navigation
-                              : Icons.location_searching,
-                          size: 16,
-                          color: e.hasCoordinates
-                              ? Colors.red.shade800
-                              : Colors.grey.shade400,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          'Navigation',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: e.hasCoordinates
-                                  ? Colors.red.shade800
-                                  : Colors.grey.shade400,
-                              fontWeight: FontWeight.w600),
+                        // Navigation icon button
+                        GestureDetector(
+                          onTap: () => _navigate(e),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                e.hasCoordinates
+                                    ? Icons.navigation
+                                    : Icons.location_searching,
+                                size: 16,
+                                color: e.hasCoordinates
+                                    ? Colors.red.shade800
+                                    : Colors.grey.shade400,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Navigation',
+                                style: TextStyle(
+                                    fontSize: 12,
+                                    color: e.hasCoordinates
+                                        ? Colors.red.shade800
+                                        : Colors.grey.shade400,
+                                    fontWeight: FontWeight.w600),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),

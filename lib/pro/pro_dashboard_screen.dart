@@ -5,6 +5,7 @@ import '../data/edp_api_pro.dart';
 import 'einsatz_navigation_screen.dart';
 import 'staerke_edp_screen.dart';
 import 'issi_picker_screen.dart';
+import 'fahrzeug_karte_screen.dart';
 
 class ProDashboardScreen extends StatefulWidget {
   const ProDashboardScreen({super.key});
@@ -60,8 +61,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
     final user = _userCtrl.text.trim();
     final pass = _passCtrl.text;
     if (user.isEmpty || pass.isEmpty) {
-      setState(() =>
-          _loginError = 'Benutzername und Passwort erforderlich');
+      setState(() => _loginError = 'Benutzername und Passwort erforderlich');
       return;
     }
     setState(() {
@@ -83,8 +83,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
       } else {
         setState(() {
           _logging = false;
-          _loginError =
-              'Anmeldung fehlgeschlagen. Zugangsdaten prüfen.';
+          _loginError = 'Anmeldung fehlgeschlagen. Zugangsdaten prüfen.';
         });
       }
     } catch (e) {
@@ -177,8 +176,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
                   fontWeight: FontWeight.bold),
             ),
           ),
-          Icon(Icons.shield,
-              color: Colors.white.withAlpha(204), size: 28),
+          Icon(Icons.shield, color: Colors.white.withAlpha(204), size: 28),
         ],
       ),
     );
@@ -204,8 +202,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
             const SizedBox(height: 4),
             Text(
               'Melde dich mit deinen EDP-Zugangsdaten an, um Pro-Funktionen zu nutzen.',
-              style:
-                  TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -287,8 +284,8 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
           children: [
             CircleAvatar(
               backgroundColor: Colors.green.shade50,
-              child: Icon(Icons.check_circle,
-                  color: Colors.green.shade700),
+              child:
+                  Icon(Icons.check_circle, color: Colors.green.shade700),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -331,9 +328,9 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
           children: [
             Expanded(
               child: _featureTile(
-                icon: Icons.navigation,
-                title: 'Einsatz\nNavigation',
-                subtitle: 'Aktive Einsätze',
+                icon: Icons.local_fire_department,
+                title: 'Einsatz\nListe',
+                subtitle: 'Aktive Einsätze',
                 onTap: () => _open(const EinsatzNavigationScreen()),
               ),
             ),
@@ -374,7 +371,14 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            const Expanded(child: SizedBox()),
+            Expanded(
+              child: _featureTile(
+                icon: Icons.map,
+                title: 'Fahrzeug\nKarte',
+                subtitle: 'GPS-Positionen',
+                onTap: () => _open(const FahrzeugKarteScreen()),
+              ),
+            ),
           ],
         ),
       ],
@@ -405,8 +409,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
                   color: Colors.red.shade50,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child:
-                    Icon(icon, color: Colors.red.shade800, size: 24),
+                child: Icon(icon, color: Colors.red.shade800, size: 24),
               ),
               const SizedBox(height: 12),
               Text(title,
