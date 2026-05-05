@@ -28,7 +28,9 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   final pbUrlController = TextEditingController();
 
   String _selectedProtocol = 'https';
+  bool _showManualConfig = false;
   bool _autoSaveAfterScan = false;
+  bool _showAllErrors = false;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
 
@@ -58,6 +60,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     );
     _animationController.forward();
 
+    _loadExistingConfig();
+
     AlarmService.loadPbUrl().then((url) {
       if (url != null && mounted) pbUrlController.text = url;
     });
@@ -74,7 +78,28 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     }
   }
 
-  bool _showAllErrors = false;
+  Future<void> _loadExistingConfig() async {
+    try {
+      final api = EdpApi.instance;
+      final cfg = api.config;
+      if (!cfg.isComplete) return;
+      if (!mounted) return;
+      setState(() {
+        hostController.text = cfg.host;
+        portController.text = cfg.port.toString();
+        _selectedProtocol = cfg.protocol;
+        tokenController.text = cfg.token;
+        issiController.text = cfg.issi;
+        truppController.text = cfg.trupp;
+        leiterController.text = cfg.leiter;
+      });
+    } catch (_) {}
+  }
+
+  bool get _hasConfig =>
+      hostController.text.trim().isNotEmpty &&
+      tokenController.text.trim().isNotEmpty;
+
   bool _isMissing(TextEditingController c) => c.text.trim().isEmpty;
 
   InputDecoration _materialDecoration(String label, {required bool missing}) {
@@ -115,14 +140,10 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     final autoMode = _showAllErrors
         ? AutovalidateMode.always
         : AutovalidateMode.onUserInteraction;
-
-    String? validator(String? v) =>
-        (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null;
-
     return TextFormField(
       controller: controller,
       autovalidateMode: autoMode,
-      validator: validator,
+      validator: (v) => (v == null || v.trim().isEmpty) ? 'Pflichtfeld' : null,
       keyboardType: keyboardType,
       onChanged: (_) => setState(() {}),
       decoration: _materialDecoration(label, missing: missing),
@@ -141,13 +162,11 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     );
   }
 
-  /// ISSI-Feld mit optionalem Server-Picker-Button (Pro).
   Widget _issiField() {
     final missing = _isMissing(issiController);
     final autoMode = _showAllErrors
         ? AutovalidateMode.always
         : AutovalidateMode.onUserInteraction;
-
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -249,10 +268,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
               await AlarmService.savePbUrl(pbUrlController.text.trim());
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(
-                    builder: (_) => const StatusOverview(),
-                  ),
-                      (_) => false,
+                  MaterialPageRoute(builder: (_) => const StatusOverview()),
+                  (_) => false,
                 );
               }
             },
@@ -264,10 +281,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         await AlarmService.savePbUrl(pbUrlController.text.trim());
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(
-              builder: (_) => const StatusOverview(),
-            ),
-                (_) => false,
+            MaterialPageRoute(builder: (_) => const StatusOverview()),
+            (_) => false,
           );
         }
       } catch (e) {
@@ -280,12 +295,13 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
 
   Future<void> _saveAsProfile() async {
     final server = '${hostController.text.trim()}:${portController.text.trim()}';
-    if (server.trim() == ':' || tokenController.text.trim().isEmpty || issiController.text.trim().isEmpty) {
+    if (server.trim() == ':' ||
+        tokenController.text.trim().isEmpty ||
+        issiController.text.trim().isEmpty) {
       _showErrorDialog('Bitte zuerst alle Pflichtfelder ausfüllen.');
       return;
     }
 
-    String profileName = '';
     final nameResult = await showDialog<String>(
       context: context,
       builder: (ctx) {
@@ -295,18 +311,23 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           content: TextField(
             controller: ctrl,
             autofocus: true,
-            decoration: const InputDecoration(hintText: 'z. B. FF Musterstadt'),
+            decoration:
+                const InputDecoration(hintText: 'z. B. FF Musterstadt'),
             onSubmitted: (v) => Navigator.pop(ctx, v),
           ),
           actions: [
-            TextButton(child: const Text('Abbrechen'), onPressed: () => Navigator.pop(ctx)),
-            TextButton(child: const Text('Speichern'), onPressed: () => Navigator.pop(ctx, ctrl.text)),
+            TextButton(
+                child: const Text('Abbrechen'),
+                onPressed: () => Navigator.pop(ctx)),
+            TextButton(
+                child: const Text('Speichern'),
+                onPressed: () => Navigator.pop(ctx, ctrl.text)),
           ],
         );
       },
     );
 
-    profileName = nameResult?.trim() ?? '';
+    final profileName = nameResult?.trim() ?? '';
     if (profileName.isEmpty) return;
 
     final profile = AppProfile(
@@ -355,17 +376,52 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   }
 
   Future<void> _applyConfigFromUri(Uri uri) async {
-    hostController.text = uri.queryParameters['server'] ?? '';
-    portController.text = uri.queryParameters['port'] ?? '443';
-    tokenController.text = uri.queryParameters['token'] ?? '';
-    truppController.text = uri.queryParameters['trupp'] ?? '';
-    leiterController.text = uri.queryParameters['leiter'] ?? '';
-    issiController.text = uri.queryParameters['issi'] ?? '';
-    if (uri.queryParameters.containsKey('pb_url')) {
-      pbUrlController.text = uri.queryParameters['pb_url']!;
+    setState(() {
+      hostController.text = uri.queryParameters['server'] ?? '';
+      portController.text = uri.queryParameters['port'] ?? '443';
+      tokenController.text = uri.queryParameters['token'] ?? '';
+      truppController.text = uri.queryParameters['trupp'] ?? '';
+      leiterController.text = uri.queryParameters['leiter'] ?? '';
+      issiController.text = uri.queryParameters['issi'] ?? '';
+      if (uri.queryParameters.containsKey('pb_url')) {
+        pbUrlController.text = uri.queryParameters['pb_url']!;
+      }
+      final proto = uri.queryParameters['protocol'];
+      if (proto != null) _selectedProtocol = proto;
+      // Auto-expand form so user can review what was filled in
+      _showManualConfig = true;
+    });
+
+    // Auto-login to Pro if credentials are embedded in the QR
+    final edpUser = uri.queryParameters['edp_user'];
+    final edpPass = uri.queryParameters['edp_pass'];
+    if (edpUser != null && edpPass != null && edpUser.isNotEmpty) {
+      try {
+        final cfg = EdpConfig(
+          protocol: _selectedProtocol,
+          host: hostController.text.trim(),
+          port: int.tryParse(portController.text.trim()) ?? 443,
+          token: tokenController.text.trim(),
+          issi: issiController.text.trim(),
+          trupp: truppController.text.trim(),
+          leiter: leiterController.text.trim(),
+        );
+        final proApi = await EdpApiPro.init(cfg);
+        final ok = await proApi.login(edpUser, edpPass);
+        if (ok) {
+          await EdpApiPro.saveCredentials(edpUser, edpPass);
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Pro-API automatisch verbunden'),
+                backgroundColor: Colors.green,
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        }
+      } catch (_) {}
     }
-    final proto = uri.queryParameters['protocol'];
-    if (proto != null) _selectedProtocol = proto;
 
     if (_autoSaveAfterScan) {
       await _saveConfig();
@@ -376,11 +432,14 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Padding(
-          padding: EdgeInsets.only(left: 4, bottom: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
             'Protokoll',
-            style: TextStyle(fontSize: 13, color: Color(0xFF616161), fontWeight: FontWeight.w500),
+            style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500),
           ),
         ),
         SegmentedButton<String>(
@@ -389,7 +448,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             ButtonSegment(value: 'http', label: Text('HTTP')),
           ],
           selected: {_selectedProtocol},
-          onSelectionChanged: (s) => setState(() => _selectedProtocol = s.first),
+          onSelectionChanged: (s) =>
+              setState(() => _selectedProtocol = s.first),
           style: ButtonStyle(
             backgroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.selected)) {
@@ -449,7 +509,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                     child: MobileScanner(
                       onDetect: (capture) async {
                         if (handled) return;
-                        final code = capture.barcodes.firstOrNull?.rawValue;
+                        final code =
+                            capture.barcodes.firstOrNull?.rawValue;
                         if (code == null) return;
                         try {
                           final uri = Uri.parse(code);
@@ -459,7 +520,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                           }
                           await _applyConfigFromUri(uri);
                         } catch (e) {
-                          _showErrorDialog('Fehler beim Lesen des QR-Codes: $e');
+                          _showErrorDialog(
+                              'Fehler beim Lesen des QR-Codes: $e');
                         }
                       },
                     ),
@@ -520,102 +582,14 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         padding: const EdgeInsets.all(16.0),
         children: [
           _buildQRCard(),
-          const SizedBox(height: 24),
-          const Padding(
-            padding: EdgeInsets.only(left: 4, bottom: 8),
-            child: Text(
-              'Manuelle Konfiguration',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-          _buildProtocolSelector(),
           const SizedBox(height: 16),
-          _requiredField(
-            label: 'EDP Server* (z. B. test.local)',
-            controller: hostController,
-          ),
-          const SizedBox(height: 16),
-          _requiredField(
-            label: 'Port*',
-            controller: portController,
-            keyboardType: TextInputType.number,
-          ),
-          const SizedBox(height: 16),
-          _requiredField(label: 'Token*', controller: tokenController),
-          const SizedBox(height: 16),
-          _issiField(),
-          const SizedBox(height: 16),
-          _optionalField(label: 'Truppname', controller: truppController),
-          const SizedBox(height: 16),
-          _optionalField(
-            label: 'Ansprechpartner',
-            controller: leiterController,
-          ),
-          const SizedBox(height: 24),
-          const Padding(
-            padding: EdgeInsets.only(left: 4, bottom: 8),
-            child: Text(
-              'Alarmierung (optional)',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
-            ),
-          ),
-          _optionalField(
-            label: 'PocketBase-URL (z. B. https://pb.example.org)',
-            controller: pbUrlController,
-            keyboardType: TextInputType.url,
-          ),
-          const SizedBox(height: 6),
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: Text(
-              'Wenn gesetzt, empfängt dieses Gerät EDP-Alarmierungen in Echtzeit.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Padding(
-            padding: const EdgeInsets.only(left: 4),
-            child: Text(
-              'Die Konfiguration wird sicher im Gerät gespeichert.\n* Pflichtfelder',
-              style: TextStyle(
-                color: Colors.grey.shade600,
-                fontSize: 13,
-              ),
-            ),
-          ),
-          const SizedBox(height: 28),
-          ElevatedButton.icon(
-            onPressed: _saveConfig,
-            icon: const Icon(Icons.save),
-            label: const Text('Speichern und fortfahren'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade800,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(54),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _saveAsProfile,
-            icon: const Icon(Icons.person_add_alt_1),
-            label: const Text('Als Profil speichern'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red.shade800,
-              side: BorderSide(color: Colors.red.shade800),
-              minimumSize: const Size.fromHeight(50),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
+          _buildManualToggle(),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeInOut,
+            child: _showManualConfig
+                ? _buildManualConfigSection()
+                : const SizedBox.shrink(),
           ),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
         ],
@@ -627,60 +601,207 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     return Card(
       elevation: 2,
       shadowColor: Colors.black26,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: _hasConfig
+                        ? Colors.green.shade50
+                        : Colors.red.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    _hasConfig ? Icons.check_circle : Icons.qr_code,
+                    color: _hasConfig
+                        ? Colors.green.shade700
+                        : Colors.red.shade800,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _hasConfig
+                            ? 'Konfiguriert'
+                            : 'Gerät einrichten',
+                        style: const TextStyle(
+                            fontSize: 17, fontWeight: FontWeight.w700),
+                      ),
+                      if (_hasConfig)
+                        Text(
+                          '${hostController.text}:${portController.text}',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600),
+                        )
+                      else
+                        Text(
+                          'QR-Code vom Administrator scannen',
+                          style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _openScannerSheet,
+              icon: const Icon(Icons.qr_code_scanner),
+              label: Text(_hasConfig ? 'Neu einscannen' : 'QR-Code scannen'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(50),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
       ),
-      child: _buildQRCardContent(),
     );
   }
 
-  Widget _buildQRCardContent() {
-    return Padding(
-      padding: const EdgeInsets.all(20.0),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.qr_code,
-                  color: Colors.red.shade800,
-                  size: 28,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Konfiguration per QR-Code',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _openScannerSheet,
-            icon: const Icon(Icons.qr_code_scanner),
-            label: const Text('QR-Code scannen'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red.shade800,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(50),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          ),
-        ],
+  Widget _buildManualToggle() {
+    return OutlinedButton.icon(
+      onPressed: () =>
+          setState(() => _showManualConfig = !_showManualConfig),
+      icon: Icon(
+        _showManualConfig ? Icons.keyboard_arrow_up : Icons.settings,
+        size: 20,
       ),
+      label: Text(_showManualConfig
+          ? 'Manuell konfigurieren – schließen'
+          : 'Manuell konfigurieren'),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: Colors.grey.shade700,
+        side: BorderSide(color: Colors.grey.shade400),
+        minimumSize: const Size.fromHeight(48),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  Widget _buildManualConfigSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'Server & Zugangsdaten',
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800),
+          ),
+        ),
+        _buildProtocolSelector(),
+        const SizedBox(height: 16),
+        _requiredField(
+          label: 'EDP Server* (z. B. test.local)',
+          controller: hostController,
+        ),
+        const SizedBox(height: 16),
+        _requiredField(
+          label: 'Port*',
+          controller: portController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 16),
+        _requiredField(label: 'Token*', controller: tokenController),
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'Geräteprofil',
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800),
+          ),
+        ),
+        _issiField(),
+        const SizedBox(height: 16),
+        _optionalField(label: 'Truppname', controller: truppController),
+        const SizedBox(height: 16),
+        _optionalField(
+            label: 'Ansprechpartner', controller: leiterController),
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'Alarmierung (optional)',
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800),
+          ),
+        ),
+        _optionalField(
+          label: 'PocketBase-URL (z. B. https://pb.example.org)',
+          controller: pbUrlController,
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Text(
+            'Wenn gesetzt, empfängt dieses Gerät EDP-Alarmierungen in Echtzeit.',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Text(
+            '* Pflichtfelder',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          ),
+        ),
+        const SizedBox(height: 24),
+        ElevatedButton.icon(
+          onPressed: _saveConfig,
+          icon: const Icon(Icons.save),
+          label: const Text('Speichern und fortfahren'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red.shade800,
+            foregroundColor: Colors.white,
+            minimumSize: const Size.fromHeight(54),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+        const SizedBox(height: 12),
+        OutlinedButton.icon(
+          onPressed: _saveAsProfile,
+          icon: const Icon(Icons.person_add_alt_1),
+          label: const Text('Als Profil speichern'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: Colors.red.shade800,
+            side: BorderSide(color: Colors.red.shade800),
+            minimumSize: const Size.fromHeight(50),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12)),
+          ),
+        ),
+        const SizedBox(height: 24),
+      ],
     );
   }
 }
