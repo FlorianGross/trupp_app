@@ -3,9 +3,17 @@ import 'data/unit_type_store.dart';
 
 class UnitTypePickerScreen extends StatefulWidget {
   /// When true, a back-button is shown (opened from menu).
-  /// When false (first-run), no back-button and Navigator.pushReplacement is used.
   final bool allowBack;
-  const UnitTypePickerScreen({super.key, this.allowBack = false});
+
+  /// Called after save when allowBack is false (first-run).
+  /// The caller is responsible for navigation to the main screen.
+  final Widget Function()? onComplete;
+
+  const UnitTypePickerScreen({
+    super.key,
+    this.allowBack = false,
+    this.onComplete,
+  });
 
   @override
   State<UnitTypePickerScreen> createState() => _UnitTypePickerScreenState();
@@ -28,7 +36,17 @@ class _UnitTypePickerScreenState extends State<UnitTypePickerScreen> {
   Future<void> _confirm() async {
     if (_selected == null) return;
     await UnitTypeStore.save(_selected!);
-    if (mounted) Navigator.pop(context, _selected);
+    if (!mounted) return;
+    if (widget.allowBack) {
+      Navigator.pop(context, _selected);
+    } else if (widget.onComplete != null) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => widget.onComplete!()),
+      );
+    } else {
+      Navigator.pop(context, _selected);
+    }
   }
 
   @override

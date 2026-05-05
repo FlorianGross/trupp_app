@@ -8,7 +8,9 @@ import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
 import 'data/alarm_model.dart';
+import 'data/unit_type_store.dart';
 import 'status_overview_screen.dart';
+import 'unit_type_picker_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
 
@@ -48,7 +50,6 @@ Future<void> main() async {
   await _loadThemePreference();
 
   // Benachrichtigungs-Plugin im Haupt-Isolate initialisieren.
-  // Tap auf "Details" oder Notification-Body öffnet die Alarm-Übersicht.
   await AlarmNotificationService.initialize(
     onTap: (alarm) {
       navigatorKey.currentState?.push(
@@ -62,13 +63,14 @@ Future<void> main() async {
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool('hasConfig') ?? false;
 
+  UnitType? unitType;
   if (hasConfig) {
     await EdpApi.initFromPrefs();
 
-    // GPS-Übertragung nach jedem App-Start deaktiviert (muss explizit aktiviert werden)
+    // GPS-Übertragung nach jedem App-Start deaktiviert
     await prefs.setBool('transmissionEnabled', false);
 
-    // Hintergrund-Service für Alarm-Empfang starten, auch ohne aktive GPS-Übertragung
+    // Hintergrund-Service für Alarm-Empfang starten
     final pbConfigured = (prefs.getString('pb_url') ?? '').isNotEmpty
         && (prefs.getString('issi') ?? '').isNotEmpty;
     if (pbConfigured) {
@@ -79,12 +81,17 @@ Future<void> main() async {
         }
       } catch (_) {}
     }
+
+    unitType = await UnitTypeStore.load();
   }
 
-  // Prüfen ob ein Alarm aus einer Notification-Tap geöffnet wurde (Kaltstart)
   final pendingAlarm = await AlarmNotificationService.getPendingAlarm();
 
-  runApp(MyApp(hasConfig: hasConfig, pendingAlarm: pendingAlarm));
+  runApp(MyApp(
+    hasConfig: hasConfig,
+    pendingAlarm: pendingAlarm,
+    unitType: unitType,
+  ));
 }
 
 final _lightTheme = ThemeData(
@@ -114,8 +121,14 @@ final _darkTheme = ThemeData(
 class MyApp extends StatefulWidget {
   final bool hasConfig;
   final AlarmData? pendingAlarm;
+  final UnitType? unitType;
 
-  const MyApp({super.key, required this.hasConfig, this.pendingAlarm});
+  const MyApp({
+    super.key,
+    required this.hasConfig,
+    this.pendingAlarm,
+    this.unitType,
+  });
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -125,7 +138,6 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    // Nach dem ersten Frame: ggf. Alarm-Übersicht öffnen (Kaltstart via Notification)
     if (widget.pendingAlarm != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         navigatorKey.currentState?.push(
@@ -135,6 +147,17 @@ class _MyAppState extends State<MyApp> {
         );
       });
     }
+  }
+
+  Widget _homeScreen() {
+    if (!widget.hasConfig) return const ConfigScreen();
+    if (widget.unitType == null) {
+      return UnitTypePickerScreen(
+        allowBack: false,
+        onComplete: () => const StatusOverview(),
+      );
+    }
+    return const StatusOverview();
   }
 
   @override
@@ -150,7 +173,7 @@ class _MyAppState extends State<MyApp> {
             theme: _lightTheme,
             darkTheme: _darkTheme,
             themeMode: themeMode,
-            home: widget.hasConfig ? const StatusOverview() : const ConfigScreen(),
+            home: _homeScreen(),
           ),
         );
       },
