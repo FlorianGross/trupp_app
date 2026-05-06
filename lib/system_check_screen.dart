@@ -8,6 +8,8 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
+import 'data/unit_type_store.dart';
+import 'unit_type_picker_screen.dart';
 
 enum CheckStatus { ok, warning, error, checking }
 
@@ -89,6 +91,10 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
         title: 'Akkustand',
         description: 'Ausreichend Akku für Einsatz',
       ),
+      SystemCheckItem(
+        title: 'Einheitstyp',
+        description: 'Betriebsmodus konfiguriert',
+      ),
     ]);
   }
 
@@ -100,11 +106,12 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
       _checkLocationPermissionAlways(),
       _checkLocationServices(),
       _checkNotificationPermission(),
-      if (Platform.isAndroid) _checkBatteryOptimization(),
+      if (!kIsWeb && Platform.isAndroid) _checkBatteryOptimization(),
       _checkGpsAccuracy(),
       _checkBackgroundService(),
       _checkConfiguration(),
       _checkBatteryLevel(),
+      _checkUnitType(),
     ]);
 
     _updateCounts();
@@ -266,7 +273,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   }
 
   Future<void> _checkBatteryOptimization() async {
-    if (!Platform.isAndroid) return;
+    if (kIsWeb || !Platform.isAndroid) return;
 
     final check = _checks.firstWhere((c) => c.title.contains('Akku-Optimierung'));
 
@@ -421,6 +428,33 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
       check.details = 'Konnte Akkustand nicht prüfen';
     }
 
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _checkUnitType() async {
+    final check = _checks.firstWhere((c) => c.title.contains('Einheitstyp'));
+    try {
+      final unitType = await UnitTypeStore.load();
+      if (unitType != null) {
+        check.status = CheckStatus.ok;
+        check.details = unitType.label;
+      } else {
+        check.status = CheckStatus.warning;
+        check.details = 'Kein Modus gewählt';
+        check.actionLabel = 'Auswählen';
+        check.action = () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => const UnitTypePickerScreen(allowBack: true),
+            ),
+          ).then((_) => _runAllChecks());
+        };
+      }
+    } catch (e) {
+      check.status = CheckStatus.warning;
+      check.details = 'Konnte nicht geprüft werden';
+    }
     if (mounted) setState(() {});
   }
 

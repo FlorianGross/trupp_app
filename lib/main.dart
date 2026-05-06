@@ -7,6 +7,7 @@ import 'package:trupp_app/alarm_overlay.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
+import 'onboarding_screen.dart';
 import 'data/alarm_model.dart';
 import 'data/unit_type_store.dart';
 import 'status_overview_screen.dart';
@@ -150,7 +151,7 @@ class _MyAppState extends State<MyApp> {
   }
 
   Widget _homeScreen() {
-    if (!widget.hasConfig) return const ConfigScreen();
+    if (!widget.hasConfig) return const OnboardingScreen();
     if (widget.unitType == null) {
       return UnitTypePickerScreen(
         allowBack: false,
