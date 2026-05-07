@@ -1383,18 +1383,24 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Future<void> _showQrCode() async {
+    // EdpApi.instance.config ist die echte Single Source of Truth —
+    // State-Variablen (server, token, …) können beim ersten Laden noch
+    // auf Defaults stehen.
+    final cfg = EdpApi.instance.config;
     final prefs = await SharedPreferences.getInstance();
     final pbUrl = prefs.getString(AppPrefsKeys.pbUrl) ?? '';
-    final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
+    // proApiUrl bevorzugt aus config (wurde dort immer mitgespeichert)
+    final proApiUrl = cfg.proApiUrl.isNotEmpty
+        ? cfg.proApiUrl
+        : (prefs.getString(AppPrefsKeys.proApiUrl) ?? '');
 
-    // Uri-Builder sorgt für korrekte Prozentkodierung aller Werte
     final params = <String, String>{
-      'protocol': protocol,
-      'server': '$server:$port',
-      'token': token,
-      'issi': issi,
-      if (trupp.isNotEmpty && trupp != 'Unbekannt') 'trupp': trupp,
-      if (leiter.isNotEmpty && leiter != 'Unbekannt') 'leiter': leiter,
+      'protocol': cfg.protocol,
+      'server': '${cfg.host}:${cfg.port}',
+      'token': cfg.token,
+      'issi': cfg.issi,
+      if (cfg.trupp.isNotEmpty) 'trupp': cfg.trupp,
+      if (cfg.leiter.isNotEmpty) 'leiter': cfg.leiter,
       if (pbUrl.isNotEmpty) 'pb_url': pbUrl,
       if (proApiUrl.isNotEmpty) 'pro_api_url': proApiUrl,
     };
@@ -1426,7 +1432,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               ),
               const SizedBox(height: 4),
               Text(
-                server,
+                cfg.host,
                 style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
               ),
               const SizedBox(height: 16),
