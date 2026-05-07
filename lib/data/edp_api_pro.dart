@@ -223,13 +223,13 @@ class EdpApiPro {
 
   bool get hasToken => _accessToken != null && _accessToken!.isNotEmpty;
 
-  Uri _uri(String path, [Map<String, String>? qp]) => Uri(
-        scheme: _config.protocol,
-        host: _config.host,
-        port: _config.port,
-        path: '/api/v1/$path',
-        queryParameters: (qp == null || qp.isEmpty) ? null : qp,
-      );
+  Uri _uri(String path, [Map<String, String>? qp]) {
+    final base = _config.proApiBaseUri;
+    return base.replace(
+      path: '/api/v1/$path',
+      queryParameters: (qp == null || qp.isEmpty) ? null : qp,
+    );
+  }
 
   Map<String, String> get _headers => {
         'Content-Type': 'application/json',

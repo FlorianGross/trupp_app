@@ -9,12 +9,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 @immutable
 class EdpConfig {
   final String protocol; // 'http' | 'https'
-  final String host; // z.B. 'example.org'
-  final int port; // z.B. 443
-  final String token; // Pfadsegment vor Endpoint
-  final String issi; // Geräte-/Teilnehmerkennung
-  final String trupp; // optional
-  final String leiter; // optional
+  final String host;     // Webhook-Server, z.B. 'edp.example.org'
+  final int port;        // Webhook-Port, z.B. 443
+  final String token;    // Pfadsegment vor Webhook-Endpoint
+  final String issi;     // Geräte-/Teilnehmerkennung
+  final String trupp;    // optional
+  final String leiter;   // optional
+  /// Vollständige URL des EDP-Pro-API-Servers, z.B. 'https://api.example.org'.
+  /// Wenn leer, wird der Webhook-Host als Fallback verwendet.
+  final String proApiUrl;
 
   const EdpConfig({
     required this.protocol,
@@ -24,6 +27,7 @@ class EdpConfig {
     required this.issi,
     required this.trupp,
     required this.leiter,
+    this.proApiUrl = '',
   });
 
   bool get isComplete =>
@@ -35,24 +39,33 @@ class EdpConfig {
 
   String get baseUrl => '$protocol://$host:$port';
 
+  /// Basis-URI für den Pro-API-Server (ohne Pfad).
+  Uri get proApiBaseUri {
+    if (proApiUrl.isNotEmpty) {
+      return Uri.parse(proApiUrl);
+    }
+    return Uri(scheme: protocol, host: host, port: port);
+  }
+
   Map<String, String> toPrefs() => {
     'protocol': protocol,
-    'server': '$host:$port', // historisch bei dir so gespeichert
+    'server': '$host:$port',
     'token': token,
     'issi': issi,
     'hasConfig': 'true',
     'trupp': trupp,
     'leiter': leiter,
+    'pro_api_url': proApiUrl,
   };
 
   static Future<EdpConfig?> fromPrefs(SharedPreferences prefs) async {
-    // Historisch speicherst du server als 'host:port'
     final protocol = prefs.getString('protocol') ?? '';
     final serverPort = prefs.getString('server') ?? '';
     final token = prefs.getString('token') ?? '';
     final issi = prefs.getString('issi') ?? '';
     final trupp = prefs.getString('trupp') ?? '';
     final leiter = prefs.getString('leiter') ?? '';
+    final proApiUrl = prefs.getString('pro_api_url') ?? '';
 
     if (protocol.isEmpty ||
         serverPort.isEmpty ||
@@ -78,6 +91,7 @@ class EdpConfig {
       issi: issi,
       trupp: trupp,
       leiter: leiter,
+      proApiUrl: proApiUrl,
     );
   }
 }
@@ -154,6 +168,7 @@ class EdpApi {
     await prefs.setBool('hasConfig', true);
     await prefs.setString('leiter', config.leiter);
     await prefs.setString('trupp', config.trupp);
+    await prefs.setString('pro_api_url', config.proApiUrl);
   }
 
   Uri _uri(String path, Map<String, String> qp) {
@@ -252,17 +267,25 @@ class EdpApi {
   void close() => _client.close();
 
   // ---------------------------------------------------------------------------
-  // Anonyme Listen-Endpunkte (kein Pro-Login nötig, nur Server + Token)
+  // Anonyme Pro-API-Endpunkte (kein JWT nötig, nutzt proApiUrl aus Config)
   // ---------------------------------------------------------------------------
 
-  /// Gibt alle TETRA-Endgeräte zurück.
+  /// Baut eine URI gegen den Pro-API-Server (kein Token-Pfad, kein JWT-Header).
+  Uri _proUri(String path, Map<String, String> qp) {
+    final base = _config.proApiBaseUri;
+    return base.replace(
+      path: '/api/v1/$path',
+      queryParameters: qp.isEmpty ? null : qp,
+    );
+  }
+
+  /// Gibt alle TETRA-Endgeräte vom Pro-API-Server zurück (kein Login nötig).
   Future<EdpListResult<EdpTetraEndgeraet>> getTetraEndgeraete(
       {String? rufname}) async {
     try {
       final qp = <String, String>{};
       if (rufname != null && rufname.isNotEmpty) qp['rufname'] = rufname;
-      final url = _uri('tetra-endgeraete', qp);
-      final result = await _getWithRetry(url);
+      final result = await _getWithRetry(_proUri('tetra-endgeraete', qp));
       if (!result.ok) {
         return EdpListResult.failure(result.statusCode, 'HTTP ${result.statusCode}');
       }
@@ -270,9 +293,7 @@ class EdpApi {
       if (body == null) return EdpListResult.failure(-1, 'Ungültige JSON-Antwort');
       final raw = body['data'];
       final items = raw is List
-          ? raw
-              .map((e) => EdpTetraEndgeraet.fromJson(e as Map<String, dynamic>))
-              .toList()
+          ? raw.map((e) => EdpTetraEndgeraet.fromJson(e as Map<String, dynamic>)).toList()
           : <EdpTetraEndgeraet>[];
       return EdpListResult.success(items);
     } catch (e) {
@@ -280,7 +301,7 @@ class EdpApi {
     }
   }
 
-  /// Gibt alle Einsatzmittel zurück (optional gefiltert).
+  /// Gibt alle Einsatzmittel vom Pro-API-Server zurück (kein Login nötig).
   Future<EdpListResult<EdpEinsatzmittel>> getEinsatzmittel({
     String? status,
     String? wache,
@@ -289,8 +310,7 @@ class EdpApi {
       final qp = <String, String>{};
       if (status != null && status.isNotEmpty) qp['status'] = status;
       if (wache != null && wache.isNotEmpty) qp['wache'] = wache;
-      final url = _uri('einsatzmittel', qp);
-      final result = await _getWithRetry(url);
+      final result = await _getWithRetry(_proUri('einsatzmittel', qp));
       if (!result.ok) {
         return EdpListResult.failure(result.statusCode, 'HTTP ${result.statusCode}');
       }
@@ -298,9 +318,7 @@ class EdpApi {
       if (body == null) return EdpListResult.failure(-1, 'Ungültige JSON-Antwort');
       final raw = body['data'];
       final items = raw is List
-          ? raw
-              .map((e) => EdpEinsatzmittel.fromJson(e as Map<String, dynamic>))
-              .toList()
+          ? raw.map((e) => EdpEinsatzmittel.fromJson(e as Map<String, dynamic>)).toList()
           : <EdpEinsatzmittel>[];
       return EdpListResult.success(items);
     } catch (e) {

@@ -26,6 +26,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   final leiterController = TextEditingController();
   final issiController = TextEditingController();
   final pbUrlController = TextEditingController();
+  final proApiUrlController = TextEditingController();
 
   String _selectedProtocol = 'https';
   bool _showManualConfig = false;
@@ -43,6 +44,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     leiterController.dispose();
     issiController.dispose();
     pbUrlController.dispose();
+    proApiUrlController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -92,6 +94,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         issiController.text = cfg.issi;
         truppController.text = cfg.trupp;
         leiterController.text = cfg.leiter;
+        proApiUrlController.text = cfg.proApiUrl;
       });
     } catch (_) {}
   }
@@ -248,6 +251,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         issi: issiController.text.trim(),
         trupp: truppController.text.trim(),
         leiter: leiterController.text.trim(),
+        proApiUrl: proApiUrlController.text.trim(),
       );
 
       if (!cfg.isComplete) {
@@ -385,6 +389,9 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       issiController.text = uri.queryParameters['issi'] ?? '';
       if (uri.queryParameters.containsKey('pb_url')) {
         pbUrlController.text = uri.queryParameters['pb_url']!;
+      }
+      if (uri.queryParameters.containsKey('pro_api_url')) {
+        proApiUrlController.text = uri.queryParameters['pro_api_url']!;
       }
       final proto = uri.queryParameters['protocol'];
       if (proto != null) _selectedProtocol = proto;
@@ -742,6 +749,30 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         const SizedBox(height: 16),
         _optionalField(
             label: 'Ansprechpartner', controller: leiterController),
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'EDP-Pro-API (optional)',
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.grey.shade800),
+          ),
+        ),
+        _optionalField(
+          label: 'EDP-Pro-Server (z. B. https://api.example.org)',
+          controller: proApiUrlController,
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 6),
+        Padding(
+          padding: const EdgeInsets.only(left: 4),
+          child: Text(
+            'Server für TETRA-Geräte, Einsatzmittel und Einsatz-Navigation.\nWenn leer, wird der Webhook-Server als Fallback genutzt.',
+            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+          ),
+        ),
         const SizedBox(height: 24),
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),

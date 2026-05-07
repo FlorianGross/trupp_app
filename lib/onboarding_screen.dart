@@ -36,6 +36,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _truppCtrl = TextEditingController();
   final _leiterCtrl = TextEditingController();
   final _pbUrlCtrl = TextEditingController();
+  final _proApiUrlCtrl = TextEditingController();
   String _protocol = 'https';
   bool _showManualForm = false;
   bool _configReady = false;  // host + token filled in
@@ -83,6 +84,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _truppCtrl.dispose();
     _leiterCtrl.dispose();
     _pbUrlCtrl.dispose();
+    _proApiUrlCtrl.dispose();
     super.dispose();
   }
 
@@ -163,6 +165,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final leiter = uri.queryParameters['leiter'] ?? '';
     final pbUrl = uri.queryParameters['pb_url'] ?? '';
     final proto = uri.queryParameters['protocol'] ?? 'https';
+    final proApiUrl = uri.queryParameters['pro_api_url'] ?? '';
 
     setState(() {
       _hostCtrl.text = host;
@@ -172,6 +175,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _truppCtrl.text = trupp;
       _leiterCtrl.text = leiter;
       _pbUrlCtrl.text = pbUrl;
+      _proApiUrlCtrl.text = proApiUrl;
       _protocol = proto;
       _configReady = host.isNotEmpty && token.isNotEmpty;
     });
@@ -187,6 +191,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         issi: issi,
         trupp: trupp,
         leiter: leiter,
+        proApiUrl: proApiUrl,
       ));
     }
 
@@ -233,6 +238,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       issi: _issiCtrl.text.trim(),
       trupp: _truppCtrl.text.trim(),
       leiter: _leiterCtrl.text.trim(),
+      proApiUrl: _proApiUrlCtrl.text.trim(),
     );
     // fire-and-forget, kein await nötig
     EdpApi.initWithConfig(cfg);
@@ -254,6 +260,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         issi: _issiCtrl.text.trim(),
         trupp: _truppCtrl.text.trim(),
         leiter: _leiterCtrl.text.trim(),
+        proApiUrl: _proApiUrlCtrl.text.trim(),
       );
       await EdpApi.initWithConfig(cfg);
       await AlarmService.savePbUrl(_pbUrlCtrl.text.trim());
@@ -318,6 +325,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           truppCtrl: _truppCtrl,
           leiterCtrl: _leiterCtrl,
           pbUrlCtrl: _pbUrlCtrl,
+          proApiUrlCtrl: _proApiUrlCtrl,
           isSaving: _isSaving,
           configReady: _configReady,
           onFieldChanged: () => setState(() {
@@ -683,6 +691,7 @@ class _WelcomePage extends StatelessWidget {
   final TextEditingController truppCtrl;
   final TextEditingController leiterCtrl;
   final TextEditingController pbUrlCtrl;
+  final TextEditingController proApiUrlCtrl;
   final bool isSaving;
   final bool configReady;
   final VoidCallback onFieldChanged;
@@ -700,6 +709,7 @@ class _WelcomePage extends StatelessWidget {
     required this.truppCtrl,
     required this.leiterCtrl,
     required this.pbUrlCtrl,
+    required this.proApiUrlCtrl,
     required this.isSaving,
     required this.configReady,
     required this.onFieldChanged,
@@ -834,6 +844,7 @@ class _WelcomePage extends StatelessWidget {
                     truppCtrl: truppCtrl,
                     leiterCtrl: leiterCtrl,
                     pbUrlCtrl: pbUrlCtrl,
+                    proApiUrlCtrl: proApiUrlCtrl,
                     onFieldChanged: onFieldChanged,
                   )
                 : const SizedBox.shrink(),
@@ -882,6 +893,7 @@ class _ManualConfigForm extends StatelessWidget {
   final TextEditingController truppCtrl;
   final TextEditingController leiterCtrl;
   final TextEditingController pbUrlCtrl;
+  final TextEditingController proApiUrlCtrl;
   final VoidCallback onFieldChanged;
 
   const _ManualConfigForm({
@@ -893,6 +905,7 @@ class _ManualConfigForm extends StatelessWidget {
     required this.truppCtrl,
     required this.leiterCtrl,
     required this.pbUrlCtrl,
+    required this.proApiUrlCtrl,
     required this.onFieldChanged,
   });
 
@@ -978,6 +991,19 @@ class _ManualConfigForm extends StatelessWidget {
           TextField(
             controller: leiterCtrl,
             decoration: _dec('Ansprechpartner'),
+          ),
+          const SizedBox(height: 20),
+          _SectionLabel('EDP-Pro-API (optional)'),
+          const SizedBox(height: 12),
+          TextField(
+            controller: proApiUrlCtrl,
+            keyboardType: TextInputType.url,
+            decoration: _dec('EDP-Pro-Server (z. B. https://api.example.org)'),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Server für TETRA-Geräte, Einsatzmittel und Einsatz-Navigation.\nWenn leer, wird der Webhook-Server als Fallback genutzt.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 20),
           _SectionLabel('Alarmierung (optional)'),
