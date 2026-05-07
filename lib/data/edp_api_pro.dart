@@ -226,8 +226,13 @@ class EdpApiPro {
 
   static Future<EdpApiPro> init(EdpConfig config) async {
     final inst = EdpApiPro._(config);
-    inst._accessToken = await SecureStore.readAccessToken();
-    inst._refreshToken = await SecureStore.readRefreshToken();
+    // SecureStore kann beim ersten Start (Plugin noch nicht initialisiert) fehlschlagen
+    try {
+      inst._accessToken = await SecureStore.readAccessToken();
+      inst._refreshToken = await SecureStore.readRefreshToken();
+    } catch (_) {
+      // Kein gespeicherter Token — Auto-Login folgt unten
+    }
     _instance = inst;
     // Auto-Login mit Systembenutzer wenn kein Token vorhanden und Pro-URL konfiguriert
     if (!inst.hasToken && config.proApiUrl.isNotEmpty) {
