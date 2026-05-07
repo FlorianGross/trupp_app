@@ -176,6 +176,20 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _configReady = host.isNotEmpty && token.isNotEmpty;
     });
 
+    // EdpApi-Singleton sofort initialisieren (ohne Persistenz) damit der
+    // anonyme ISSI-Picker auf der nächsten Seite direkt funktioniert.
+    if (host.isNotEmpty && token.isNotEmpty) {
+      await EdpApi.initWithConfig(EdpConfig(
+        protocol: proto,
+        host: host,
+        port: int.tryParse(port) ?? 443,
+        token: token,
+        issi: issi,
+        trupp: trupp,
+        leiter: leiter,
+      ));
+    }
+
     // Try auto-login to Pro API if credentials embedded in QR
     final edpUser = uri.queryParameters['edp_user'];
     final edpPass = uri.queryParameters['edp_pass'];
@@ -202,6 +216,26 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         }
       } catch (_) {}
     }
+  }
+
+  // Initialisiert EdpApi-Singleton ohne Persistenz in SharedPreferences.
+  // Nötig damit der anonyme Picker schon auf der ISSI-Seite funktioniert,
+  // bevor der Nutzer "Weiter" auf der ISSI-Seite gedrückt hat.
+  void _initEdpApiTemp() {
+    final host = _hostCtrl.text.trim();
+    final token = _tokenCtrl.text.trim();
+    if (host.isEmpty || token.isEmpty) return;
+    final cfg = EdpConfig(
+      protocol: _protocol,
+      host: host,
+      port: int.tryParse(_portCtrl.text.trim()) ?? 443,
+      token: token,
+      issi: _issiCtrl.text.trim(),
+      trupp: _truppCtrl.text.trim(),
+      leiter: _leiterCtrl.text.trim(),
+    );
+    // fire-and-forget, kein await nötig
+    EdpApi.initWithConfig(cfg);
   }
 
   // Saves the full config (called from ISSI step "Weiter")
@@ -302,6 +336,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               return;
             }
             setState(() => _configReady = true);
+            // EdpApi-Singleton schon jetzt initialisieren (ohne Persistenz),
+            // damit der anonyme ISSI-Picker auf der nächsten Seite funktioniert.
+            _initEdpApiTemp();
             _nextPage();
           },
         );
