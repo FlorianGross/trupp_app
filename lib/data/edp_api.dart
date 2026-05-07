@@ -1,5 +1,6 @@
 // lib/data/edp_api.dart
 import 'dart:async';
+import 'dart:convert' show jsonDecode as _jsonDecode;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -249,4 +250,179 @@ class EdpApi {
   }
 
   void close() => _client.close();
+
+  // ---------------------------------------------------------------------------
+  // Anonyme Listen-Endpunkte (kein Pro-Login nötig, nur Server + Token)
+  // ---------------------------------------------------------------------------
+
+  /// Gibt alle TETRA-Endgeräte zurück.
+  Future<EdpListResult<EdpTetraEndgeraet>> getTetraEndgeraete(
+      {String? rufname}) async {
+    try {
+      final qp = <String, String>{};
+      if (rufname != null && rufname.isNotEmpty) qp['rufname'] = rufname;
+      final url = _uri('tetra-endgeraete', qp);
+      final result = await _getWithRetry(url);
+      if (!result.ok) {
+        return EdpListResult.failure(result.statusCode, 'HTTP ${result.statusCode}');
+      }
+      final body = _parseJson(result.body);
+      if (body == null) return EdpListResult.failure(-1, 'Ungültige JSON-Antwort');
+      final raw = body['data'];
+      final items = raw is List
+          ? raw
+              .map((e) => EdpTetraEndgeraet.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <EdpTetraEndgeraet>[];
+      return EdpListResult.success(items);
+    } catch (e) {
+      return EdpListResult.failure(-1, e.toString());
+    }
+  }
+
+  /// Gibt alle Einsatzmittel zurück (optional gefiltert).
+  Future<EdpListResult<EdpEinsatzmittel>> getEinsatzmittel({
+    String? status,
+    String? wache,
+  }) async {
+    try {
+      final qp = <String, String>{};
+      if (status != null && status.isNotEmpty) qp['status'] = status;
+      if (wache != null && wache.isNotEmpty) qp['wache'] = wache;
+      final url = _uri('einsatzmittel', qp);
+      final result = await _getWithRetry(url);
+      if (!result.ok) {
+        return EdpListResult.failure(result.statusCode, 'HTTP ${result.statusCode}');
+      }
+      final body = _parseJson(result.body);
+      if (body == null) return EdpListResult.failure(-1, 'Ungültige JSON-Antwort');
+      final raw = body['data'];
+      final items = raw is List
+          ? raw
+              .map((e) => EdpEinsatzmittel.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <EdpEinsatzmittel>[];
+      return EdpListResult.success(items);
+    } catch (e) {
+      return EdpListResult.failure(-1, e.toString());
+    }
+  }
+
+  Map<String, dynamic>? _parseJson(String? body) {
+    if (body == null) return null;
+    try {
+      return _jsonDecode(body) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gemeinsame Modelle (anonym + Pro nutzbar)
+// ---------------------------------------------------------------------------
+
+class EdpTetraEndgeraet {
+  final String issi;
+  final String? rufname;
+  final String? opta;
+  final int type;
+
+  const EdpTetraEndgeraet({
+    required this.issi,
+    this.rufname,
+    this.opta,
+    this.type = 0,
+  });
+
+  factory EdpTetraEndgeraet.fromJson(Map<String, dynamic> j) =>
+      EdpTetraEndgeraet(
+        issi: (j['issi'] as String?) ?? '',
+        rufname: j['rufname'] as String?,
+        opta: j['opta'] as String?,
+        type: (j['type'] as int?) ?? 0,
+      );
+
+  String get displayLabel {
+    final name = rufname?.isNotEmpty == true ? rufname! : (opta ?? '');
+    return name.isNotEmpty ? '$name ($issi)' : issi;
+  }
+}
+
+class EdpEinsatzmittel {
+  final String rufname;
+  final String? rufnameLang;
+  final String? status;
+  final String? typ;
+  final String? einsatz;
+  final String? einsatznummer;
+  final int? besatzung0;
+  final int? besatzung1;
+  final int? besatzung2;
+  final int? besatzungGes;
+  final double? koordX;
+  final double? koordY;
+  final String? wache;
+  final String? abschnitt;
+  final DateTime? zeitstempel;
+
+  const EdpEinsatzmittel({
+    required this.rufname,
+    this.rufnameLang,
+    this.status,
+    this.typ,
+    this.einsatz,
+    this.einsatznummer,
+    this.besatzung0,
+    this.besatzung1,
+    this.besatzung2,
+    this.besatzungGes,
+    this.koordX,
+    this.koordY,
+    this.wache,
+    this.abschnitt,
+    this.zeitstempel,
+  });
+
+  factory EdpEinsatzmittel.fromJson(Map<String, dynamic> j) =>
+      EdpEinsatzmittel(
+        rufname: (j['rufname'] as String?) ?? '',
+        rufnameLang: j['rufnameLang'] as String?,
+        status: j['status'] as String?,
+        typ: j['typ'] as String?,
+        einsatz: j['einsatz'] as String?,
+        einsatznummer: j['einsatznummer'] as String?,
+        besatzung0: j['besatzung0'] as int?,
+        besatzung1: j['besatzung1'] as int?,
+        besatzung2: j['besatzung2'] as int?,
+        besatzungGes: j['besatzungGes'] as int?,
+        koordX: (j['koordX'] as num?)?.toDouble(),
+        koordY: (j['koordY'] as num?)?.toDouble(),
+        wache: j['wache'] as String?,
+        abschnitt: j['abschnitt'] as String?,
+        zeitstempel: j['zeitstempel'] != null
+            ? DateTime.tryParse(j['zeitstempel'] as String)
+            : null,
+      );
+
+  String get displayName =>
+      rufnameLang?.isNotEmpty == true ? '${rufnameLang!} ($rufname)' : rufname;
+
+  bool get hasCoordinates =>
+      koordX != null && koordY != null && koordX != 0.0 && koordY != 0.0;
+}
+
+class EdpListResult<T> {
+  final bool ok;
+  final int statusCode;
+  final List<T>? data;
+  final String? error;
+
+  const EdpListResult.success(this.data, {this.statusCode = 200})
+      : ok = true,
+        error = null;
+
+  const EdpListResult.failure(this.statusCode, this.error)
+      : ok = false,
+        data = null;
 }
