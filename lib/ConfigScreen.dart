@@ -412,6 +412,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           issi: issiController.text.trim(),
           trupp: truppController.text.trim(),
           leiter: leiterController.text.trim(),
+          proApiUrl: proApiUrlController.text.trim(),
         );
         final proApi = await EdpApiPro.init(cfg);
         final ok = await proApi.login(edpUser, edpPass);

@@ -1381,10 +1381,29 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     );
   }
 
-  void _showQrCode() {
-    final deeplink =
-        'truppapp://config?protocol=$protocol&server=$server:$port&token=$token&issi=$issi&trupp=$trupp&leiter=$leiter';
+  Future<void> _showQrCode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pbUrl = prefs.getString('pb_url') ?? '';
+    final proApiUrl = prefs.getString('pro_api_url') ?? '';
 
+    // Uri-Builder sorgt für korrekte Prozentkodierung aller Werte
+    final params = <String, String>{
+      'protocol': protocol,
+      'server': '$server:$port',
+      'token': token,
+      'issi': issi,
+      if (trupp.isNotEmpty && trupp != 'Unbekannt') 'trupp': trupp,
+      if (leiter.isNotEmpty && leiter != 'Unbekannt') 'leiter': leiter,
+      if (pbUrl.isNotEmpty) 'pb_url': pbUrl,
+      if (proApiUrl.isNotEmpty) 'pro_api_url': proApiUrl,
+    };
+    final deeplink = Uri(
+      scheme: 'truppapp',
+      host: 'config',
+      queryParameters: params,
+    ).toString();
+
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1397,12 +1416,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Config QR-Code',
+                'Konfigurations-QR-Code',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Colors.red.shade800,
                 ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                server,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
               ),
               const SizedBox(height: 16),
               Container(
@@ -1414,25 +1438,37 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 ),
                 child: QrImageView(
                   data: deeplink,
-                  size: 200,
+                  size: 220,
                   backgroundColor: Colors.white,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              // Zeige welche optionalen Parameter enthalten sind
+              Wrap(
+                spacing: 6,
+                children: [
+                  if (pbUrl.isNotEmpty)
+                    _QrParamChip(label: 'Bereitschafts-App'),
+                  if (proApiUrl.isNotEmpty)
+                    _QrParamChip(label: 'EDP-Pro-API'),
+                ],
+              ),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                child: ElevatedButton.icon(
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: deeplink));
                     if (mounted) Navigator.pop(context);
                     _showSnackbar('Link kopiert', success: true);
                   },
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('Link kopieren'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade800,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Link kopieren'),
                 ),
               ),
             ],
@@ -2211,6 +2247,23 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           ],
         ),
       ),
+    );
+  }
+}
+
+class _QrParamChip extends StatelessWidget {
+  final String label;
+  const _QrParamChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      padding: EdgeInsets.zero,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      backgroundColor: Colors.green.shade50,
+      side: BorderSide(color: Colors.green.shade200),
+      labelStyle: TextStyle(color: Colors.green.shade700),
     );
   }
 }
