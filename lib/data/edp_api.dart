@@ -1,6 +1,5 @@
 // lib/data/edp_api.dart
 import 'dart:async';
-import 'dart:convert' show jsonDecode;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -265,79 +264,10 @@ class EdpApi {
   }
 
   void close() => _client.close();
-
-  // ---------------------------------------------------------------------------
-  // Anonyme Pro-API-Endpunkte (kein JWT nötig, nutzt proApiUrl aus Config)
-  // ---------------------------------------------------------------------------
-
-  /// Baut eine URI gegen den Pro-API-Server (kein Token-Pfad, kein JWT-Header).
-  Uri _proUri(String path, Map<String, String> qp) {
-    final base = _config.proApiBaseUri;
-    return base.replace(
-      path: '/api/v1/$path',
-      queryParameters: qp.isEmpty ? null : qp,
-    );
-  }
-
-  /// Gibt alle TETRA-Endgeräte vom Pro-API-Server zurück (kein Login nötig).
-  Future<EdpListResult<EdpTetraEndgeraet>> getTetraEndgeraete(
-      {String? rufname}) async {
-    try {
-      final qp = <String, String>{};
-      if (rufname != null && rufname.isNotEmpty) qp['rufname'] = rufname;
-      final result = await _getWithRetry(_proUri('tetra-endgeraete', qp));
-      if (!result.ok) {
-        return EdpListResult.failure(result.statusCode, 'HTTP ${result.statusCode}');
-      }
-      final body = _parseJson(result.body);
-      if (body == null) return EdpListResult.failure(-1, 'Ungültige JSON-Antwort');
-      final raw = body['data'];
-      final items = raw is List
-          ? raw.map((e) => EdpTetraEndgeraet.fromJson(e as Map<String, dynamic>)).toList()
-          : <EdpTetraEndgeraet>[];
-      return EdpListResult.success(items);
-    } catch (e) {
-      return EdpListResult.failure(-1, e.toString());
-    }
-  }
-
-  /// Gibt alle Einsatzmittel vom Pro-API-Server zurück (kein Login nötig).
-  Future<EdpListResult<EdpEinsatzmittel>> getEinsatzmittel({
-    String? status,
-    String? wache,
-  }) async {
-    try {
-      final qp = <String, String>{};
-      if (status != null && status.isNotEmpty) qp['status'] = status;
-      if (wache != null && wache.isNotEmpty) qp['wache'] = wache;
-      final result = await _getWithRetry(_proUri('einsatzmittel', qp));
-      if (!result.ok) {
-        return EdpListResult.failure(result.statusCode, 'HTTP ${result.statusCode}');
-      }
-      final body = _parseJson(result.body);
-      if (body == null) return EdpListResult.failure(-1, 'Ungültige JSON-Antwort');
-      final raw = body['data'];
-      final items = raw is List
-          ? raw.map((e) => EdpEinsatzmittel.fromJson(e as Map<String, dynamic>)).toList()
-          : <EdpEinsatzmittel>[];
-      return EdpListResult.success(items);
-    } catch (e) {
-      return EdpListResult.failure(-1, e.toString());
-    }
-  }
-
-  Map<String, dynamic>? _parseJson(String? body) {
-    if (body == null) return null;
-    try {
-      return jsonDecode(body) as Map<String, dynamic>;
-    } catch (_) {
-      return null;
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
-// Gemeinsame Modelle (anonym + Pro nutzbar)
+// Gemeinsame Modelle
 // ---------------------------------------------------------------------------
 
 class EdpTetraEndgeraet {
@@ -433,19 +363,4 @@ class EdpEinsatzmittel {
 
   bool get hasCoordinates =>
       koordX != null && koordY != null && koordX != 0.0 && koordY != 0.0;
-}
-
-class EdpListResult<T> {
-  final bool ok;
-  final int statusCode;
-  final List<T>? data;
-  final String? error;
-
-  const EdpListResult.success(this.data, {this.statusCode = 200})
-      : ok = true,
-        error = null;
-
-  const EdpListResult.failure(this.statusCode, this.error)
-      : ok = false,
-        data = null;
 }

@@ -1,9 +1,10 @@
 // lib/issi_picker_screen.dart
 //
-// Anonymer ISSI-Picker – benötigt nur Server + Token (kein Pro-Login).
-// Zeigt TETRA-Endgeräte und Einsatzmittel aus der Basis-API.
+// ISSI-Picker für das Onboarding – alle Abfragen über EdpApiPro mit
+// Standard-Zugangsdaten (trupp_app).
 import 'package:flutter/material.dart';
 import 'data/edp_api.dart';
+import 'data/edp_api_pro.dart';
 
 enum _PickerTab { tetra, einsatzmittel }
 
@@ -27,7 +28,7 @@ class _IssiPickerScreenAnonymousState
 
   bool _loading = true;
   String? _error;
-  bool _poolOnly = true; // standardmäßig nur Pool-Geräte zeigen
+  bool _poolOnly = true;
   final _searchCtrl = TextEditingController();
 
   @override
@@ -45,17 +46,41 @@ class _IssiPickerScreenAnonymousState
     super.dispose();
   }
 
+  Future<EdpApiPro?> _ensureApi() async {
+    EdpApiPro? api = EdpApiPro.instance;
+    if (api != null) return api;
+    try {
+      api = await EdpApiPro.initFromPrefs();
+    } catch (_) {}
+    return api;
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
+
+    final api = await _ensureApi();
+    if (api == null) {
+      setState(() {
+        _loading = false;
+        _error = 'EDP-Pro-API nicht konfiguriert.\n'
+            'Bitte EDP-Pro-API-URL in den Einstellungen angeben.';
+      });
+      return;
+    }
+
     try {
-      final api = EdpApi.instance;
-      final tetraResult = await api.getTetraEndgeraete();
-      final emResult = await api.getEinsatzmittel();
+      final results = await Future.wait([
+        api.getTetraEndgeraete(),
+        api.getEinsatzmittel(),
+      ]);
 
       if (!mounted) return;
+
+      final tetraResult = results[0] as EdpProResult<List<EdpTetraEndgeraet>>;
+      final emResult = results[1] as EdpProResult<List<EdpEinsatzmittel>>;
 
       if (!tetraResult.ok && !emResult.ok) {
         setState(() {
@@ -101,21 +126,17 @@ class _IssiPickerScreenAnonymousState
     }
     _tetraFiltered = tetra;
 
-    if (q.isEmpty) {
-      _emFiltered = _emAll;
-    } else {
-      _emFiltered = _emAll
-          .where((e) =>
-              e.rufname.toLowerCase().contains(q) ||
-              (e.rufnameLang?.toLowerCase().contains(q) ?? false) ||
-              (e.wache?.toLowerCase().contains(q) ?? false))
-          .toList();
-    }
+    _emFiltered = q.isEmpty
+        ? _emAll
+        : _emAll
+            .where((e) =>
+                e.rufname.toLowerCase().contains(q) ||
+                (e.rufnameLang?.toLowerCase().contains(q) ?? false) ||
+                (e.wache?.toLowerCase().contains(q) ?? false))
+            .toList();
   }
 
-  void _onSearch(String q) {
-    setState(_applyFilters);
-  }
+  void _onSearch(String q) => setState(_applyFilters);
 
   void _togglePoolOnly(bool? v) {
     setState(() {
@@ -161,21 +182,14 @@ class _IssiPickerScreenAnonymousState
           indicatorColor: Colors.white,
           labelColor: Colors.white,
           unselectedLabelColor: Colors.white70,
-          tabs: [
-            Tab(
-              icon: const Icon(Icons.radio_rounded, size: 18),
-              text: 'TETRA-Geräte',
-            ),
-            Tab(
-              icon: const Icon(Icons.directions_car_rounded, size: 18),
-              text: 'Einsatzmittel',
-            ),
+          tabs: const [
+            Tab(icon: Icon(Icons.radio_rounded, size: 18), text: 'TETRA-Geräte'),
+            Tab(icon: Icon(Icons.directions_car_rounded, size: 18), text: 'Einsatzmittel'),
           ],
         ),
       ),
       body: Column(
         children: [
-          // Search bar
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
             child: TextField(
@@ -207,14 +221,12 @@ class _IssiPickerScreenAnonymousState
           ),
           if (!_loading && _error == null)
             Padding(
-              padding:
-                  const EdgeInsets.only(left: 16, right: 16, bottom: 2),
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 2),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
                   '$count Eintr${count != 1 ? 'äge' : 'ag'}',
-                  style: TextStyle(
-                      fontSize: 12, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                 ),
               ),
             ),
@@ -243,8 +255,7 @@ class _IssiPickerScreenAnonymousState
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.cloud_off_rounded,
-                size: 52, color: Colors.red.shade300),
+            Icon(Icons.cloud_off_rounded, size: 52, color: Colors.red.shade300),
             const SizedBox(height: 16),
             Text(
               'Verbindung fehlgeschlagen',
@@ -322,30 +333,30 @@ class _IssiPickerScreenAnonymousState
                   itemCount: _tetraFiltered.length,
                   separatorBuilder: (_, __) => const Divider(height: 1),
                   itemBuilder: (_, i) {
-        final g = _tetraFiltered[i];
-        return ListTile(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
-          leading: CircleAvatar(
-            backgroundColor: Colors.red.shade50,
-            child: Icon(Icons.radio_rounded,
-                color: Colors.red.shade800, size: 20),
-          ),
-          title: Text(
-            g.rufname ?? g.issi,
-            style: const TextStyle(fontWeight: FontWeight.w600),
-          ),
-          subtitle: Text(
-            [
-              g.issi,
-              if (g.opta != null && g.opta!.isNotEmpty) g.opta!,
-              _tetraTypeLabel(g.type),
-            ].join(' · '),
-            style: const TextStyle(fontSize: 12),
-          ),
-          trailing: const Icon(Icons.chevron_right_rounded),
-          onTap: () => Navigator.of(context).pop(g.issi),
-        );
+                    final g = _tetraFiltered[i];
+                    return ListTile(
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.red.shade50,
+                        child: Icon(Icons.radio_rounded,
+                            color: Colors.red.shade800, size: 20),
+                      ),
+                      title: Text(
+                        g.rufname ?? g.issi,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                      subtitle: Text(
+                        [
+                          g.issi,
+                          if (g.opta != null && g.opta!.isNotEmpty) g.opta!,
+                          _tetraTypeLabel(g.type),
+                        ].join(' · '),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => Navigator.of(context).pop(g.issi),
+                    );
                   },
                 ),
         ),
@@ -407,7 +418,6 @@ class _IssiPickerScreenAnonymousState
               const Icon(Icons.chevron_right_rounded),
             ],
           ),
-          // Einsatzmittel haben keine ISSI direkt – rufname als Fallback
           onTap: () => Navigator.of(context).pop(em.rufname),
         );
       },
@@ -416,26 +426,16 @@ class _IssiPickerScreenAnonymousState
 
   Color _emStatusColor(String? status) {
     switch (status) {
-      case '1':
-        return Colors.green;
-      case '2':
-        return Colors.blue;
-      case '3':
-        return Colors.orange;
-      case '4':
-        return Colors.purple;
-      case '5':
-        return Colors.teal;
-      case '6':
-        return Colors.red;
-      case '7':
-        return Colors.grey;
-      case '8':
-        return Colors.cyan;
-      case '9':
-        return Colors.red.shade900;
-      default:
-        return Colors.grey;
+      case '1': return Colors.green;
+      case '2': return Colors.blue;
+      case '3': return Colors.orange;
+      case '4': return Colors.purple;
+      case '5': return Colors.teal;
+      case '6': return Colors.red;
+      case '7': return Colors.grey;
+      case '8': return Colors.cyan;
+      case '9': return Colors.red.shade900;
+      default:  return Colors.grey;
     }
   }
 }

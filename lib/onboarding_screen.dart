@@ -180,10 +180,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _configReady = host.isNotEmpty && token.isNotEmpty;
     });
 
-    // EdpApi-Singleton sofort initialisieren (ohne Persistenz) damit der
-    // anonyme ISSI-Picker auf der nächsten Seite direkt funktioniert.
+    // EdpApi- und EdpApiPro-Singleton sofort initialisieren (ohne Persistenz)
+    // damit der ISSI-Picker auf der nächsten Seite direkt funktioniert.
     if (host.isNotEmpty && token.isNotEmpty) {
-      await EdpApi.initWithConfig(EdpConfig(
+      final cfg = EdpConfig(
         protocol: proto,
         host: host,
         port: int.tryParse(port) ?? 443,
@@ -192,10 +192,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         trupp: trupp,
         leiter: leiter,
         proApiUrl: proApiUrl,
-      ));
+      );
+      await EdpApi.initWithConfig(cfg);
+
+      // EdpApiPro via trupp_app-Auto-Login initialisieren wenn proApiUrl gesetzt
+      if (proApiUrl.isNotEmpty) {
+        try {
+          final proApi = await EdpApiPro.init(cfg);
+          if (mounted) setState(() => _proApiConnected = proApi.hasToken);
+        } catch (_) {}
+      }
     }
 
-    // Try auto-login to Pro API if credentials embedded in QR
+    // Optionaler expliziter Login mit im QR eingebetteten Zugangsdaten
     final edpUser = uri.queryParameters['edp_user'];
     final edpPass = uri.queryParameters['edp_pass'];
     if (edpUser != null &&
@@ -204,16 +213,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         host.isNotEmpty &&
         token.isNotEmpty) {
       try {
-        final cfg = EdpConfig(
-          protocol: proto,
-          host: host,
-          port: int.tryParse(port) ?? 443,
-          token: token,
-          issi: issi,
-          trupp: trupp,
-          leiter: leiter,
-        );
-        final proApi = await EdpApiPro.init(cfg);
+        final proApi = EdpApiPro.instance ??
+            await EdpApiPro.init(EdpConfig(
+              protocol: proto,
+              host: host,
+              port: int.tryParse(port) ?? 443,
+              token: token,
+              issi: issi,
+              trupp: trupp,
+              leiter: leiter,
+              proApiUrl: proApiUrl,
+            ));
         final ok = await proApi.login(edpUser, edpPass);
         if (ok) {
           await EdpApiPro.saveCredentials(edpUser, edpPass);
@@ -223,8 +233,8 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
   }
 
-  // Initialisiert EdpApi-Singleton ohne Persistenz in SharedPreferences.
-  // Nötig damit der anonyme Picker schon auf der ISSI-Seite funktioniert,
+  // Initialisiert EdpApi- und EdpApiPro-Singleton ohne Persistenz in SharedPreferences.
+  // Nötig damit der ISSI-Picker schon auf der ISSI-Seite funktioniert,
   // bevor der Nutzer "Weiter" auf der ISSI-Seite gedrückt hat.
   void _initEdpApiTemp() {
     final host = _hostCtrl.text.trim();
@@ -242,6 +252,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
     // fire-and-forget, kein await nötig
     EdpApi.initWithConfig(cfg);
+    if (cfg.proApiUrl.isNotEmpty) {
+      EdpApiPro.init(cfg).then((api) {
+        if (mounted) setState(() => _proApiConnected = api.hasToken);
+      });
+    }
   }
 
   // Saves the full config (called from ISSI step "Weiter")
