@@ -156,7 +156,7 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Stärke melden (Pro)'),
+        title: const Text('Stärke melden'),
         backgroundColor: Colors.red.shade800,
         foregroundColor: Colors.white,
         elevation: 0,
@@ -403,16 +403,16 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                     children: [
                       Expanded(
                           child: _staerkeField(
-                              abbr: 'F',
-                              label: 'Führung',
+                              abbr: 'ZF',
+                              label: 'Zugführer',
                               value: _fuehrung,
                               onChanged: (v) =>
                                   setState(() => _fuehrung = v))),
                       const SizedBox(width: 8),
                       Expanded(
                           child: _staerkeField(
-                              abbr: 'U',
-                              label: 'Unterführer',
+                              abbr: 'GF',
+                              label: 'Gruppenführer',
                               value: _unterfuehrer,
                               onChanged: (v) =>
                                   setState(() => _unterfuehrer = v))),

@@ -278,8 +278,8 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                       children: [
                         Expanded(
                           child: _buildStaerkeField(
-                            abbr: 'F',
-                            label: 'Führung',
+                            abbr: 'ZF',
+                            label: 'Zugführung',
                             value: _fuehrung,
                             onChanged: (v) => setState(() => _fuehrung = v),
                           ),
@@ -287,8 +287,8 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: _buildStaerkeField(
-                            abbr: 'U',
-                            label: 'Unterführer',
+                            abbr: 'GF',
+                            label: 'Gruppenführer',
                             value: _unterfuehrer,
                             onChanged: (v) =>
                                 setState(() => _unterfuehrer = v),
