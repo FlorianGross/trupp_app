@@ -1,23 +1,19 @@
 // lib/issi_picker_screen.dart
 //
-// ISSI-Picker für das Onboarding – alle Abfragen über EdpApiPro mit
-// Standard-Zugangsdaten (trupp_app).
+// Einheitlicher ISSI-Picker – nur verfügbar wenn EdpApiPro aktiv ist.
+// Zeigt den Rufnamen/Displaynamen an, gibt aber immer die ISSI zurück.
 import 'package:flutter/material.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
 
-enum _PickerTab { tetra, einsatzmittel }
-
-class IssiPickerScreenAnonymous extends StatefulWidget {
-  const IssiPickerScreenAnonymous({super.key});
+class IssiPickerScreen extends StatefulWidget {
+  const IssiPickerScreen({super.key});
 
   @override
-  State<IssiPickerScreenAnonymous> createState() =>
-      _IssiPickerScreenAnonymousState();
+  State<IssiPickerScreen> createState() => _IssiPickerScreenState();
 }
 
-class _IssiPickerScreenAnonymousState
-    extends State<IssiPickerScreenAnonymous>
+class _IssiPickerScreenState extends State<IssiPickerScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
 
@@ -115,7 +111,8 @@ class _IssiPickerScreenAnonymousState
 
   void _applyFilters() {
     final q = _searchCtrl.text.toLowerCase();
-    var tetra = _poolOnly ? _tetraAll.where((g) => g.isPool).toList() : _tetraAll.toList();
+    var tetra =
+        _poolOnly ? _tetraAll.where((g) => g.isPool).toList() : _tetraAll.toList();
     if (q.isNotEmpty) {
       tetra = tetra
           .where((g) =>
@@ -127,7 +124,7 @@ class _IssiPickerScreenAnonymousState
     _tetraFiltered = tetra;
 
     _emFiltered = q.isEmpty
-        ? _emAll
+        ? _emAll.toList()
         : _emAll
             .where((e) =>
                 e.rufname.toLowerCase().contains(q) ||
@@ -136,14 +133,12 @@ class _IssiPickerScreenAnonymousState
             .toList();
   }
 
-  void _onSearch(String q) => setState(_applyFilters);
+  void _onSearch(String _) => setState(_applyFilters);
 
-  void _togglePoolOnly(bool? v) {
-    setState(() {
-      _poolOnly = v ?? true;
-      _applyFilters();
-    });
-  }
+  void _togglePoolOnly(bool? v) => setState(() {
+        _poolOnly = v ?? true;
+        _applyFilters();
+      });
 
   static String _tetraTypeLabel(int t) {
     const labels = {
@@ -184,7 +179,9 @@ class _IssiPickerScreenAnonymousState
           unselectedLabelColor: Colors.white70,
           tabs: const [
             Tab(icon: Icon(Icons.radio_rounded, size: 18), text: 'TETRA-Geräte'),
-            Tab(icon: Icon(Icons.directions_car_rounded, size: 18), text: 'Einsatzmittel'),
+            Tab(
+                icon: Icon(Icons.directions_car_rounded, size: 18),
+                text: 'Einsatzmittel'),
           ],
         ),
       ),
@@ -197,7 +194,7 @@ class _IssiPickerScreenAnonymousState
               onChanged: _onSearch,
               decoration: InputDecoration(
                 hintText: isTetraTab
-                    ? 'ISSI, Rufname oder OPTA suchen…'
+                    ? 'Rufname, ISSI oder OPTA suchen…'
                     : 'Rufname oder Wache suchen…',
                 prefixIcon: const Icon(Icons.search_rounded),
                 suffixIcon: _searchCtrl.text.isNotEmpty
@@ -342,8 +339,9 @@ class _IssiPickerScreenAnonymousState
                         child: Icon(Icons.radio_rounded,
                             color: Colors.red.shade800, size: 20),
                       ),
+                      // Rufname anzeigen, ISSI als Untertitel
                       title: Text(
-                        g.rufname ?? g.issi,
+                        g.rufname ?? g.opta ?? g.issi,
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       subtitle: Text(
@@ -355,6 +353,7 @@ class _IssiPickerScreenAnonymousState
                         style: const TextStyle(fontSize: 12),
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded),
+                      // Immer die ISSI zurückgeben
                       onTap: () => Navigator.of(context).pop(g.issi),
                     );
                   },
@@ -383,41 +382,29 @@ class _IssiPickerScreenAnonymousState
         final em = _emFiltered[i];
         final statusColor = _emStatusColor(em.status);
         return ListTile(
-          shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           leading: CircleAvatar(
             backgroundColor: statusColor.withOpacity(0.15),
             child: Icon(Icons.directions_car_rounded,
                 color: statusColor, size: 20),
           ),
+          // Langen Rufnamen anzeigen, kurzen Rufnamen als Kennung zurückgeben
           title: Text(
-            em.displayName,
+            em.rufnameLang?.isNotEmpty == true ? em.rufnameLang! : em.rufname,
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
           subtitle: Text(
             [
+              em.rufname,
               if (em.status != null && em.status!.isNotEmpty)
                 'Status ${em.status}',
               if (em.wache != null && em.wache!.isNotEmpty) em.wache!,
-              if (em.typ != null && em.typ!.isNotEmpty) em.typ!,
             ].join(' · '),
             style: const TextStyle(fontSize: 12),
           ),
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (em.rufname.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(right: 4),
-                  child: Text(
-                    em.rufname,
-                    style: TextStyle(
-                        fontSize: 11, color: Colors.grey.shade500),
-                  ),
-                ),
-              const Icon(Icons.chevron_right_rounded),
-            ],
-          ),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          // Rufname als Kennung zurückgeben (Einsatzmittel haben keine ISSI)
           onTap: () => Navigator.of(context).pop(em.rufname),
         );
       },
@@ -426,16 +413,26 @@ class _IssiPickerScreenAnonymousState
 
   Color _emStatusColor(String? status) {
     switch (status) {
-      case '1': return Colors.green;
-      case '2': return Colors.blue;
-      case '3': return Colors.orange;
-      case '4': return Colors.purple;
-      case '5': return Colors.teal;
-      case '6': return Colors.red;
-      case '7': return Colors.grey;
-      case '8': return Colors.cyan;
-      case '9': return Colors.red.shade900;
-      default:  return Colors.grey;
+      case '1':
+        return Colors.green;
+      case '2':
+        return Colors.blue;
+      case '3':
+        return Colors.orange;
+      case '4':
+        return Colors.purple;
+      case '5':
+        return Colors.teal;
+      case '6':
+        return Colors.red;
+      case '7':
+        return Colors.grey;
+      case '8':
+        return Colors.cyan;
+      case '9':
+        return Colors.red.shade900;
+      default:
+        return Colors.grey;
     }
   }
 }

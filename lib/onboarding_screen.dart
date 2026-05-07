@@ -13,7 +13,6 @@ import 'data/edp_api_pro.dart';
 import 'data/alarm_service.dart';
 import 'data/unit_type_store.dart';
 import 'issi_picker_screen.dart';
-import 'pro/issi_picker_screen.dart' as pro_picker;
 import 'status_overview_screen.dart';
 
 class OnboardingScreen extends StatefulWidget {
@@ -369,28 +368,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       case _PageKey.issi:
         return _IssiPage(
           issiCtrl: _issiCtrl,
-          serverConfigured: _configReady ||
-              _hostCtrl.text.trim().isNotEmpty &&
-                  _tokenCtrl.text.trim().isNotEmpty,
           proApiConnected: _proApiConnected,
           isSaving: _isSaving,
-          onPickAnonymous: () async {
+          onPick: () async {
             final issi = await Navigator.push<String>(
               context,
-              MaterialPageRoute(
-                  builder: (_) => const IssiPickerScreenAnonymous()),
-            );
-            if (issi != null && mounted) {
-              setState(() => _issiCtrl.text = issi);
-            }
-          },
-          onPickFromProServer: () async {
-            final api = EdpApiPro.instance;
-            if (api == null || !api.hasToken) return;
-            final issi = await Navigator.push<String>(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const pro_picker.IssiPickerScreen()),
+              MaterialPageRoute(builder: (_) => const IssiPickerScreen()),
             );
             if (issi != null && mounted) {
               setState(() => _issiCtrl.text = issi);
@@ -1055,20 +1038,16 @@ class _ManualConfigForm extends StatelessWidget {
 
 class _IssiPage extends StatelessWidget {
   final TextEditingController issiCtrl;
-  final bool serverConfigured;
   final bool proApiConnected;
   final bool isSaving;
-  final VoidCallback onPickAnonymous;
-  final VoidCallback onPickFromProServer;
+  final VoidCallback onPick;
   final Future<void> Function() onNext;
 
   const _IssiPage({
     required this.issiCtrl,
-    required this.serverConfigured,
     required this.proApiConnected,
     required this.isSaving,
-    required this.onPickAnonymous,
-    required this.onPickFromProServer,
+    required this.onPick,
     required this.onNext,
   });
 
@@ -1112,9 +1091,9 @@ class _IssiPage extends StatelessWidget {
           const SizedBox(height: 28),
 
           // Anonymous server pick (always shown if server is configured)
-          if (serverConfigured) ...[
+          if (proApiConnected) ...[
             ElevatedButton.icon(
-              onPressed: onPickAnonymous,
+              onPressed: onPick,
               icon: const Icon(Icons.dns_rounded, size: 20),
               label: const Text(
                 'Vom Server abrufen',
@@ -1128,30 +1107,6 @@ class _IssiPage extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14)),
               ),
             ),
-
-            // Pro-Server-Pick only if Pro API is connected (shows full TETRA details)
-            if (proApiConnected) ...[
-              const SizedBox(height: 10),
-              OutlinedButton.icon(
-                onPressed: onPickFromProServer,
-                icon: Icon(Icons.star_rounded,
-                    size: 18, color: Colors.amber.shade700),
-                label: Text(
-                  'Pro: Erweiterter Server-Picker',
-                  style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.amber.shade800,
-                      fontWeight: FontWeight.w600),
-                ),
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(color: Colors.amber.shade400),
-                  minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(14)),
-                ),
-              ),
-            ],
-
             const SizedBox(height: 16),
             Row(
               children: [
