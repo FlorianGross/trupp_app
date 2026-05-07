@@ -7,6 +7,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'data/app_prefs.dart';
+import 'data/app_logger.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'data/edp_api.dart';
@@ -147,8 +148,8 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
         content: _getNotificationContent(),
       );
     }
-  } catch (_) {
-    //print("Error sending position, queuing.");
+  } catch (e, st) {
+    AppLogger.e('LocationService', 'Positionsübertragung fehlgeschlagen', e, st);
   }
 }
 
@@ -192,7 +193,9 @@ Future<void> _heartbeatTick(ServiceInstance service) async {
     );
 
     await _sendPositionIfOk(service, pos, forceByHeartbeat: true);
-  } catch (_) {}
+  } catch (e, st) {
+    AppLogger.e('LocationService', 'Heartbeat-GPS fehlgeschlagen', e, st);
+  }
 }
 
 void _scheduleNextHeartbeat(ServiceInstance service) {
@@ -266,7 +269,9 @@ void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
     try {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 100);
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.e('LocationService', 'Periodischer Flush fehlgeschlagen', e, st);
+    }
     // Notification aktualisieren mit aktuellem Pending-Count
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
@@ -289,7 +294,9 @@ void _startConnectivityListener() {
       // Netzwerk ist (wieder) da → sofort ausstehende Positionen senden
       try {
         await LocationSyncManager.instance.flushPendingNow(batchSize: 200);
-      } catch (_) {}
+      } catch (e, st) {
+        AppLogger.e('LocationService', 'Connectivity-Flush fehlgeschlagen', e, st);
+      }
     }
   });
 }
@@ -566,7 +573,9 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
     // 4) PocketBase-Poll: neue Alarme holen (iOS kann keine SSE-Verbindung halten)
     await _pollAlarms();
-  } catch (_) {}
+  } catch (e, st) {
+    AppLogger.e('iOSBackground', 'iOS-Hintergrundhandler fehlgeschlagen', e, st);
+  }
   return true;
 }
 
@@ -603,7 +612,9 @@ Future<void> _pollAlarms() async {
     await AlarmNotificationService.show(alarm);
 
     await prefs.setString(AppPrefsKeys.iosBgLastAlarmTs, latestTs);
-  } catch (_) {}
+  } catch (e, st) {
+    AppLogger.e('iOSBackground', 'Alarm-Poll fehlgeschlagen', e, st);
+  }
 }
 
 Future<void> initializeBackgroundService() async {

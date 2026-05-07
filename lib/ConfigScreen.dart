@@ -9,6 +9,7 @@ import 'data/alarm_service.dart';
 import 'data/profile_store.dart';
 import 'pro/pro_dashboard_screen.dart';
 import 'pro/issi_picker_screen.dart';
+import 'data/app_logger.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -96,7 +97,9 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         leiterController.text = cfg.leiter;
         proApiUrlController.text = cfg.proApiUrl;
       });
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.w('ConfigScreen', 'Bestehende Config konnte nicht geladen werden', e);
+    }
   }
 
   bool get _hasConfig =>

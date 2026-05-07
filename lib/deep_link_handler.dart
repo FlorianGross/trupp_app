@@ -4,6 +4,7 @@ import 'ConfigScreen.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
 import 'data/alarm_service.dart';
+import 'data/app_logger.dart';
 
 class DeepLinkHandler extends StatefulWidget {
   final Widget child;
@@ -31,14 +32,17 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
   Future<void> _initDeepLinks() async {
     _appLinks = AppLinks();
 
-    // Kaltstart-Link
+    // Kaltstart-Link: Navigator erst nach dem ersten Frame verfügbar
     final initialUri = await _appLinks.getInitialLink();
     if (initialUri != null) {
-      _handleUri(initialUri);
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleUri(initialUri));
     }
 
     // Laufende Links
-    _appLinks.uriLinkStream.listen(_handleUri);
+    _appLinks.uriLinkStream.listen(
+      _handleUri,
+      onError: (e) => AppLogger.w('DeepLinkHandler', 'uriLinkStream Fehler', e),
+    );
   }
 
   void _handleUri(Uri uri) async {
@@ -159,7 +163,9 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
     if (proApiUrl.isNotEmpty) {
       try {
         await EdpApiPro.init(cfg);
-      } catch (_) {}
+      } catch (e) {
+        AppLogger.w('DeepLinkHandler', 'EdpApiPro-Init fehlgeschlagen', e);
+      }
     }
 
     if (pbUrl.isNotEmpty) {

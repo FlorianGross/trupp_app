@@ -15,6 +15,7 @@ import 'unit_type_picker_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
 import 'data/app_prefs.dart';
+import 'data/app_logger.dart';
 
 // Overlay-Entry-Point hier referenzieren, damit der Dart-Linker ihn nicht entfernt.
 // Die eigentliche Funktion liegt in alarm_overlay.dart.
@@ -45,8 +46,10 @@ Future<void> main() async {
 
   try {
     await initializeBackgroundService();
-  } catch (_) {
-    // Background-Service wird auf dem Simulator nicht unterstützt
+  } catch (e, st) {
+    // Auf dem Simulator nicht unterstützt — auf echten Geräten unerwartet
+    AppLogger.w('main', 'Background-Service Init fehlgeschlagen', e);
+    if (st.toString().isNotEmpty) AppLogger.e('main', '', null, st);
   }
 
   await _loadThemePreference();
@@ -81,7 +84,9 @@ Future<void> main() async {
         if (!await svc.isRunning()) {
           await svc.startService();
         }
-      } catch (_) {}
+      } catch (e, st) {
+        AppLogger.e('main', 'Background-Service konnte nicht gestartet werden', e, st);
+      }
     }
 
     unitType = await UnitTypeStore.load();

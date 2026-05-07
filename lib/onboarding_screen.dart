@@ -148,6 +148,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => _QrScannerSheet(
         onScanned: (uri) async {
+          if (!mounted) return;
+          final confirmed = await _showScanConfirmDialog(uri);
+          if (confirmed != true || !mounted) return;
           await _applyConfigFromUri(uri);
           if (mounted) _nextPage();
         },
@@ -155,15 +158,80 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     );
   }
 
+  Future<bool?> _showScanConfirmDialog(Uri uri) {
+    final server = uri.queryParameters['server'] ?? '';
+    final issi = uri.queryParameters['issi'] ?? '';
+    final token = uri.queryParameters['token'] ?? '';
+    final hasPbUrl = (uri.queryParameters['pb_url'] ?? '').isNotEmpty;
+    final hasProApi = (uri.queryParameters['pro_api_url'] ?? '').isNotEmpty;
+
+    return showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            Icon(Icons.qr_code_rounded, color: Colors.red.shade800, size: 22),
+            const SizedBox(width: 10),
+            const Text('Konfiguration erkannt'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Folgende Einstellungen werden übernommen:'),
+            const SizedBox(height: 12),
+            _ScanRow(icon: Icons.dns_rounded, label: 'Server', value: server),
+            if (issi.isNotEmpty)
+              _ScanRow(icon: Icons.radio_rounded, label: 'ISSI', value: issi),
+            if (token.isNotEmpty)
+              _ScanRow(
+                icon: Icons.key_rounded,
+                label: 'Token',
+                value: '${token.substring(0, token.length.clamp(0, 6))}…',
+              ),
+            if (hasPbUrl)
+              _ScanRow(icon: Icons.notifications_rounded, label: 'Bereitschafts-App', value: '✓ enthalten'),
+            if (hasProApi)
+              _ScanRow(icon: Icons.api_rounded, label: 'EDP-Pro-API', value: '✓ enthalten'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Abbrechen'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Übernehmen'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _applyConfigFromUri(Uri uri) async {
-    final host = uri.queryParameters['server'] ?? '';
-    final port = uri.queryParameters['port'] ?? '443';
+    final serverParam = uri.queryParameters['server'] ?? '';
+    final proto = uri.queryParameters['protocol'] ?? 'https';
+    // QR encodes server as 'host:port' — split it properly
+    String host = serverParam;
+    String port = proto == 'https' ? '443' : '80';
+    if (serverParam.contains(':')) {
+      final parts = serverParam.split(':');
+      host = parts[0];
+      if (parts.length > 1 && parts[1].isNotEmpty) port = parts[1];
+    }
     final token = uri.queryParameters['token'] ?? '';
     final issi = uri.queryParameters['issi'] ?? '';
     final trupp = uri.queryParameters['trupp'] ?? '';
     final leiter = uri.queryParameters['leiter'] ?? '';
     final pbUrl = uri.queryParameters['pb_url'] ?? '';
-    final proto = uri.queryParameters['protocol'] ?? 'https';
     final proApiUrl = uri.queryParameters['pro_api_url'] ?? '';
 
     setState(() {
@@ -1878,6 +1946,42 @@ class _SectionLabel extends StatelessWidget {
         fontWeight: FontWeight.w700,
         color: Colors.grey.shade600,
         letterSpacing: 0.5,
+      ),
+    );
+  }
+}
+
+class _ScanRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+
+  const _ScanRow({required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: Colors.grey.shade500),
+          const SizedBox(width: 8),
+          Text(
+            '$label: ',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade600,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 13),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
       ),
     );
   }
