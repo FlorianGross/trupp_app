@@ -27,6 +27,7 @@ class _IssiPickerScreenAnonymousState
 
   bool _loading = true;
   String? _error;
+  bool _poolOnly = true; // standardmäßig nur Pool-Geräte zeigen
   final _searchCtrl = TextEditingController();
 
   @override
@@ -73,10 +74,9 @@ class _IssiPickerScreenAnonymousState
 
       setState(() {
         _tetraAll = tetraItems;
-        _tetraFiltered = tetraItems;
         _emAll = emItems;
-        _emFiltered = emItems;
         _loading = false;
+        _applyFilters();
       });
     } catch (e) {
       if (mounted) {
@@ -88,26 +88,39 @@ class _IssiPickerScreenAnonymousState
     }
   }
 
+  void _applyFilters() {
+    final q = _searchCtrl.text.toLowerCase();
+    var tetra = _poolOnly ? _tetraAll.where((g) => g.isPool).toList() : _tetraAll.toList();
+    if (q.isNotEmpty) {
+      tetra = tetra
+          .where((g) =>
+              g.issi.toLowerCase().contains(q) ||
+              (g.rufname?.toLowerCase().contains(q) ?? false) ||
+              (g.opta?.toLowerCase().contains(q) ?? false))
+          .toList();
+    }
+    _tetraFiltered = tetra;
+
+    if (q.isEmpty) {
+      _emFiltered = _emAll;
+    } else {
+      _emFiltered = _emAll
+          .where((e) =>
+              e.rufname.toLowerCase().contains(q) ||
+              (e.rufnameLang?.toLowerCase().contains(q) ?? false) ||
+              (e.wache?.toLowerCase().contains(q) ?? false))
+          .toList();
+    }
+  }
+
   void _onSearch(String q) {
+    setState(_applyFilters);
+  }
+
+  void _togglePoolOnly(bool? v) {
     setState(() {
-      if (q.isEmpty) {
-        _tetraFiltered = _tetraAll;
-        _emFiltered = _emAll;
-      } else {
-        final lower = q.toLowerCase();
-        _tetraFiltered = _tetraAll
-            .where((g) =>
-                g.issi.toLowerCase().contains(lower) ||
-                (g.rufname?.toLowerCase().contains(lower) ?? false) ||
-                (g.opta?.toLowerCase().contains(lower) ?? false))
-            .toList();
-        _emFiltered = _emAll
-            .where((e) =>
-                e.rufname.toLowerCase().contains(lower) ||
-                (e.rufnameLang?.toLowerCase().contains(lower) ?? false) ||
-                (e.wache?.toLowerCase().contains(lower) ?? false))
-            .toList();
-      }
+      _poolOnly = v ?? true;
+      _applyFilters();
     });
   }
 
@@ -265,21 +278,50 @@ class _IssiPickerScreenAnonymousState
   }
 
   Widget _buildTetraList() {
-    if (_tetraFiltered.isEmpty) {
-      return Center(
-        child: Text(
-          _tetraAll.isEmpty
-              ? 'Keine TETRA-Geräte gefunden'
-              : 'Keine Treffer für "${_searchCtrl.text}"',
-          style: TextStyle(color: Colors.grey.shade500),
-        ),
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      itemCount: _tetraFiltered.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (_, i) {
+    final poolCount = _tetraAll.where((g) => g.isPool).length;
+    return Column(
+      children: [
+        if (poolCount > 0)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+            child: Row(
+              children: [
+                Checkbox(
+                  value: _poolOnly,
+                  onChanged: _togglePoolOnly,
+                  activeColor: Colors.red.shade800,
+                  visualDensity: VisualDensity.compact,
+                ),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => _togglePoolOnly(!_poolOnly),
+                    child: Text(
+                      'Nur Pool-Geräte ($poolCount)',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: _tetraFiltered.isEmpty
+              ? Center(
+                  child: Text(
+                    _tetraAll.isEmpty
+                        ? 'Keine TETRA-Geräte gefunden'
+                        : _poolOnly
+                            ? 'Keine Pool-Geräte gefunden'
+                            : 'Keine Treffer für "${_searchCtrl.text}"',
+                    style: TextStyle(color: Colors.grey.shade500),
+                  ),
+                )
+              : ListView.separated(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  itemCount: _tetraFiltered.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (_, i) {
         final g = _tetraFiltered[i];
         return ListTile(
           shape: RoundedRectangleBorder(
@@ -304,7 +346,10 @@ class _IssiPickerScreenAnonymousState
           trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () => Navigator.of(context).pop(g.issi),
         );
-      },
+                  },
+                ),
+        ),
+      ],
     );
   }
 

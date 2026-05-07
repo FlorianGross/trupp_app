@@ -167,6 +167,27 @@ class EdpEinsatzabschnitt {
       );
 }
 
+class EdpEmTyp {
+  final String typ;
+  final String? organisation;
+  final int? showInRessourcen;
+  final int? sortpos;
+
+  const EdpEmTyp({
+    required this.typ,
+    this.organisation,
+    this.showInRessourcen,
+    this.sortpos,
+  });
+
+  factory EdpEmTyp.fromJson(Map<String, dynamic> j) => EdpEmTyp(
+        typ: (j['typ'] as String?) ?? '',
+        organisation: j['organisation'] as String?,
+        showInRessourcen: j['showInRessourcen'] as int?,
+        sortpos: j['sortpos'] as int?,
+      );
+}
+
 class EdpProResult<T> {
   final bool ok;
   final int statusCode;
@@ -200,6 +221,10 @@ class EdpApiPro {
   static const _kAccessToken = 'edp_pro_access_token';
   static const _kRefreshToken = 'edp_pro_refresh_token';
 
+  // Systembenutzer für Pool-Funkgeräte und Stärkemeldungen
+  static const _kTruppAppUser = 'trupp_app';
+  static const _kTruppAppPass = 'eRk6vIEGxugstl85r31HJKTm6ork7DLd';
+
   EdpApiPro._(this._config, {http.Client? client})
       : _client = client ?? http.Client();
 
@@ -209,6 +234,10 @@ class EdpApiPro {
     inst._accessToken = prefs.getString(_kAccessToken);
     inst._refreshToken = prefs.getString(_kRefreshToken);
     _instance = inst;
+    // Auto-Login mit trupp_app wenn kein Token vorhanden und Pro-URL konfiguriert
+    if (!inst.hasToken && config.proApiUrl.isNotEmpty) {
+      await inst.login(_kTruppAppUser, _kTruppAppPass);
+    }
     return inst;
   }
 
@@ -290,12 +319,20 @@ class EdpApiPro {
     }
   }
 
+  Future<bool> _ensureAuth() async {
+    if (hasToken) return true;
+    return await login(_kTruppAppUser, _kTruppAppPass);
+  }
+
   Future<http.Response> _get(Uri uri) async {
+    await _ensureAuth();
     var resp = await _client
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 12));
     if (resp.statusCode == 401) {
-      if (await _tryRefresh()) {
+      final recovered = await _tryRefresh() ||
+          await login(_kTruppAppUser, _kTruppAppPass);
+      if (recovered) {
         resp = await _client
             .get(uri, headers: _headers)
             .timeout(const Duration(seconds: 12));
@@ -305,11 +342,14 @@ class EdpApiPro {
   }
 
   Future<http.Response> _put(Uri uri, Map<String, dynamic> body) async {
+    await _ensureAuth();
     var resp = await _client
         .put(uri, headers: _headers, body: jsonEncode(body))
         .timeout(const Duration(seconds: 12));
     if (resp.statusCode == 401) {
-      if (await _tryRefresh()) {
+      final recovered = await _tryRefresh() ||
+          await login(_kTruppAppUser, _kTruppAppPass);
+      if (recovered) {
         resp = await _client
             .put(uri, headers: _headers, body: jsonEncode(body))
             .timeout(const Duration(seconds: 12));
@@ -463,6 +503,26 @@ class EdpApiPro {
       );
       if (resp.statusCode == 200) return const EdpProResult.success(null);
       return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
+    } catch (e) {
+      return EdpProResult.failure(-1, e.toString());
+    }
+  }
+
+  Future<EdpProResult<List<EdpEmTyp>>> getEmTypen() async {
+    try {
+      final resp = await _get(_uri('em-typen'));
+      if (resp.statusCode != 200) {
+        return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
+      }
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final raw = body['data'];
+      final items = raw is List
+          ? raw
+              .map((e) => EdpEmTyp.fromJson(e as Map<String, dynamic>))
+              .toList()
+          : <EdpEmTyp>[];
+      items.sort((a, b) => (a.sortpos ?? 99).compareTo(b.sortpos ?? 99));
+      return EdpProResult.success(items);
     } catch (e) {
       return EdpProResult.failure(-1, e.toString());
     }

@@ -345,12 +345,14 @@ class EdpTetraEndgeraet {
   final String? rufname;
   final String? opta;
   final int type;
+  final int poolGeraet; // 1 = Pool-Gerät (für Onboarding-Auswahl)
 
   const EdpTetraEndgeraet({
     required this.issi,
     this.rufname,
     this.opta,
     this.type = 0,
+    this.poolGeraet = 0,
   });
 
   factory EdpTetraEndgeraet.fromJson(Map<String, dynamic> j) =>
@@ -359,7 +361,10 @@ class EdpTetraEndgeraet {
         rufname: j['rufname'] as String?,
         opta: j['opta'] as String?,
         type: (j['type'] as int?) ?? 0,
+        poolGeraet: (j['poolGeraet'] as int?) ?? 0,
       );
+
+  bool get isPool => poolGeraet == 1;
 
   String get displayLabel {
     final name = rufname?.isNotEmpty == true ? rufname! : (opta ?? '');

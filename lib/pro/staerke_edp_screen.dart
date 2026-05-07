@@ -13,7 +13,9 @@ class StaerkeEdpScreen extends StatefulWidget {
 class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
   List<EdpEinsatzmittel> _allMittel = [];
   List<EdpEinsatzmittel> _filtered = [];
+  List<EdpEmTyp> _typen = [];
   EdpEinsatzmittel? _selected;
+  String? _selectedTyp; // null = alle Typen
   String _searchText = '';
 
   int _fuehrung = 0;
@@ -43,46 +45,74 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
       _loading = true;
       _loadError = null;
     });
-    final api = EdpApiPro.instance;
+
+    // Ensure Pro API is initialized
+    EdpApiPro? api = EdpApiPro.instance;
+    if (api == null) {
+      try {
+        api = await EdpApiPro.initFromPrefs();
+      } catch (_) {}
+    }
     if (api == null) {
       setState(() {
         _loading = false;
-        _loadError = 'Pro-API nicht initialisiert. Bitte zuerst anmelden.';
+        _loadError = 'Pro-API nicht initialisiert. Bitte EDP-Pro-URL konfigurieren.';
       });
       return;
     }
-    final result = await api.getEinsatzmittel();
+
+    final results = await Future.wait([
+      api.getEinsatzmittel(),
+      api.getEmTypen(),
+    ]);
+
     if (!mounted) return;
-    if (result.ok) {
-      final items = (result.data ?? [])
+
+    final emResult = results[0] as EdpProResult<List<EdpEinsatzmittel>>;
+    final typResult = results[1] as EdpProResult<List<EdpEmTyp>>;
+
+    if (emResult.ok) {
+      final items = (emResult.data ?? [])
         ..sort((a, b) => a.rufname.compareTo(b.rufname));
+      final typen = typResult.data ?? [];
       setState(() {
         _allMittel = items;
-        _filtered = items;
+        _typen = typen;
         _loading = false;
+        _applyFilters();
       });
     } else {
       setState(() {
         _loading = false;
-        _loadError = result.error ?? 'Fehler ${result.statusCode}';
+        _loadError = emResult.error ?? 'Fehler ${emResult.statusCode}';
       });
     }
+  }
+
+  void _applyFilters() {
+    final lower = _searchText.toLowerCase();
+    _filtered = _allMittel.where((m) {
+      final matchesTyp = _selectedTyp == null || m.typ == _selectedTyp;
+      if (!matchesTyp) return false;
+      if (lower.isEmpty) return true;
+      return m.rufname.toLowerCase().contains(lower) ||
+          (m.rufnameLang?.toLowerCase().contains(lower) ?? false) ||
+          (m.typ?.toLowerCase().contains(lower) ?? false) ||
+          (m.wache?.toLowerCase().contains(lower) ?? false);
+    }).toList();
   }
 
   void _onSearch(String q) {
     setState(() {
       _searchText = q;
-      if (q.isEmpty) {
-        _filtered = _allMittel;
-      } else {
-        final lower = q.toLowerCase();
-        _filtered = _allMittel
-            .where((m) =>
-                m.rufname.toLowerCase().contains(lower) ||
-                (m.rufnameLang?.toLowerCase().contains(lower) ?? false) ||
-                (m.typ?.toLowerCase().contains(lower) ?? false))
-            .toList();
-      }
+      _applyFilters();
+    });
+  }
+
+  void _selectTyp(String? typ) {
+    setState(() {
+      _selectedTyp = typ;
+      _applyFilters();
     });
   }
 
@@ -181,11 +211,15 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                 children: [
                   _sectionTitle('Einsatzmittel auswählen'),
                   const SizedBox(height: 10),
+                  // Type filter chips
+                  if (_typen.isNotEmpty) _buildTypFilter(),
+                  const SizedBox(height: 8),
+                  // Search field
                   TextField(
                     controller: _searchCtrl,
                     onChanged: _onSearch,
                     decoration: InputDecoration(
-                      hintText: 'Suchen (Rufname, Typ…)',
+                      hintText: 'Suchen (Rufname, Wache…)',
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
                       fillColor: Colors.grey.shade50,
@@ -204,6 +238,7 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
+                  // Selected vehicle indicator
                   _selected != null
                       ? Container(
                           padding: const EdgeInsets.symmetric(
@@ -211,8 +246,7 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                           decoration: BoxDecoration(
                             color: Colors.green.shade50,
                             borderRadius: BorderRadius.circular(10),
-                            border:
-                                Border.all(color: Colors.green.shade200),
+                            border: Border.all(color: Colors.green.shade200),
                           ),
                           child: Row(
                             children: [
@@ -227,12 +261,20 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                                       fontWeight: FontWeight.w600),
                                 ),
                               ),
-                              if (_selected!.status != null)
-                                Text(
-                                  'S${_selected!.status}',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.green.shade600),
+                              if (_selected!.typ != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade100,
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: Text(
+                                    _selected!.typ!,
+                                    style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.green.shade700),
+                                  ),
                                 ),
                             ],
                           ),
@@ -255,13 +297,29 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                           ),
                         ),
                   const SizedBox(height: 8),
+                  // Result count
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Text(
+                      '${_filtered.length} Fahrzeug${_filtered.length != 1 ? 'e' : ''}',
+                      style: TextStyle(
+                          fontSize: 11, color: Colors.grey.shade500),
+                    ),
+                  ),
+                  // Vehicle list
                   ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 220),
+                    constraints: const BoxConstraints(maxHeight: 240),
                     child: _filtered.isEmpty
                         ? Center(
-                            child: Text('Keine Treffer',
-                                style: TextStyle(
-                                    color: Colors.grey.shade500)))
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Text(
+                                'Keine Treffer',
+                                style:
+                                    TextStyle(color: Colors.grey.shade500),
+                              ),
+                            ),
+                          )
                         : ListView.builder(
                             shrinkWrap: true,
                             itemCount: _filtered.length,
@@ -283,18 +341,44 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                                 title: Text(m.displayName,
                                     style:
                                         const TextStyle(fontSize: 13)),
-                                subtitle: m.typ != null
-                                    ? Text(m.typ!,
-                                        style: const TextStyle(
-                                            fontSize: 11))
-                                    : null,
+                                subtitle: Row(
+                                  children: [
+                                    if (m.typ != null)
+                                      Container(
+                                        margin:
+                                            const EdgeInsets.only(right: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 5, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: Colors.red.shade50,
+                                          borderRadius:
+                                              BorderRadius.circular(3),
+                                          border: Border.all(
+                                              color: Colors.red.shade100),
+                                        ),
+                                        child: Text(m.typ!,
+                                            style: TextStyle(
+                                                fontSize: 10,
+                                                color:
+                                                    Colors.red.shade700)),
+                                      ),
+                                    if (m.wache != null)
+                                      Expanded(
+                                        child: Text(
+                                          m.wache!,
+                                          style: const TextStyle(
+                                              fontSize: 11),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                ),
                                 trailing: m.status != null
                                     ? Text('S${m.status}',
                                         style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
-                                            color:
-                                                Colors.grey.shade600))
+                                            color: Colors.grey.shade600))
                                     : null,
                                 onTap: () => _select(m),
                                 shape: RoundedRectangleBorder(
@@ -384,6 +468,60 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTypFilter() {
+    // Collect types present in loaded vehicles
+    final presentTypen = _allMittel
+        .map((m) => m.typ)
+        .where((t) => t != null && t.isNotEmpty)
+        .toSet()
+        .cast<String>();
+
+    final chips = _typen.where((t) => presentTypen.contains(t.typ)).toList();
+    if (chips.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 36,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: FilterChip(
+              label: const Text('Alle'),
+              selected: _selectedTyp == null,
+              onSelected: (_) => _selectTyp(null),
+              selectedColor: Colors.red.shade100,
+              checkmarkColor: Colors.red.shade800,
+              labelStyle: TextStyle(
+                fontSize: 12,
+                color: _selectedTyp == null
+                    ? Colors.red.shade800
+                    : Colors.grey.shade700,
+              ),
+            ),
+          ),
+          ...chips.map((t) => Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: FilterChip(
+                  label: Text(t.typ),
+                  selected: _selectedTyp == t.typ,
+                  onSelected: (_) =>
+                      _selectTyp(_selectedTyp == t.typ ? null : t.typ),
+                  selectedColor: Colors.red.shade100,
+                  checkmarkColor: Colors.red.shade800,
+                  labelStyle: TextStyle(
+                    fontSize: 12,
+                    color: _selectedTyp == t.typ
+                        ? Colors.red.shade800
+                        : Colors.grey.shade700,
+                  ),
+                ),
+              )),
+        ],
       ),
     );
   }
