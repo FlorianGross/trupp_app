@@ -1,5 +1,6 @@
 // lib/pro/staerke_edp_screen.dart
 import 'package:flutter/material.dart';
+import '../data/edp_api.dart';
 import '../data/edp_api_pro.dart';
 
 class StaerkeEdpScreen extends StatefulWidget {

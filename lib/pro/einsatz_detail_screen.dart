@@ -1,6 +1,7 @@
 // lib/pro/einsatz_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../data/edp_api.dart';
 import '../data/edp_api_pro.dart';
 
 class EinsatzDetailScreen extends StatefulWidget {

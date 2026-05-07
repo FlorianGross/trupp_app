@@ -1,6 +1,6 @@
 // lib/data/edp_api.dart
 import 'dart:async';
-import 'dart:convert' show jsonDecode as _jsonDecode;
+import 'dart:convert' show jsonDecode;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -311,7 +311,7 @@ class EdpApi {
   Map<String, dynamic>? _parseJson(String? body) {
     if (body == null) return null;
     try {
-      return _jsonDecode(body) as Map<String, dynamic>;
+      return jsonDecode(body) as Map<String, dynamic>;
     } catch (_) {
       return null;
     }
