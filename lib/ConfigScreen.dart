@@ -709,19 +709,26 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       children: [
         const SizedBox(height: 20),
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
           child: Text(
-            'Server & Zugangsdaten',
+            'EDP-Webhook-Server',
             style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey.shade800),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'GPS-Tracking und Statusmeldungen (Webhook-Schnittstelle).',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
+        ),
         _buildProtocolSelector(),
         const SizedBox(height: 16),
         _requiredField(
-          label: 'EDP Server* (z. B. test.local)',
+          label: 'Webhook-Server* (z. B. edp.example.org)',
           controller: hostController,
         ),
         const SizedBox(height: 16),
@@ -751,7 +758,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             label: 'Ansprechpartner', controller: leiterController),
         const SizedBox(height: 24),
         Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
           child: Text(
             'EDP-Pro-API (optional)',
             style: TextStyle(
@@ -760,42 +767,40 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 color: Colors.grey.shade800),
           ),
         ),
-        _optionalField(
-          label: 'EDP-Pro-Server (z. B. https://api.example.org)',
-          controller: proApiUrlController,
-          keyboardType: TextInputType.url,
-        ),
-        const SizedBox(height: 6),
-        Padding(
-          padding: const EdgeInsets.only(left: 4),
-          child: Text(
-            'Server für TETRA-Geräte, Einsatzmittel und Einsatz-Navigation.\nWenn leer, wird der Webhook-Server als Fallback genutzt.',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
-        ),
-        const SizedBox(height: 24),
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
-            'Alarmierung (optional)',
+            'Separater EDP-Pro-API-Server – ausschließlich für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage).',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          ),
+        ),
+        _optionalField(
+          label: 'EDP-Pro-API-URL (z. B. https://api.example.org)',
+          controller: proApiUrlController,
+          keyboardType: TextInputType.url,
+        ),
+        const SizedBox(height: 24),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 4),
+          child: Text(
+            'Bereitschafts-App / Alarmierung (optional)',
             style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
                 color: Colors.grey.shade800),
           ),
         ),
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 12),
+          child: Text(
+            'PocketBase-Server der Bereitschafts-App – für Echtzeit-Alarmierungen.',
+            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+          ),
+        ),
         _optionalField(
-          label: 'PocketBase-URL (z. B. https://pb.example.org)',
+          label: 'Bereitschafts-App-URL (z. B. https://pb.example.org)',
           controller: pbUrlController,
           keyboardType: TextInputType.url,
-        ),
-        const SizedBox(height: 6),
-        Padding(
-          padding: const EdgeInsets.only(left: 4),
-          child: Text(
-            'Wenn gesetzt, empfängt dieses Gerät EDP-Alarmierungen in Echtzeit.',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-          ),
         ),
         const SizedBox(height: 8),
         Padding(

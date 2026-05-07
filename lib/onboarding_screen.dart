@@ -936,7 +936,12 @@ class _ManualConfigForm extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionLabel('Server & Zugangsdaten'),
+          _SectionLabel('EDP-Webhook-Server'),
+          const SizedBox(height: 6),
+          Text(
+            'GPS-Tracking und Statusmeldungen via EDP-Webhook-Schnittstelle.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
           const SizedBox(height: 12),
           // Protocol
           SegmentedButton<String>(
@@ -965,7 +970,7 @@ class _ManualConfigForm extends StatelessWidget {
           TextField(
             controller: hostCtrl,
             onChanged: (_) => onFieldChanged(),
-            decoration: _dec('EDP Server (z. B. test.local)', required: true),
+            decoration: _dec('Webhook-Server (z. B. edp.example.org)', required: true),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -994,29 +999,29 @@ class _ManualConfigForm extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _SectionLabel('EDP-Pro-API (optional)'),
+          const SizedBox(height: 6),
+          Text(
+            'Separater EDP-Pro-API-Server – nur für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage).',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: proApiUrlCtrl,
             keyboardType: TextInputType.url,
-            decoration: _dec('EDP-Pro-Server (z. B. https://api.example.org)'),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Server für TETRA-Geräte, Einsatzmittel und Einsatz-Navigation.\nWenn leer, wird der Webhook-Server als Fallback genutzt.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            decoration: _dec('EDP-Pro-API-URL (z. B. https://api.example.org)'),
           ),
           const SizedBox(height: 20),
-          _SectionLabel('Alarmierung (optional)'),
+          _SectionLabel('Bereitschafts-App / Alarmierung (optional)'),
+          const SizedBox(height: 6),
+          Text(
+            'PocketBase-Server der Bereitschafts-App – für Echtzeit-Alarmierungen.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: pbUrlCtrl,
             keyboardType: TextInputType.url,
-            decoration: _dec('PocketBase-URL (z. B. https://pb.example.org)'),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Wenn gesetzt, empfängt dieses Gerät EDP-Alarmierungen in Echtzeit.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            decoration: _dec('Bereitschafts-App-URL (z. B. https://pb.example.org)'),
           ),
           const SizedBox(height: 8),
           Text(
