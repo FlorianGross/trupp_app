@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'edp_api.dart';
+import 'app_prefs.dart';
 
 // ---------------------------------------------------------------------------
 // Models
@@ -216,26 +217,24 @@ class EdpApiPro {
   String? _accessToken;
   String? _refreshToken;
 
-  static const _kProUser = 'edp_pro_user';
-  static const _kProPass = 'edp_pro_pass';
-  static const _kAccessToken = 'edp_pro_access_token';
-  static const _kRefreshToken = 'edp_pro_refresh_token';
-
-  // Systembenutzer für Pool-Funkgeräte und Stärkemeldungen
-  static const _kTruppAppUser = 'trupp_app';
-  static const _kTruppAppPass = 'eRk6vIEGxugstl85r31HJKTm6ork7DLd';
+  // Systembenutzer via --dart-define=EDP_SYSTEM_USER/EDP_SYSTEM_PASS
+  // (kein Klartext-Fallback im Quellcode)
+  static const _kTruppAppUser = String.fromEnvironment('EDP_SYSTEM_USER');
+  static const _kTruppAppPass = String.fromEnvironment('EDP_SYSTEM_PASS');
 
   EdpApiPro._(this._config, {http.Client? client})
       : _client = client ?? http.Client();
 
   static Future<EdpApiPro> init(EdpConfig config) async {
     final inst = EdpApiPro._(config);
-    final prefs = await SharedPreferences.getInstance();
-    inst._accessToken = prefs.getString(_kAccessToken);
-    inst._refreshToken = prefs.getString(_kRefreshToken);
+    inst._accessToken = await SecureStore.readAccessToken();
+    inst._refreshToken = await SecureStore.readRefreshToken();
     _instance = inst;
-    // Auto-Login mit trupp_app wenn kein Token vorhanden und Pro-URL konfiguriert
-    if (!inst.hasToken && config.proApiUrl.isNotEmpty) {
+    // Auto-Login mit Systembenutzer wenn kein Token vorhanden und Pro-URL konfiguriert
+    if (!inst.hasToken &&
+        config.proApiUrl.isNotEmpty &&
+        _kTruppAppUser.isNotEmpty &&
+        _kTruppAppPass.isNotEmpty) {
       await inst.login(_kTruppAppUser, _kTruppAppPass);
     }
     return inst;
@@ -280,11 +279,12 @@ class EdpApiPro {
       if (data == null) return false;
       _accessToken = data['accessToken'] as String?;
       _refreshToken = data['refreshToken'] as String?;
-      final prefs = await SharedPreferences.getInstance();
-      if (_accessToken != null)
-        await prefs.setString(_kAccessToken, _accessToken!);
-      if (_refreshToken != null)
-        await prefs.setString(_kRefreshToken, _refreshToken!);
+      if (_accessToken != null) {
+        await SecureStore.saveTokens(
+          accessToken: _accessToken!,
+          refreshToken: _refreshToken,
+        );
+      }
       return _accessToken != null;
     } catch (_) {
       return false;
@@ -308,11 +308,12 @@ class EdpApiPro {
       if (data == null) return false;
       _accessToken = data['accessToken'] as String?;
       _refreshToken = data['refreshToken'] as String?;
-      final prefs = await SharedPreferences.getInstance();
-      if (_accessToken != null)
-        await prefs.setString(_kAccessToken, _accessToken!);
-      if (_refreshToken != null)
-        await prefs.setString(_kRefreshToken, _refreshToken!);
+      if (_accessToken != null) {
+        await SecureStore.saveTokens(
+          accessToken: _accessToken!,
+          refreshToken: _refreshToken,
+        );
+      }
       return _accessToken != null;
     } catch (_) {
       return false;
@@ -321,6 +322,7 @@ class EdpApiPro {
 
   Future<bool> _ensureAuth() async {
     if (hasToken) return true;
+    if (_kTruppAppUser.isEmpty || _kTruppAppPass.isEmpty) return false;
     return await login(_kTruppAppUser, _kTruppAppPass);
   }
 
@@ -529,23 +531,11 @@ class EdpApiPro {
   }
 
   static Future<void> saveCredentials(
-      String username, String password) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_kProUser, username);
-    await prefs.setString(_kProPass, password);
-  }
+          String username, String password) =>
+      SecureStore.saveCredentials(username, password);
 
-  static Future<({String user, String pass})?> loadCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    final user = prefs.getString(_kProUser) ?? '';
-    final pass = prefs.getString(_kProPass) ?? '';
-    if (user.isEmpty) return null;
-    return (user: user, pass: pass);
-  }
+  static Future<({String user, String pass})?> loadCredentials() =>
+      SecureStore.loadCredentials();
 
-  static Future<void> clearTokens() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_kAccessToken);
-    await prefs.remove(_kRefreshToken);
-  }
+  static Future<void> clearTokens() => SecureStore.clearTokens();
 }

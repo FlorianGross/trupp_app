@@ -1,6 +1,7 @@
 // lib/data/profile_store.dart
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_prefs.dart';
 
 class AppProfile {
   final String name;
@@ -25,23 +26,23 @@ class AppProfile {
 
   Map<String, dynamic> toJson() => {
         'name': name,
-        'protocol': protocol,
-        'server': server,
-        'token': token,
-        'issi': issi,
-        'trupp': trupp,
-        'leiter': leiter,
+        AppPrefsKeys.protocol: protocol,
+        AppPrefsKeys.server: server,
+        AppPrefsKeys.token: token,
+        AppPrefsKeys.issi: issi,
+        AppPrefsKeys.trupp: trupp,
+        AppPrefsKeys.leiter: leiter,
         'pbUrl': pbUrl,
       };
 
   static AppProfile fromJson(Map<String, dynamic> j) => AppProfile(
         name: j['name'] as String? ?? '',
-        protocol: j['protocol'] as String? ?? 'https',
-        server: j['server'] as String? ?? '',
-        token: j['token'] as String? ?? '',
-        issi: j['issi'] as String? ?? '',
-        trupp: j['trupp'] as String? ?? '',
-        leiter: j['leiter'] as String? ?? '',
+        protocol: j[AppPrefsKeys.protocol] as String? ?? 'https',
+        server: j[AppPrefsKeys.server] as String? ?? '',
+        token: j[AppPrefsKeys.token] as String? ?? '',
+        issi: j[AppPrefsKeys.issi] as String? ?? '',
+        trupp: j[AppPrefsKeys.trupp] as String? ?? '',
+        leiter: j[AppPrefsKeys.leiter] as String? ?? '',
         pbUrl: j['pbUrl'] as String? ?? '',
       );
 
@@ -116,18 +117,18 @@ class ProfileStore {
   /// Aktiviert ein Profil: schreibt dessen Werte in die flachen Prefs-Keys.
   static Future<void> activate(AppProfile profile) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('protocol', profile.protocol);
-    await prefs.setString('server', profile.server);
-    await prefs.setString('token', profile.token);
-    await prefs.setString('issi', profile.issi);
-    await prefs.setString('trupp', profile.trupp);
-    await prefs.setString('leiter', profile.leiter);
+    await prefs.setString(AppPrefsKeys.protocol, profile.protocol);
+    await prefs.setString(AppPrefsKeys.server, profile.server);
+    await prefs.setString(AppPrefsKeys.token, profile.token);
+    await prefs.setString(AppPrefsKeys.issi, profile.issi);
+    await prefs.setString(AppPrefsKeys.trupp, profile.trupp);
+    await prefs.setString(AppPrefsKeys.leiter, profile.leiter);
     await prefs.setBool('hasConfig', true);
     // PocketBase-URL
     if (profile.pbUrl.isNotEmpty) {
-      await prefs.setString('pb_url', profile.pbUrl);
+      await prefs.setString(AppPrefsKeys.pbUrl, profile.pbUrl);
     } else {
-      await prefs.remove('pb_url');
+      await prefs.remove(AppPrefsKeys.pbUrl);
     }
     await prefs.setString(_activeKey, profile.name);
   }
@@ -135,20 +136,20 @@ class ProfileStore {
   /// Liest das aktuelle Profil aus den flachen Prefs und gibt es zurück.
   static Future<AppProfile?> currentFromPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final server = prefs.getString('server') ?? '';
-    final token = prefs.getString('token') ?? '';
-    final issi = prefs.getString('issi') ?? '';
+    final server = prefs.getString(AppPrefsKeys.server) ?? '';
+    final token = prefs.getString(AppPrefsKeys.token) ?? '';
+    final issi = prefs.getString(AppPrefsKeys.issi) ?? '';
     if (server.isEmpty || token.isEmpty || issi.isEmpty) return null;
     final activeName = prefs.getString(_activeKey) ?? '';
     return AppProfile(
       name: activeName,
-      protocol: prefs.getString('protocol') ?? 'https',
+      protocol: prefs.getString(AppPrefsKeys.protocol) ?? 'https',
       server: server,
       token: token,
       issi: issi,
-      trupp: prefs.getString('trupp') ?? '',
-      leiter: prefs.getString('leiter') ?? '',
-      pbUrl: prefs.getString('pb_url') ?? '',
+      trupp: prefs.getString(AppPrefsKeys.trupp) ?? '',
+      leiter: prefs.getString(AppPrefsKeys.leiter) ?? '',
+      pbUrl: prefs.getString(AppPrefsKeys.pbUrl) ?? '',
     );
   }
 }

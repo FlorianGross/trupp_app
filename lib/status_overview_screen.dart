@@ -11,6 +11,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'data/app_prefs.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:trupp_app/system_check_screen.dart';
 import 'ConfigScreen.dart';
@@ -232,12 +233,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _maybeCleanupDatabase() async {
     final prefs = await SharedPreferences.getInstance();
-    final lastCleanup = prefs.getInt('lastDbCleanupMs') ?? 0;
+    final lastCleanup = prefs.getInt(AppPrefsKeys.lastDbCleanupMs) ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
     const cleanupInterval = Duration(hours: 24);
     if ((now - lastCleanup) >= cleanupInterval.inMilliseconds) {
       await LocationSyncManager.instance.cleanupOldEntries(maxAgeDays: 30);
-      await prefs.setInt('lastDbCleanupMs', now);
+      await prefs.setInt(AppPrefsKeys.lastDbCleanupMs, now);
     }
   }
 
@@ -250,10 +251,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     await _refreshAlarmBadge();
 
     final prefs = await SharedPreferences.getInstance();
-    final firstRun = !(prefs.getBool('onboarded') ?? false);
+    final firstRun = !(prefs.getBool(AppPrefsKeys.onboarded) ?? false);
     if (firstRun) {
       await _firstRunPermissionFlow();
-      await prefs.setBool('onboarded', true);
+      await prefs.setBool(AppPrefsKeys.onboarded, true);
     }
 
     // Hintergrund-Berechtigung sicherstellen
@@ -271,7 +272,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       await _requestOverlayPermission();
     }
 
-    final last = prefs.getInt('lastStatus') ?? 1;
+    final last = prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
     final autoDeact = prefs.getInt('autoDeactivateMinutes') ?? 0;
 
     final activeProfile = await ProfileStore.activeName() ?? '';
@@ -399,7 +400,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     // Einsatz-Timer laden
     if (_deploymentMode == DeploymentMode.deployed) {
       final prefs = await SharedPreferences.getInstance();
-      _deploymentStartMs = prefs.getInt('deployment_start_ms') ?? 0;
+      _deploymentStartMs = prefs.getInt(AppPrefsKeys.deploymentStartMs) ?? 0;
       _startDeploymentTimer();
       WakelockPlus.enable();
     } else {
@@ -434,7 +435,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<int> _getCurrentStatus() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('lastStatus') ?? 1;
+    return prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
   }
 
   Future<void> _updateBatteryLevel() async {
@@ -454,12 +455,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    final sp = prefs.getString('protocol') ?? protocol;
-    final sv = prefs.getString('server') ?? server;
-    final tk = prefs.getString('token') ?? token;
-    final tr = prefs.getString('trupp') ?? trupp;
-    final lt = prefs.getString('leiter') ?? leiter;
-    final iss = prefs.getString('issi') ?? issi;
+    final sp = prefs.getString(AppPrefsKeys.protocol) ?? protocol;
+    final sv = prefs.getString(AppPrefsKeys.server) ?? server;
+    final tk = prefs.getString(AppPrefsKeys.token) ?? token;
+    final tr = prefs.getString(AppPrefsKeys.trupp) ?? trupp;
+    final lt = prefs.getString(AppPrefsKeys.leiter) ?? leiter;
+    final iss = prefs.getString(AppPrefsKeys.issi) ?? issi;
     String host = sv;
     String prt = '';
     if (host.contains(':')) {
@@ -620,7 +621,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Future<void> _setBackgroundTracking(bool enabled) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('transmissionEnabled', enabled);
+      await prefs.setBool(AppPrefsKeys.transmissionEnabled, enabled);
 
       final svc = FlutterBackgroundService();
       if (enabled) {
@@ -650,7 +651,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     selectedStatus = st;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('lastStatus', st);
+    await prefs.setInt(AppPrefsKeys.lastStatus, st);
     await DeploymentState.updateActivity();
 
     final svc = FlutterBackgroundService();
@@ -1116,12 +1117,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      protocol = prefs.getString('protocol') ?? protocol;
-      server = prefs.getString('server') ?? server;
-      token = prefs.getString('token') ?? token;
-      trupp = prefs.getString('trupp') ?? trupp;
-      leiter = prefs.getString('leiter') ?? leiter;
-      issi = prefs.getString('issi') ?? issi;
+      protocol = prefs.getString(AppPrefsKeys.protocol) ?? protocol;
+      server = prefs.getString(AppPrefsKeys.server) ?? server;
+      token = prefs.getString(AppPrefsKeys.token) ?? token;
+      trupp = prefs.getString(AppPrefsKeys.trupp) ?? trupp;
+      leiter = prefs.getString(AppPrefsKeys.leiter) ?? leiter;
+      issi = prefs.getString(AppPrefsKeys.issi) ?? issi;
     });
   }
 
@@ -1383,8 +1384,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _showQrCode() async {
     final prefs = await SharedPreferences.getInstance();
-    final pbUrl = prefs.getString('pb_url') ?? '';
-    final proApiUrl = prefs.getString('pro_api_url') ?? '';
+    final pbUrl = prefs.getString(AppPrefsKeys.pbUrl) ?? '';
+    final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
 
     // Uri-Builder sorgt für korrekte Prozentkodierung aller Werte
     final params = <String, String>{

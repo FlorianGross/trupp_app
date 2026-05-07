@@ -8,6 +8,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
+import 'data/app_prefs.dart';
 import 'data/unit_type_store.dart';
 import 'unit_type_picker_screen.dart';
 
@@ -379,9 +380,9 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
 
     try {
       final prefs = await SharedPreferences.getInstance();
-      final server = prefs.getString('server') ?? '';
-      final token = prefs.getString('token') ?? '';
-      final trupp = prefs.getString('trupp') ?? '';
+      final server = prefs.getString(AppPrefsKeys.server) ?? '';
+      final token = prefs.getString(AppPrefsKeys.token) ?? '';
+      final trupp = prefs.getString(AppPrefsKeys.trupp) ?? '';
 
       if (server.isNotEmpty && token.isNotEmpty && trupp.isNotEmpty) {
         check.status = CheckStatus.ok;

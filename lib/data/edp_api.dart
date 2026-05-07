@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_prefs.dart';
 
 /// Bündelt die für EDP nötige Konfiguration.
 @immutable
@@ -47,24 +48,24 @@ class EdpConfig {
   }
 
   Map<String, String> toPrefs() => {
-    'protocol': protocol,
-    'server': '$host:$port',
-    'token': token,
-    'issi': issi,
-    'hasConfig': 'true',
-    'trupp': trupp,
-    'leiter': leiter,
-    'pro_api_url': proApiUrl,
+    AppPrefsKeys.protocol: protocol,
+    AppPrefsKeys.server: '$host:$port',
+    AppPrefsKeys.token: token,
+    AppPrefsKeys.issi: issi,
+    AppPrefsKeys.hasConfig: 'true',
+    AppPrefsKeys.trupp: trupp,
+    AppPrefsKeys.leiter: leiter,
+    AppPrefsKeys.proApiUrl: proApiUrl,
   };
 
   static Future<EdpConfig?> fromPrefs(SharedPreferences prefs) async {
-    final protocol = prefs.getString('protocol') ?? '';
-    final serverPort = prefs.getString('server') ?? '';
-    final token = prefs.getString('token') ?? '';
-    final issi = prefs.getString('issi') ?? '';
-    final trupp = prefs.getString('trupp') ?? '';
-    final leiter = prefs.getString('leiter') ?? '';
-    final proApiUrl = prefs.getString('pro_api_url') ?? '';
+    final protocol = prefs.getString(AppPrefsKeys.protocol) ?? '';
+    final serverPort = prefs.getString(AppPrefsKeys.server) ?? '';
+    final token = prefs.getString(AppPrefsKeys.token) ?? '';
+    final issi = prefs.getString(AppPrefsKeys.issi) ?? '';
+    final trupp = prefs.getString(AppPrefsKeys.trupp) ?? '';
+    final leiter = prefs.getString(AppPrefsKeys.leiter) ?? '';
+    final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
 
     if (protocol.isEmpty ||
         serverPort.isEmpty ||
@@ -160,14 +161,14 @@ class EdpApi {
   Future<void> updateConfig(EdpConfig config) async {
     _config = config;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('protocol', config.protocol);
-    await prefs.setString('server', '${config.host}:${config.port}');
-    await prefs.setString('token', config.token);
-    await prefs.setString('issi', config.issi);
-    await prefs.setBool('hasConfig', true);
-    await prefs.setString('leiter', config.leiter);
-    await prefs.setString('trupp', config.trupp);
-    await prefs.setString('pro_api_url', config.proApiUrl);
+    await prefs.setString(AppPrefsKeys.protocol, config.protocol);
+    await prefs.setString(AppPrefsKeys.server, '${config.host}:${config.port}');
+    await prefs.setString(AppPrefsKeys.token, config.token);
+    await prefs.setString(AppPrefsKeys.issi, config.issi);
+    await prefs.setBool(AppPrefsKeys.hasConfig, true);
+    await prefs.setString(AppPrefsKeys.leiter, config.leiter);
+    await prefs.setString(AppPrefsKeys.trupp, config.trupp);
+    await prefs.setString(AppPrefsKeys.proApiUrl, config.proApiUrl);
   }
 
   Uri _uri(String path, Map<String, String> qp) {
@@ -223,20 +224,20 @@ class EdpApi {
       return sendGps(lat: lat, lon: lon);
     }
     // Fallback: GPS-Endpoint mit letzter bekannter Position (0,0 = ungültig aber Server antwortet)
-    final url = _uri('gpsposition', {'issi': _config.issi, 'lat': '0', 'lon': '0'});
+    final url = _uri('gpsposition', {AppPrefsKeys.issi: _config.issi, 'lat': '0', 'lon': '0'});
     return _getWithRetry(url);
   }
 
   /// Sendet einen Status (0..9).
   Future<EdpResult> sendStatus(int status) {
-    final url = _uri('setstatus', {'issi': _config.issi, 'status': '$status'});
+    final url = _uri('setstatus', {AppPrefsKeys.issi: _config.issi, 'status': '$status'});
     return _getWithRetry(url);
   }
 
   /// Sendet eine GPS-Position.
   Future<EdpResult> sendGps({required double lat, required double lon}) {
     final url = _uri('gpsposition', {
-      'issi': _config.issi,
+      AppPrefsKeys.issi: _config.issi,
       'lat': _fmt(lat),
       'lon': _fmt(lon),
     });
@@ -245,20 +246,20 @@ class EdpApi {
 
   /// Sendet eine kurze Textnachricht (SDS) an /incommingsds?issi=&text=
   Future<EdpResult> sendSdsText(String text) {
-    final url = _uri('incommingsds', {'issi': _config.issi, 'text': text});
+    final url = _uri('incommingsds', {AppPrefsKeys.issi: _config.issi, 'text': text});
     return _getWithRetry(url);
   }
 
   /// Sendet eine SDS-Nachricht im Namen einer anderen ISSI (für Melde-Editor).
   Future<EdpResult> sendSdsForIssi(String issi, String text) {
-    final url = _uri('incommingsds', {'issi': issi, 'text': text});
+    final url = _uri('incommingsds', {AppPrefsKeys.issi: issi, 'text': text});
     return _getWithRetry(url);
   }
 
   /// Bequemlichkeit: ist die gespeicherte Konfiguration verwendbar?
   static Future<bool> hasValidConfigInPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final hasConfig = prefs.getBool('hasConfig') ?? false;
+    final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;
     final cfg = await EdpConfig.fromPrefs(prefs);
     return hasConfig && cfg != null && cfg.isComplete;
   }
@@ -287,7 +288,7 @@ class EdpTetraEndgeraet {
 
   factory EdpTetraEndgeraet.fromJson(Map<String, dynamic> j) =>
       EdpTetraEndgeraet(
-        issi: (j['issi'] as String?) ?? '',
+        issi: (j[AppPrefsKeys.issi] as String?) ?? '',
         rufname: j['rufname'] as String?,
         opta: j['opta'] as String?,
         type: (j['type'] as int?) ?? 0,

@@ -14,6 +14,7 @@ import 'status_overview_screen.dart';
 import 'unit_type_picker_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
+import 'data/app_prefs.dart';
 
 // Overlay-Entry-Point hier referenzieren, damit der Dart-Linker ihn nicht entfernt.
 // Die eigentliche Funktion liegt in alarm_overlay.dart.
@@ -28,7 +29,7 @@ final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 
 Future<void> _loadThemePreference() async {
   final prefs = await SharedPreferences.getInstance();
-  final isDark = prefs.getBool('darkMode') ?? false;
+  final isDark = prefs.getBool(AppPrefsKeys.darkMode) ?? false;
   themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
 }
 
@@ -36,7 +37,7 @@ Future<void> toggleTheme() async {
   final isDark = themeNotifier.value == ThemeMode.dark;
   themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool('darkMode', !isDark);
+  await prefs.setBool(AppPrefsKeys.darkMode, !isDark);
 }
 
 Future<void> main() async {
@@ -62,18 +63,18 @@ Future<void> main() async {
   );
 
   final prefs = await SharedPreferences.getInstance();
-  final hasConfig = prefs.getBool('hasConfig') ?? false;
+  final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;
 
   UnitType? unitType;
   if (hasConfig) {
     await EdpApi.initFromPrefs();
 
     // GPS-Übertragung nach jedem App-Start deaktiviert
-    await prefs.setBool('transmissionEnabled', false);
+    await prefs.setBool(AppPrefsKeys.transmissionEnabled, false);
 
     // Hintergrund-Service für Alarm-Empfang starten
-    final pbConfigured = (prefs.getString('pb_url') ?? '').isNotEmpty
-        && (prefs.getString('issi') ?? '').isNotEmpty;
+    final pbConfigured = (prefs.getString(AppPrefsKeys.pbUrl) ?? '').isNotEmpty
+        && (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
     if (pbConfigured) {
       try {
         final svc = FlutterBackgroundService();

@@ -6,6 +6,7 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'alarm_model.dart';
+import 'app_prefs.dart';
 
 class AlarmStore {
   static const _kKey = 'alarm_history';
@@ -62,7 +63,7 @@ class AlarmStore {
   // Ungelesene-Badge-Verwaltung
   // ---------------------------------------------------------------------------
 
-  static const _kSeenKey = 'alarm_seen_count';
+  static const _kSeenKey = AppPrefsKeys.alarmSeenCount;
 
   /// Anzahl Alarme die der Nutzer noch nicht in der Übersicht gesehen hat.
   static Future<int> unreadCount() async {

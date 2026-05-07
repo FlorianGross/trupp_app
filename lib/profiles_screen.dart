@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/edp_api.dart';
 import 'data/alarm_service.dart';
+import 'data/app_prefs.dart';
 import 'data/profile_store.dart';
 
 class ProfilesScreen extends StatefulWidget {
@@ -48,8 +49,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         await Future.delayed(const Duration(milliseconds: 800));
       }
       final prefs = await SharedPreferences.getInstance();
-      final pbConfigured = (prefs.getString('pb_url') ?? '').isNotEmpty &&
-          (prefs.getString('issi') ?? '').isNotEmpty;
+      final pbConfigured = (prefs.getString(AppPrefsKeys.pbUrl) ?? '').isNotEmpty &&
+          (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
       if (pbConfigured && !await svc.isRunning()) {
         await svc.startService();
       }

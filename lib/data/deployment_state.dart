@@ -1,5 +1,6 @@
 // lib/data/deployment_state.dart
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_prefs.dart';
 
 /// Unterscheidet zwischen verschiedenen Einsatzmodi der App
 enum DeploymentMode {
@@ -10,9 +11,9 @@ enum DeploymentMode {
 
 /// Verwaltet den aktuellen Einsatzstatus und automatische Zeitsteuerung
 class DeploymentState {
-  static const _keyMode = 'deployment_mode';
-  static const _keyStartTime = 'deployment_start_ms';
-  static const _keyLastActivity = 'last_activity_ms';
+  static const _keyMode = AppPrefsKeys.deploymentMode;
+  static const _keyStartTime = AppPrefsKeys.deploymentStartMs;
+  static const _keyLastActivity = AppPrefsKeys.lastActivityMs;
 
   /// Aktuellen Einsatzmodus abrufen
   static Future<DeploymentMode> getMode() async {
