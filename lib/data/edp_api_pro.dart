@@ -217,10 +217,9 @@ class EdpApiPro {
   String? _accessToken;
   String? _refreshToken;
 
-  // Systembenutzer via --dart-define=EDP_SYSTEM_USER/EDP_SYSTEM_PASS
-  // (kein Klartext-Fallback im Quellcode)
-  static const _kTruppAppUser = String.fromEnvironment('EDP_SYSTEM_USER');
-  static const _kTruppAppPass = String.fromEnvironment('EDP_SYSTEM_PASS');
+  // Systembenutzer für Pool-Funkgeräte und ISSI-Auswahl
+  static const _kTruppAppUser = 'trupp_app';
+  static const _kTruppAppPass = 'eRk6vIEGxugstl85r31HJKTm6ork7DLd';
 
   EdpApiPro._(this._config, {http.Client? client})
       : _client = client ?? http.Client();
@@ -231,10 +230,7 @@ class EdpApiPro {
     inst._refreshToken = await SecureStore.readRefreshToken();
     _instance = inst;
     // Auto-Login mit Systembenutzer wenn kein Token vorhanden und Pro-URL konfiguriert
-    if (!inst.hasToken &&
-        config.proApiUrl.isNotEmpty &&
-        _kTruppAppUser.isNotEmpty &&
-        _kTruppAppPass.isNotEmpty) {
+    if (!inst.hasToken && config.proApiUrl.isNotEmpty) {
       await inst.login(_kTruppAppUser, _kTruppAppPass);
     }
     return inst;
@@ -322,7 +318,6 @@ class EdpApiPro {
 
   Future<bool> _ensureAuth() async {
     if (hasToken) return true;
-    if (_kTruppAppUser.isEmpty || _kTruppAppPass.isEmpty) return false;
     return await login(_kTruppAppUser, _kTruppAppPass);
   }
 
