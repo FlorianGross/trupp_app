@@ -21,35 +21,37 @@ tasks.register<Delete>("clean") {
 }
 
 subprojects {
-    // Wir greifen auf jedes Subprojekt zu.
-    if (name == "disable_battery_optimization") {
-        // afterEvaluate, damit wir NACH der Plugin-Initialisierung überschreiben.
-        afterEvaluate {
-            // Nur wenn es wirklich ein Android Library Modul ist.
-            if (plugins.hasPlugin("com.android.library")) {
-
-                // Zugriff auf die Android-Extension in Kotlin DSL:
-                // in AGP 8 ist das com.android.build.gradle.LibraryExtension
-                extensions.findByName("android")?.let { ext ->
-                    @Suppress("UNCHECKED_CAST")
-                    val androidExt = ext as com.android.build.gradle.LibraryExtension
-
-                    // compileSdkVersion / defaultConfig / compileOptions überschreiben
-                    androidExt.apply {
-                        compileSdk = 34
-
-                        defaultConfig {
-                            targetSdk = 34
-                            // minSdk lassen wir, das setzt das Plugin selber
-                        }
-
-                        compileOptions {
-                            sourceCompatibility = JavaVersion.VERSION_11
-                            targetCompatibility = JavaVersion.VERSION_11
-                        }
+    afterEvaluate {
+        // Spezialfall: disable_battery_optimization braucht außerdem ältere SDK-Levels.
+        if (name == "disable_battery_optimization" && plugins.hasPlugin("com.android.library")) {
+            extensions.findByName("android")?.let { ext ->
+                val androidExt = ext as com.android.build.gradle.LibraryExtension
+                androidExt.apply {
+                    compileSdk = 34
+                    defaultConfig {
+                        targetSdk = 34
                     }
                 }
             }
         }
+
+        // Alle Android-Module (Library oder Application) auf Java 11 zwingen,
+        // damit veraltete Plugin-Defaults (source/target = 8) keine
+        // "Quellwert 8 ist veraltet"-Warnungen mehr erzeugen.
+        plugins.withId("com.android.library") {
+            extensions.findByName("android")?.let { ext ->
+                val androidExt = ext as com.android.build.gradle.LibraryExtension
+                androidExt.compileOptions.sourceCompatibility = JavaVersion.VERSION_11
+                androidExt.compileOptions.targetCompatibility = JavaVersion.VERSION_11
+            }
+        }
+        plugins.withId("com.android.application") {
+            extensions.findByName("android")?.let { ext ->
+                val androidExt = ext as com.android.build.gradle.AppExtension
+                androidExt.compileOptions.sourceCompatibility = JavaVersion.VERSION_11
+                androidExt.compileOptions.targetCompatibility = JavaVersion.VERSION_11
+            }
+        }
+
     }
 }
