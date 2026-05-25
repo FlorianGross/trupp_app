@@ -3,17 +3,21 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_prefs.dart';
 
 /// Bündelt die für EDP nötige Konfiguration.
 @immutable
 class EdpConfig {
   final String protocol; // 'http' | 'https'
-  final String host; // z.B. 'example.org'
-  final int port; // z.B. 443
-  final String token; // Pfadsegment vor Endpoint
-  final String issi; // Geräte-/Teilnehmerkennung
-  final String trupp; // optional
-  final String leiter; // optional
+  final String host;     // Webhook-Server, z.B. 'edp.example.org'
+  final int port;        // Webhook-Port, z.B. 443
+  final String token;    // Pfadsegment vor Webhook-Endpoint
+  final String issi;     // Geräte-/Teilnehmerkennung
+  final String trupp;    // optional
+  final String leiter;   // optional
+  /// Vollständige URL des EDP-Pro-API-Servers, z.B. 'https://api.example.org'.
+  /// Wenn leer, wird der Webhook-Host als Fallback verwendet.
+  final String proApiUrl;
 
   const EdpConfig({
     required this.protocol,
@@ -23,6 +27,7 @@ class EdpConfig {
     required this.issi,
     required this.trupp,
     required this.leiter,
+    this.proApiUrl = '',
   });
 
   bool get isComplete =>
@@ -34,24 +39,33 @@ class EdpConfig {
 
   String get baseUrl => '$protocol://$host:$port';
 
+  /// Basis-URI für den Pro-API-Server (ohne Pfad).
+  Uri get proApiBaseUri {
+    if (proApiUrl.isNotEmpty) {
+      return Uri.parse(proApiUrl);
+    }
+    return Uri(scheme: protocol, host: host, port: port);
+  }
+
   Map<String, String> toPrefs() => {
-    'protocol': protocol,
-    'server': '$host:$port', // historisch bei dir so gespeichert
-    'token': token,
-    'issi': issi,
-    'hasConfig': 'true',
-    'trupp': trupp,
-    'leiter': leiter,
+    AppPrefsKeys.protocol: protocol,
+    AppPrefsKeys.server: '$host:$port',
+    AppPrefsKeys.token: token,
+    AppPrefsKeys.issi: issi,
+    AppPrefsKeys.hasConfig: 'true',
+    AppPrefsKeys.trupp: trupp,
+    AppPrefsKeys.leiter: leiter,
+    AppPrefsKeys.proApiUrl: proApiUrl,
   };
 
   static Future<EdpConfig?> fromPrefs(SharedPreferences prefs) async {
-    // Historisch speicherst du server als 'host:port'
-    final protocol = prefs.getString('protocol') ?? '';
-    final serverPort = prefs.getString('server') ?? '';
-    final token = prefs.getString('token') ?? '';
-    final issi = prefs.getString('issi') ?? '';
-    final trupp = prefs.getString('trupp') ?? '';
-    final leiter = prefs.getString('leiter') ?? '';
+    final protocol = prefs.getString(AppPrefsKeys.protocol) ?? '';
+    final serverPort = prefs.getString(AppPrefsKeys.server) ?? '';
+    final token = prefs.getString(AppPrefsKeys.token) ?? '';
+    final issi = prefs.getString(AppPrefsKeys.issi) ?? '';
+    final trupp = prefs.getString(AppPrefsKeys.trupp) ?? '';
+    final leiter = prefs.getString(AppPrefsKeys.leiter) ?? '';
+    final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
 
     if (protocol.isEmpty ||
         serverPort.isEmpty ||
@@ -77,6 +91,7 @@ class EdpConfig {
       issi: issi,
       trupp: trupp,
       leiter: leiter,
+      proApiUrl: proApiUrl,
     );
   }
 }
@@ -146,13 +161,14 @@ class EdpApi {
   Future<void> updateConfig(EdpConfig config) async {
     _config = config;
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('protocol', config.protocol);
-    await prefs.setString('server', '${config.host}:${config.port}');
-    await prefs.setString('token', config.token);
-    await prefs.setString('issi', config.issi);
-    await prefs.setBool('hasConfig', true);
-    await prefs.setString('leiter', config.leiter);
-    await prefs.setString('trupp', config.trupp);
+    await prefs.setString(AppPrefsKeys.protocol, config.protocol);
+    await prefs.setString(AppPrefsKeys.server, '${config.host}:${config.port}');
+    await prefs.setString(AppPrefsKeys.token, config.token);
+    await prefs.setString(AppPrefsKeys.issi, config.issi);
+    await prefs.setBool(AppPrefsKeys.hasConfig, true);
+    await prefs.setString(AppPrefsKeys.leiter, config.leiter);
+    await prefs.setString(AppPrefsKeys.trupp, config.trupp);
+    await prefs.setString(AppPrefsKeys.proApiUrl, config.proApiUrl);
   }
 
   Uri _uri(String path, Map<String, String> qp) {
@@ -208,20 +224,20 @@ class EdpApi {
       return sendGps(lat: lat, lon: lon);
     }
     // Fallback: GPS-Endpoint mit letzter bekannter Position (0,0 = ungültig aber Server antwortet)
-    final url = _uri('gpsposition', {'issi': _config.issi, 'lat': '0', 'lon': '0'});
+    final url = _uri('gpsposition', {AppPrefsKeys.issi: _config.issi, 'lat': '0', 'lon': '0'});
     return _getWithRetry(url);
   }
 
   /// Sendet einen Status (0..9).
   Future<EdpResult> sendStatus(int status) {
-    final url = _uri('setstatus', {'issi': _config.issi, 'status': '$status'});
+    final url = _uri('setstatus', {AppPrefsKeys.issi: _config.issi, 'status': '$status'});
     return _getWithRetry(url);
   }
 
   /// Sendet eine GPS-Position.
   Future<EdpResult> sendGps({required double lat, required double lon}) {
     final url = _uri('gpsposition', {
-      'issi': _config.issi,
+      AppPrefsKeys.issi: _config.issi,
       'lat': _fmt(lat),
       'lon': _fmt(lon),
     });
@@ -230,23 +246,122 @@ class EdpApi {
 
   /// Sendet eine kurze Textnachricht (SDS) an /incommingsds?issi=&text=
   Future<EdpResult> sendSdsText(String text) {
-    final url = _uri('incommingsds', {'issi': _config.issi, 'text': text});
+    final url = _uri('incommingsds', {AppPrefsKeys.issi: _config.issi, 'text': text});
     return _getWithRetry(url);
   }
 
   /// Sendet eine SDS-Nachricht im Namen einer anderen ISSI (für Melde-Editor).
   Future<EdpResult> sendSdsForIssi(String issi, String text) {
-    final url = _uri('incommingsds', {'issi': issi, 'text': text});
+    final url = _uri('incommingsds', {AppPrefsKeys.issi: issi, 'text': text});
     return _getWithRetry(url);
   }
 
   /// Bequemlichkeit: ist die gespeicherte Konfiguration verwendbar?
   static Future<bool> hasValidConfigInPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final hasConfig = prefs.getBool('hasConfig') ?? false;
+    final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;
     final cfg = await EdpConfig.fromPrefs(prefs);
     return hasConfig && cfg != null && cfg.isComplete;
   }
 
   void close() => _client.close();
+}
+
+// ---------------------------------------------------------------------------
+// Gemeinsame Modelle
+// ---------------------------------------------------------------------------
+
+class EdpTetraEndgeraet {
+  final String issi;
+  final String? rufname;
+  final String? opta;
+  final int type;
+  final int poolGeraet; // 1 = Pool-Gerät (für Onboarding-Auswahl)
+
+  const EdpTetraEndgeraet({
+    required this.issi,
+    this.rufname,
+    this.opta,
+    this.type = 0,
+    this.poolGeraet = 0,
+  });
+
+  factory EdpTetraEndgeraet.fromJson(Map<String, dynamic> j) =>
+      EdpTetraEndgeraet(
+        issi: (j[AppPrefsKeys.issi] as String?) ?? '',
+        rufname: j['rufname'] as String?,
+        opta: j['opta'] as String?,
+        type: (j['type'] as int?) ?? 0,
+        poolGeraet: (j['poolGeraet'] as int?) ?? 0,
+      );
+
+  bool get isPool => poolGeraet == 1;
+
+  String get displayLabel {
+    final name = rufname?.isNotEmpty == true ? rufname! : (opta ?? '');
+    return name.isNotEmpty ? '$name ($issi)' : issi;
+  }
+}
+
+class EdpEinsatzmittel {
+  final String rufname;
+  final String? rufnameLang;
+  final String? status;
+  final String? typ;
+  final String? einsatz;
+  final String? einsatznummer;
+  final int? besatzung0;
+  final int? besatzung1;
+  final int? besatzung2;
+  final int? besatzungGes;
+  final double? koordX;
+  final double? koordY;
+  final String? wache;
+  final String? abschnitt;
+  final DateTime? zeitstempel;
+
+  const EdpEinsatzmittel({
+    required this.rufname,
+    this.rufnameLang,
+    this.status,
+    this.typ,
+    this.einsatz,
+    this.einsatznummer,
+    this.besatzung0,
+    this.besatzung1,
+    this.besatzung2,
+    this.besatzungGes,
+    this.koordX,
+    this.koordY,
+    this.wache,
+    this.abschnitt,
+    this.zeitstempel,
+  });
+
+  factory EdpEinsatzmittel.fromJson(Map<String, dynamic> j) =>
+      EdpEinsatzmittel(
+        rufname: (j['rufname'] as String?) ?? '',
+        rufnameLang: j['rufnameLang'] as String?,
+        status: j['status'] as String?,
+        typ: j['typ'] as String?,
+        einsatz: j['einsatz'] as String?,
+        einsatznummer: j['einsatznummer'] as String?,
+        besatzung0: j['besatzung0'] as int?,
+        besatzung1: j['besatzung1'] as int?,
+        besatzung2: j['besatzung2'] as int?,
+        besatzungGes: j['besatzungGes'] as int?,
+        koordX: (j['koordX'] as num?)?.toDouble(),
+        koordY: (j['koordY'] as num?)?.toDouble(),
+        wache: j['wache'] as String?,
+        abschnitt: j['abschnitt'] as String?,
+        zeitstempel: j['zeitstempel'] != null
+            ? DateTime.tryParse(j['zeitstempel'] as String)
+            : null,
+      );
+
+  String get displayName =>
+      rufnameLang?.isNotEmpty == true ? '${rufnameLang!} ($rufname)' : rufname;
+
+  bool get hasCoordinates =>
+      koordX != null && koordY != null && koordX != 0.0 && koordY != 0.0;
 }

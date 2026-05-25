@@ -2,6 +2,7 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_prefs.dart';
 import 'package:trupp_app/data/location_queue.dart';
 
 class GpxExporter {
@@ -11,11 +12,11 @@ class GpxExporter {
     required int endMs,
   }) async {
     final prefs = await SharedPreferences.getInstance();
-    final issi     = prefs.getString('issi') ?? 'unknown';
-    final trupp    = prefs.getString('trupp') ?? '';
-    final leiter   = prefs.getString('leiter') ?? '';
-    final protocol = prefs.getString('protocol') ?? '';
-    final server   = prefs.getString('server') ?? '';
+    final issi     = prefs.getString(AppPrefsKeys.issi) ?? 'unknown';
+    final trupp    = prefs.getString(AppPrefsKeys.trupp) ?? '';
+    final leiter   = prefs.getString(AppPrefsKeys.leiter) ?? '';
+    final protocol = prefs.getString(AppPrefsKeys.protocol) ?? '';
+    final server   = prefs.getString(AppPrefsKeys.server) ?? '';
 
     final fixes = await LocationQueue.instance.byTimeRange(fromMs: startMs, toMs: endMs);
     final start = DateTime.fromMillisecondsSinceEpoch(startMs, isUtc: true);
@@ -74,11 +75,11 @@ class GpxExporter {
 
   static Future<String> exportAllFixesToGpx() async {
     final prefs = await SharedPreferences.getInstance();
-    final issi   = prefs.getString('issi') ?? 'unknown';
-    final trupp  = prefs.getString('trupp') ?? '';
-    final leiter = prefs.getString('leiter') ?? '';
-    final protocol = prefs.getString('protocol') ?? '';
-    final server  = prefs.getString('server') ?? ''; // host:port
+    final issi   = prefs.getString(AppPrefsKeys.issi) ?? 'unknown';
+    final trupp  = prefs.getString(AppPrefsKeys.trupp) ?? '';
+    final leiter = prefs.getString(AppPrefsKeys.leiter) ?? '';
+    final protocol = prefs.getString(AppPrefsKeys.protocol) ?? '';
+    final server  = prefs.getString(AppPrefsKeys.server) ?? ''; // host:port
 
     final fixes = await LocationQueue.instance.all();
     final now = DateTime.now().toUtc();

@@ -1,6 +1,8 @@
 // lib/staerke_editor_screen.dart
 import 'package:flutter/material.dart';
 import 'data/edp_api.dart';
+import 'data/edp_api_pro.dart';
+import 'pro/staerke_edp_screen.dart';
 
 /// Hilfsklasse zum Kodieren/Dekodieren von ISSIs im BOS-Format.
 ///
@@ -29,6 +31,7 @@ class IssiHelper {
   /// Gibt die ISSI unverändert zurück, wenn das Format nicht passt.
   static String decode(String issi) {
     return issi;
+    // ignore: dead_code
     if (issi.length != 5 || !RegExp(r'^\d{5}$').hasMatch(issi)) return issi;
     final b = _bereichNames[issi[0]] ?? issi[0];
     final w = issi[1].padLeft(2, '0');
@@ -41,6 +44,7 @@ class IssiHelper {
   /// Gibt null zurück, wenn das Format nicht erkannt wird.
   static String? encode(String display) {
     return display;
+    // ignore: dead_code
     final re = RegExp(r'^RK\s+(\w+)\s+0?(\d)/(\d{2})-(\d)$');
     final m = re.firstMatch(display.trim());
     if (m == null) return null;
@@ -76,13 +80,27 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
   int _mannschaft = 0;
 
   bool _isSending = false;
+  bool _proAvailable = false;
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkProAvailable();
+  }
 
   @override
   void dispose() {
     _issiCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _checkProAvailable() async {
+    final api = EdpApiPro.instance;
+    if (mounted) {
+      setState(() => _proAvailable = api != null && api.hasToken);
+    }
   }
 
   void _onIssiChanged(String value) {
@@ -160,6 +178,29 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Pro-Banner ───────────────────────────────────────────────
+              if (_proAvailable)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: OutlinedButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) => const StaerkeEdpScreen()),
+                    ).then((_) => _checkProAvailable()),
+                    icon: Icon(Icons.star,
+                        color: Colors.amber.shade700, size: 16),
+                    label: const Text('Pro: Fahrzeug aus EDP-Bestand wählen'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.red.shade800,
+                      side: BorderSide(color: Colors.red.shade200),
+                      minimumSize: const Size.fromHeight(44),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ),
+                  ),
+                ),
+
               // ── Fahrzeug / ISSI ──────────────────────────────────────────
               _buildCard(
                 cardBg: cardBg,
@@ -237,8 +278,8 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                       children: [
                         Expanded(
                           child: _buildStaerkeField(
-                            abbr: 'F',
-                            label: 'Führung',
+                            abbr: 'ZF',
+                            label: 'Zugführung',
                             value: _fuehrung,
                             onChanged: (v) => setState(() => _fuehrung = v),
                           ),
@@ -246,8 +287,8 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: _buildStaerkeField(
-                            abbr: 'U',
-                            label: 'Unterführer',
+                            abbr: 'GF',
+                            label: 'Gruppenführer',
                             value: _unterfuehrer,
                             onChanged: (v) =>
                                 setState(() => _unterfuehrer = v),

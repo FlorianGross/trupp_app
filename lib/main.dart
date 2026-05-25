@@ -7,10 +7,15 @@ import 'package:trupp_app/alarm_overlay.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'ConfigScreen.dart';
+import 'onboarding_screen.dart';
 import 'data/alarm_model.dart';
+import 'data/unit_type_store.dart';
 import 'status_overview_screen.dart';
+import 'unit_type_picker_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
+import 'data/app_prefs.dart';
+import 'data/app_logger.dart';
 
 // Overlay-Entry-Point hier referenzieren, damit der Dart-Linker ihn nicht entfernt.
 // Die eigentliche Funktion liegt in alarm_overlay.dart.
@@ -25,7 +30,7 @@ final ValueNotifier<ThemeMode> themeNotifier = ValueNotifier(ThemeMode.light);
 
 Future<void> _loadThemePreference() async {
   final prefs = await SharedPreferences.getInstance();
-  final isDark = prefs.getBool('darkMode') ?? false;
+  final isDark = prefs.getBool(AppPrefsKeys.darkMode) ?? false;
   themeNotifier.value = isDark ? ThemeMode.dark : ThemeMode.light;
 }
 
@@ -33,7 +38,7 @@ Future<void> toggleTheme() async {
   final isDark = themeNotifier.value == ThemeMode.dark;
   themeNotifier.value = isDark ? ThemeMode.light : ThemeMode.dark;
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setBool('darkMode', !isDark);
+  await prefs.setBool(AppPrefsKeys.darkMode, !isDark);
 }
 
 Future<void> main() async {
@@ -41,14 +46,15 @@ Future<void> main() async {
 
   try {
     await initializeBackgroundService();
-  } catch (_) {
-    // Background-Service wird auf dem Simulator nicht unterstützt
+  } catch (e, st) {
+    // Auf dem Simulator nicht unterstützt — auf echten Geräten unerwartet
+    AppLogger.w('main', 'Background-Service Init fehlgeschlagen', e);
+    if (st.toString().isNotEmpty) AppLogger.e('main', '', null, st);
   }
 
   await _loadThemePreference();
 
   // Benachrichtigungs-Plugin im Haupt-Isolate initialisieren.
-  // Tap auf "Details" oder Notification-Body öffnet die Alarm-Übersicht.
   await AlarmNotificationService.initialize(
     onTap: (alarm) {
       navigatorKey.currentState?.push(
@@ -60,31 +66,39 @@ Future<void> main() async {
   );
 
   final prefs = await SharedPreferences.getInstance();
-  final hasConfig = prefs.getBool('hasConfig') ?? false;
+  final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;
 
+  UnitType? unitType;
   if (hasConfig) {
     await EdpApi.initFromPrefs();
 
-    // GPS-Übertragung nach jedem App-Start deaktiviert (muss explizit aktiviert werden)
-    await prefs.setBool('transmissionEnabled', false);
+    // GPS-Übertragung nach jedem App-Start deaktiviert
+    await prefs.setBool(AppPrefsKeys.transmissionEnabled, false);
 
-    // Hintergrund-Service für Alarm-Empfang starten, auch ohne aktive GPS-Übertragung
-    final pbConfigured = (prefs.getString('pb_url') ?? '').isNotEmpty
-        && (prefs.getString('issi') ?? '').isNotEmpty;
+    // Hintergrund-Service für Alarm-Empfang starten
+    final pbConfigured = (prefs.getString(AppPrefsKeys.pbUrl) ?? '').isNotEmpty
+        && (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
     if (pbConfigured) {
       try {
         final svc = FlutterBackgroundService();
         if (!await svc.isRunning()) {
           await svc.startService();
         }
-      } catch (_) {}
+      } catch (e, st) {
+        AppLogger.e('main', 'Background-Service konnte nicht gestartet werden', e, st);
+      }
     }
+
+    unitType = await UnitTypeStore.load();
   }
 
-  // Prüfen ob ein Alarm aus einer Notification-Tap geöffnet wurde (Kaltstart)
   final pendingAlarm = await AlarmNotificationService.getPendingAlarm();
 
-  runApp(MyApp(hasConfig: hasConfig, pendingAlarm: pendingAlarm));
+  runApp(MyApp(
+    hasConfig: hasConfig,
+    pendingAlarm: pendingAlarm,
+    unitType: unitType,
+  ));
 }
 
 final _lightTheme = ThemeData(
@@ -114,8 +128,14 @@ final _darkTheme = ThemeData(
 class MyApp extends StatefulWidget {
   final bool hasConfig;
   final AlarmData? pendingAlarm;
+  final UnitType? unitType;
 
-  const MyApp({super.key, required this.hasConfig, this.pendingAlarm});
+  const MyApp({
+    super.key,
+    required this.hasConfig,
+    this.pendingAlarm,
+    this.unitType,
+  });
 
   @override
   State<MyApp> createState() => _MyAppState();
@@ -125,7 +145,6 @@ class _MyAppState extends State<MyApp> {
   @override
   void initState() {
     super.initState();
-    // Nach dem ersten Frame: ggf. Alarm-Übersicht öffnen (Kaltstart via Notification)
     if (widget.pendingAlarm != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         navigatorKey.currentState?.push(
@@ -135,6 +154,17 @@ class _MyAppState extends State<MyApp> {
         );
       });
     }
+  }
+
+  Widget _homeScreen() {
+    if (!widget.hasConfig) return const OnboardingScreen();
+    if (widget.unitType == null) {
+      return UnitTypePickerScreen(
+        allowBack: false,
+        onComplete: () => const StatusOverview(),
+      );
+    }
+    return const StatusOverview();
   }
 
   @override
@@ -150,7 +180,7 @@ class _MyAppState extends State<MyApp> {
             theme: _lightTheme,
             darkTheme: _darkTheme,
             themeMode: themeMode,
-            home: widget.hasConfig ? const StatusOverview() : const ConfigScreen(),
+            home: _homeScreen(),
           ),
         );
       },

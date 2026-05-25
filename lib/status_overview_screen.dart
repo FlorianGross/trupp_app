@@ -1,4 +1,3 @@
-// lib/screens/status_overview_screen.dart
 import 'dart:async';
 import 'dart:io';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
@@ -12,6 +11,7 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'data/app_prefs.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:trupp_app/system_check_screen.dart';
 import 'ConfigScreen.dart';
@@ -37,6 +37,9 @@ import 'alarm_overlay.dart' show kOverlayOpenDetail;
 import 'data/alarm_store.dart';
 import 'data/alarm_service.dart';
 
+import 'data/unit_type_store.dart';
+import 'simplified_status_panel.dart';
+import 'unit_type_picker_screen.dart';
 enum _ConnectionState { unknown, connected, degraded, disconnected }
 
 class StatusOverview extends StatefulWidget {
@@ -100,6 +103,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   // Aktiver Profilname (für AppBar-Anzeige)
   String _activeProfileName = '';
+
+  UnitType? _unitType;
+  bool _gpsLoading = false;
 
   // Kurzstatus 0/9/5 → nach 5s zurück
   bool _isTempStatus(int s) => s == 0 || s == 9 || s == 5;
@@ -227,12 +233,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _maybeCleanupDatabase() async {
     final prefs = await SharedPreferences.getInstance();
-    final lastCleanup = prefs.getInt('lastDbCleanupMs') ?? 0;
+    final lastCleanup = prefs.getInt(AppPrefsKeys.lastDbCleanupMs) ?? 0;
     final now = DateTime.now().millisecondsSinceEpoch;
     const cleanupInterval = Duration(hours: 24);
     if ((now - lastCleanup) >= cleanupInterval.inMilliseconds) {
       await LocationSyncManager.instance.cleanupOldEntries(maxAgeDays: 30);
-      await prefs.setInt('lastDbCleanupMs', now);
+      await prefs.setInt(AppPrefsKeys.lastDbCleanupMs, now);
     }
   }
 
@@ -245,10 +251,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     await _refreshAlarmBadge();
 
     final prefs = await SharedPreferences.getInstance();
-    final firstRun = !(prefs.getBool('onboarded') ?? false);
+    final firstRun = !(prefs.getBool(AppPrefsKeys.onboarded) ?? false);
     if (firstRun) {
       await _firstRunPermissionFlow();
-      await prefs.setBool('onboarded', true);
+      await prefs.setBool(AppPrefsKeys.onboarded, true);
     }
 
     // Hintergrund-Berechtigung sicherstellen
@@ -266,7 +272,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       await _requestOverlayPermission();
     }
 
-    final last = prefs.getInt('lastStatus') ?? 1;
+    final last = prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
     final autoDeact = prefs.getInt('autoDeactivateMinutes') ?? 0;
 
     final activeProfile = await ProfileStore.activeName() ?? '';
@@ -394,7 +400,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     // Einsatz-Timer laden
     if (_deploymentMode == DeploymentMode.deployed) {
       final prefs = await SharedPreferences.getInstance();
-      _deploymentStartMs = prefs.getInt('deployment_start_ms') ?? 0;
+      _deploymentStartMs = prefs.getInt(AppPrefsKeys.deploymentStartMs) ?? 0;
       _startDeploymentTimer();
       WakelockPlus.enable();
     } else {
@@ -429,7 +435,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<int> _getCurrentStatus() async {
     final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt('lastStatus') ?? 1;
+    return prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
   }
 
   Future<void> _updateBatteryLevel() async {
@@ -449,12 +455,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    final sp = prefs.getString('protocol') ?? protocol;
-    final sv = prefs.getString('server') ?? server;
-    final tk = prefs.getString('token') ?? token;
-    final tr = prefs.getString('trupp') ?? trupp;
-    final lt = prefs.getString('leiter') ?? leiter;
-    final iss = prefs.getString('issi') ?? issi;
+    final sp = prefs.getString(AppPrefsKeys.protocol) ?? protocol;
+    final sv = prefs.getString(AppPrefsKeys.server) ?? server;
+    final tk = prefs.getString(AppPrefsKeys.token) ?? token;
+    final tr = prefs.getString(AppPrefsKeys.trupp) ?? trupp;
+    final lt = prefs.getString(AppPrefsKeys.leiter) ?? leiter;
+    final iss = prefs.getString(AppPrefsKeys.issi) ?? issi;
     String host = sv;
     String prt = '';
     if (host.contains(':')) {
@@ -472,6 +478,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       leiter = lt;
       issi = iss;
     });
+    _unitType = await UnitTypeStore.load();
   }
 
   Future<void> _ensureNotificationPermission() async {
@@ -614,7 +621,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Future<void> _setBackgroundTracking(bool enabled) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('transmissionEnabled', enabled);
+      await prefs.setBool(AppPrefsKeys.transmissionEnabled, enabled);
 
       final svc = FlutterBackgroundService();
       if (enabled) {
@@ -644,7 +651,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     selectedStatus = st;
 
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('lastStatus', st);
+    await prefs.setInt(AppPrefsKeys.lastStatus, st);
     await DeploymentState.updateActivity();
 
     final svc = FlutterBackgroundService();
@@ -1110,12 +1117,12 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
     setState(() {
-      protocol = prefs.getString('protocol') ?? protocol;
-      server = prefs.getString('server') ?? server;
-      token = prefs.getString('token') ?? token;
-      trupp = prefs.getString('trupp') ?? trupp;
-      leiter = prefs.getString('leiter') ?? leiter;
-      issi = prefs.getString('issi') ?? issi;
+      protocol = prefs.getString(AppPrefsKeys.protocol) ?? protocol;
+      server = prefs.getString(AppPrefsKeys.server) ?? server;
+      token = prefs.getString(AppPrefsKeys.token) ?? token;
+      trupp = prefs.getString(AppPrefsKeys.trupp) ?? trupp;
+      leiter = prefs.getString(AppPrefsKeys.leiter) ?? leiter;
+      issi = prefs.getString(AppPrefsKeys.issi) ?? issi;
     });
   }
 
@@ -1176,9 +1183,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Widget _buildMenuContent() {
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
           Text(
             'Menü',
             style: TextStyle(
@@ -1280,6 +1288,14 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             },
           ),
           _buildMenuItem(
+            icon: Icons.directions_run,
+            title: 'Einheit wechseln',
+            onTap: () {
+              Navigator.pop(context);
+              _changeUnitType();
+            },
+          ),
+          _buildMenuItem(
             icon: themeNotifier.value == ThemeMode.dark
                 ? Icons.light_mode
                 : Icons.dark_mode,
@@ -1290,9 +1306,52 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             },
           ),
         ],
+        ),
       ),
     );
   }
+
+  Future<void> _manualSendGps() async {
+    setState(() => _gpsLoading = true);
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+      await LocationSyncManager.instance.sendOrQueue(
+        lat: position.latitude,
+        lon: position.longitude,
+        accuracy: position.accuracy,
+        status: selectedStatus ?? 2,
+        timestamp: position.timestamp ?? DateTime.now(),
+      );
+      await LocationSyncManager.instance.flushPendingNow();
+      _showSnackbar('Position gesendet', success: true);
+    } catch (_) {
+      _showSnackbar('GPS-Fehler', success: false);
+    } finally {
+      if (mounted) setState(() => _gpsLoading = false);
+    }
+  }
+
+  Future<void> _changeUnitType() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => UnitTypePickerScreen(
+          allowBack: true,
+          onComplete: null,
+        ),
+      ),
+    );
+    if (mounted) {
+      final type = await UnitTypeStore.load();
+      setState(() => _unitType = type);
+    }
+  }
+
 
   Widget _buildMenuItem({
     required IconData icon,
@@ -1325,10 +1384,35 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     );
   }
 
-  void _showQrCode() {
-    final deeplink =
-        'truppapp://config?protocol=$protocol&server=$server:$port&token=$token&issi=$issi&trupp=$trupp&leiter=$leiter';
+  Future<void> _showQrCode() async {
+    // EdpApi.instance.config ist die echte Single Source of Truth —
+    // State-Variablen (server, token, …) können beim ersten Laden noch
+    // auf Defaults stehen.
+    final cfg = EdpApi.instance.config;
+    final prefs = await SharedPreferences.getInstance();
+    final pbUrl = prefs.getString(AppPrefsKeys.pbUrl) ?? '';
+    // proApiUrl bevorzugt aus config (wurde dort immer mitgespeichert)
+    final proApiUrl = cfg.proApiUrl.isNotEmpty
+        ? cfg.proApiUrl
+        : (prefs.getString(AppPrefsKeys.proApiUrl) ?? '');
 
+    final params = <String, String>{
+      'protocol': cfg.protocol,
+      'server': '${cfg.host}:${cfg.port}',
+      'token': cfg.token,
+      'issi': cfg.issi,
+      if (cfg.trupp.isNotEmpty) 'trupp': cfg.trupp,
+      if (cfg.leiter.isNotEmpty) 'leiter': cfg.leiter,
+      if (pbUrl.isNotEmpty) 'pb_url': pbUrl,
+      if (proApiUrl.isNotEmpty) 'pro_api_url': proApiUrl,
+    };
+    final deeplink = Uri(
+      scheme: 'truppapp',
+      host: 'config',
+      queryParameters: params,
+    ).toString();
+
+    if (!mounted) return;
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
@@ -1341,12 +1425,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Config QR-Code',
+                'Konfigurations-QR-Code',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
                   color: Colors.red.shade800,
                 ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                cfg.host,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
               ),
               const SizedBox(height: 16),
               Container(
@@ -1358,25 +1447,37 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 ),
                 child: QrImageView(
                   data: deeplink,
-                  size: 200,
+                  size: 220,
                   backgroundColor: Colors.white,
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              // Zeige welche optionalen Parameter enthalten sind
+              Wrap(
+                spacing: 6,
+                children: [
+                  if (pbUrl.isNotEmpty)
+                    _QrParamChip(label: 'Bereitschafts-App'),
+                  if (proApiUrl.isNotEmpty)
+                    _QrParamChip(label: 'EDP-Pro-API'),
+                ],
+              ),
+              const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton(
+                child: ElevatedButton.icon(
                   onPressed: () async {
                     await Clipboard.setData(ClipboardData(text: deeplink));
                     if (mounted) Navigator.pop(context);
                     _showSnackbar('Link kopiert', success: true);
                   },
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('Link kopieren'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.red.shade800,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: const Text('Link kopieren'),
                 ),
               ),
             ],
@@ -1479,11 +1580,19 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     ),
                   ],
                 ),
-                child: Keypad(
-                  onPressed: _onStatusPressed,
-                  selectedStatus: selectedStatus,
-                  lastPersistentStatus: _lastPersistentStatus,
-                ),
+                child: (_unitType == null || _unitType == UnitType.erfahren)
+                    ? Keypad(
+                        onPressed: _onStatusPressed,
+                        selectedStatus: selectedStatus,
+                        lastPersistentStatus: _lastPersistentStatus,
+                      )
+                    : SimplifiedStatusPanel(
+                        unitType: _unitType!,
+                        onStatusPressed: _onStatusPressed,
+                        onSendGps: _manualSendGps,
+                        selectedStatus: selectedStatus,
+                        gpsLoading: _gpsLoading,
+                      ),
               ),
             ],
           ),
@@ -2147,6 +2256,23 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           ],
         ),
       ),
+    );
+  }
+}
+
+class _QrParamChip extends StatelessWidget {
+  final String label;
+  const _QrParamChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Chip(
+      label: Text(label, style: const TextStyle(fontSize: 11)),
+      padding: EdgeInsets.zero,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      backgroundColor: Colors.green.shade50,
+      side: BorderSide(color: Colors.green.shade200),
+      labelStyle: TextStyle(color: Colors.green.shade700),
     );
   }
 }

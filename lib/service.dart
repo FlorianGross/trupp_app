@@ -6,6 +6,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'data/app_prefs.dart';
+import 'data/app_logger.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'data/edp_api.dart';
@@ -85,7 +87,7 @@ StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
 Future<int> _readStatusFromPrefs() async {
   final prefs = await SharedPreferences.getInstance();
-  return prefs.getInt('lastStatus') ?? 0;
+  return prefs.getInt(AppPrefsKeys.lastStatus) ?? 0;
 }
 
 Future<bool> _hasValidConfig() async {
@@ -146,8 +148,8 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
         content: _getNotificationContent(),
       );
     }
-  } catch (_) {
-    //print("Error sending position, queuing.");
+  } catch (e, st) {
+    AppLogger.e('LocationService', 'Positionsübertragung fehlgeschlagen', e, st);
   }
 }
 
@@ -191,7 +193,9 @@ Future<void> _heartbeatTick(ServiceInstance service) async {
     );
 
     await _sendPositionIfOk(service, pos, forceByHeartbeat: true);
-  } catch (_) {}
+  } catch (e, st) {
+    AppLogger.e('LocationService', 'Heartbeat-GPS fehlgeschlagen', e, st);
+  }
 }
 
 void _scheduleNextHeartbeat(ServiceInstance service) {
@@ -236,11 +240,11 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
 
     // Konfigurierbarer Auto-Deaktivierungs-Timer
     final prefs = await SharedPreferences.getInstance();
-    final autoDeactMin = prefs.getInt('autoDeactivateMinutes') ?? 0;
+    final autoDeactMin = prefs.getInt(AppPrefsKeys.autoDeactivateMinutes) ?? 0;
     if (autoDeactMin > 0 && await DeploymentState.shouldAutoStop(inactiveMinutes: autoDeactMin)) {
       await DeploymentState.setMode(DeploymentMode.standby);
       _deploymentMode = DeploymentMode.standby;
-      await prefs.setBool('transmissionEnabled', false);
+      await prefs.setBool(AppPrefsKeys.transmissionEnabled, false);
       // Timers und Subscriptions kündigen bevor Service stoppt
       _hbTimer?.cancel();
       _flushTimer?.cancel();
@@ -265,7 +269,9 @@ void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
     try {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 100);
-    } catch (_) {}
+    } catch (e, st) {
+      AppLogger.e('LocationService', 'Periodischer Flush fehlgeschlagen', e, st);
+    }
     // Notification aktualisieren mit aktuellem Pending-Count
     if (service is AndroidServiceInstance) {
       await service.setForegroundNotificationInfo(
@@ -288,7 +294,9 @@ void _startConnectivityListener() {
       // Netzwerk ist (wieder) da → sofort ausstehende Positionen senden
       try {
         await LocationSyncManager.instance.flushPendingNow(batchSize: 200);
-      } catch (_) {}
+      } catch (e, st) {
+        AppLogger.e('LocationService', 'Connectivity-Flush fehlgeschlagen', e, st);
+      }
     }
   });
 }
@@ -304,7 +312,7 @@ Future<void> onStart(ServiceInstance service) async {
   await AlarmNotificationService.initialize();
   final prefs = await SharedPreferences.getInstance();
   final pbUrl = prefs.getString(AlarmService.kPbUrlKey) ?? '';
-  final ownIssi = prefs.getString('issi') ?? '';
+  final ownIssi = prefs.getString(AppPrefsKeys.issi) ?? '';
   if (pbUrl.isNotEmpty && ownIssi.isNotEmpty) {
     await AlarmService.start(
       pbUrl: pbUrl,
@@ -503,7 +511,7 @@ Future<void> onStart(ServiceInstance service) async {
   // (verhindert Auto-Start nach Neustart – Alarm-Subscription läuft bereits)
   if (await _hasValidConfig()) {
     final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool('transmissionEnabled') ?? false) {
+    if (prefs.getBool(AppPrefsKeys.transmissionEnabled) ?? false) {
       await startTracking();
     }
   }
@@ -513,14 +521,14 @@ const _flushInterval = Duration(minutes: 5);
 
 Future<bool> _shouldFlushNow() async {
   final prefs = await SharedPreferences.getInstance();
-  final last = prefs.getInt('lastFlushMs') ?? 0;
+  final last = prefs.getInt(AppPrefsKeys.lastFlushMs) ?? 0;
   final now = DateTime.now().millisecondsSinceEpoch;
   return (now - last) >= _flushInterval.inMilliseconds;
 }
 
 Future<void> _markFlushedNow() async {
   final prefs = await SharedPreferences.getInstance();
-  await prefs.setInt('lastFlushMs', DateTime.now().millisecondsSinceEpoch);
+  await prefs.setInt(AppPrefsKeys.lastFlushMs, DateTime.now().millisecondsSinceEpoch);
 }
 
 @pragma('vm:entry-point')
@@ -565,7 +573,9 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
     // 4) PocketBase-Poll: neue Alarme holen (iOS kann keine SSE-Verbindung halten)
     await _pollAlarms();
-  } catch (_) {}
+  } catch (e, st) {
+    AppLogger.e('iOSBackground', 'iOS-Hintergrundhandler fehlgeschlagen', e, st);
+  }
   return true;
 }
 
@@ -575,13 +585,13 @@ Future<void> _pollAlarms() async {
   try {
     final prefs = await SharedPreferences.getInstance();
     final pbUrl = prefs.getString(AlarmService.kPbUrlKey) ?? '';
-    final ownIssi = prefs.getString('issi') ?? '';
+    final ownIssi = prefs.getString(AppPrefsKeys.issi) ?? '';
     if (pbUrl.isEmpty || ownIssi.isEmpty) return;
 
     await AlarmNotificationService.initialize();
 
     // Letzten bekannten Alarm-Timestamp lesen
-    final lastTs = prefs.getString('ios_bg_last_alarm_ts') ?? '';
+    final lastTs = prefs.getString(AppPrefsKeys.iosBgLastAlarmTs) ?? '';
 
     final pb = PocketBase(pbUrl);
     final result = await pb.collection('alarms').getList(
@@ -601,8 +611,10 @@ Future<void> _pollAlarms() async {
     await AlarmStore.add(alarm);
     await AlarmNotificationService.show(alarm);
 
-    await prefs.setString('ios_bg_last_alarm_ts', latestTs);
-  } catch (_) {}
+    await prefs.setString(AppPrefsKeys.iosBgLastAlarmTs, latestTs);
+  } catch (e, st) {
+    AppLogger.e('iOSBackground', 'Alarm-Poll fehlgeschlagen', e, st);
+  }
 }
 
 Future<void> initializeBackgroundService() async {

@@ -21,6 +21,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alarm_model.dart';
 import 'alarm_store.dart';
+import 'app_prefs.dart';
 import '../alarm_notification.dart';
 
 typedef AlarmReceivedCallback = void Function(AlarmData alarm);
@@ -30,7 +31,7 @@ class AlarmService {
   static UnsubscribeFunc? _unsubscribe;
 
   /// Schlüssel in SharedPreferences für die PocketBase-URL.
-  static const kPbUrlKey = 'pb_url';
+  static const kPbUrlKey = AppPrefsKeys.pbUrl;
 
   // ---------------------------------------------------------------------------
   // Lifecycle

@@ -1,24 +1,26 @@
 import CarPlay
 import UIKit
 
-/// CarPlay Scene Delegate - Status-Buttons im Auto-Display
+/// CarPlay Scene Delegate – Status-Buttons im Auto-Display
 @available(iOS 14.0, *)
 class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate {
 
     private var interfaceController: CPInterfaceController?
+    private var gridTemplate: CPGridTemplate?
 
-    // Status-Definitionen (ohne 0, 5, 9 – nur fahrrelevante Status)
-    private let statusMap: [(num: Int, text: String, sfSymbol: String, color: UIColor)] = [
+    // Fahrrelevante Status (ohne 0/Notruf, 5/Sprechwunsch, 9/Sonstiges)
+    private let statusList: [(num: Int, text: String, sfSymbol: String, color: UIColor)] = [
         (1, "Einsatzbereit", "antenna.radiowaves.left.and.right", .systemGreen),
-        (2, "Wache", "house.fill", .systemBlue),
-        (3, "Auftrag", "checkmark.rectangle.fill", .systemOrange),
-        (4, "Ziel erreicht", "mappin.circle.fill", .systemPurple),
-        (6, "Nicht bereit", "nosign", .systemGray),
-        (7, "Transport", "shippingbox.fill", .systemIndigo),
-        (8, "Angekommen", "flag.fill", .systemPink),
+        (2, "Wache",         "house.fill",                        .systemBlue),
+        (3, "Auftrag",       "checkmark.rectangle.fill",          .systemOrange),
+        (4, "Ziel erreicht", "mappin.circle.fill",                .systemPurple),
+        (6, "Nicht bereit",  "nosign",                            .systemGray),
+        (7, "Transport",     "shippingbox.fill",                  .systemIndigo),
+        (8, "Angekommen",    "flag.fill",                         .systemPink),
     ]
 
     private var currentStatus: Int = 1
+    private var connectionOk: Bool? = nil   // nil=unbekannt, true=OK, false=Fehler
 
     // MARK: - CPTemplateApplicationSceneDelegate
 
@@ -27,15 +29,12 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
         didConnect interfaceController: CPInterfaceController
     ) {
         self.interfaceController = interfaceController
-
-        // Aktuellen Status aus SharedPreferences laden
         loadCurrentStatus()
 
-        // Grid-Template anzeigen
-        let grid = buildGridTemplate()
-        interfaceController.setRootTemplate(grid, animated: false, completion: nil)
+        let template = makeGridTemplate()
+        gridTemplate = template
+        interfaceController.setRootTemplate(template, animated: false, completion: nil)
 
-        // Für Status-Updates vom Flutter-Teil registrieren
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(onStatusUpdateFromFlutter(_:)),
@@ -50,121 +49,140 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
     ) {
         NotificationCenter.default.removeObserver(self)
         self.interfaceController = nil
+        gridTemplate = nil
     }
 
-    // MARK: - Grid Template
+    // MARK: - Template Building
 
-    private func buildGridTemplate() -> CPGridTemplate {
-        var buttons: [CPGridButton] = []
+    private func makeGridTemplate() -> CPGridTemplate {
+        let buttons = buildButtons()
+        let title = templateTitle()
+        let template = CPGridTemplate(title: title, gridButtons: buttons)
+        return template
+    }
 
-        for entry in statusMap {
+    private func buildButtons() -> [CPGridButton] {
+        statusList.map { entry in
             let isActive = entry.num == currentStatus
-            let image = createStatusImage(
-                sfSymbol: entry.sfSymbol,
-                color: entry.color,
-                active: isActive
-            )
-
-            let button = CPGridButton(
+            let image = makeIcon(sfSymbol: entry.sfSymbol, color: entry.color, active: isActive)
+            return CPGridButton(
                 titleVariants: ["\(entry.num) \(entry.text)"],
                 image: image
             ) { [weak self] _ in
                 self?.onStatusPressed(entry.num)
             }
-
-            buttons.append(button)
         }
-
-        let template = CPGridTemplate(title: "Trupp Status", gridButtons: buttons)
-        return template
     }
 
-    private func createStatusImage(sfSymbol: String, color: UIColor, active: Bool) -> UIImage {
-        let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
-        guard let symbol = UIImage(systemName: sfSymbol, withConfiguration: config) else {
-            // Fallback: farbiger Kreis falls Symbol nicht verfügbar
-            let size = CGSize(width: 44, height: 44)
-            let renderer = UIGraphicsImageRenderer(size: size)
-            return renderer.image { ctx in
-                color.setFill()
-                ctx.cgContext.fillEllipse(in: CGRect(origin: .zero, size: size))
-            }
+    private func templateTitle() -> String {
+        let indicator: String
+        switch connectionOk {
+        case true:  indicator = "●"
+        case false: indicator = "✗"
+        default:    indicator = "○"
         }
+        return "Trupp Status \(indicator)"
+    }
 
-        let tintColor = active ? color : color.withAlphaComponent(0.4)
-        return symbol.withTintColor(tintColor, renderingMode: .alwaysOriginal)
+    private func refreshTemplate() {
+        guard let grid = gridTemplate else { return }
+        let buttons = buildButtons()
+        let title = templateTitle()
+        if #available(iOS 15.0, *) {
+            // In-place update — kein Flash durch Template-Austausch
+            grid.updateGridButtons(buttons)
+            // Titel lässt sich bei CPGridTemplate nicht direkt updaten,
+            // daher nur bei Änderung neu setzen
+            let newGrid = CPGridTemplate(title: title, gridButtons: buttons)
+            gridTemplate = newGrid
+            interfaceController?.setRootTemplate(newGrid, animated: false, completion: nil)
+        } else {
+            let newGrid = CPGridTemplate(title: title, gridButtons: buttons)
+            gridTemplate = newGrid
+            interfaceController?.setRootTemplate(newGrid, animated: false, completion: nil)
+        }
     }
 
     // MARK: - Status Handling
 
     private func onStatusPressed(_ status: Int) {
+        // Optimistisch UI aktualisieren
         currentStatus = status
-        saveCurrentStatus(status)
+        refreshTemplate()
 
-        // Grid aktualisieren
-        let grid = buildGridTemplate()
-        interfaceController?.setRootTemplate(grid, animated: false, completion: nil)
-
-        // Status an Flutter senden via NotificationCenter
+        // An Flutter melden (für die Haupt-App)
         NotificationCenter.default.post(
             name: NSNotification.Name("dev.floriang.trupp_app.STATUS_CHANGED"),
             object: nil,
             userInfo: ["status": status]
         )
 
-        // HTTP-Request direkt senden (wie Android Auto)
         sendStatusToServer(status)
     }
 
     @objc private func onStatusUpdateFromFlutter(_ notification: Notification) {
         guard let status = notification.userInfo?["status"] as? Int,
-              status >= 0, status <= 9 else { return }
+              statusList.contains(where: { $0.num == status }) else { return }
         currentStatus = status
-
-        // Grid aktualisieren
-        let grid = buildGridTemplate()
-        interfaceController?.setRootTemplate(grid, animated: false, completion: nil)
+        DispatchQueue.main.async { [weak self] in self?.refreshTemplate() }
     }
 
-    // MARK: - HTTP API
+    // MARK: - HTTP
 
     private func sendStatusToServer(_ status: Int) {
         let defaults = UserDefaults.standard
-        let protocol_ = defaults.string(forKey: "flutter.protocol") ?? "https"
-        let server = defaults.string(forKey: "flutter.server") ?? ""
-        let token = defaults.string(forKey: "flutter.token") ?? ""
-        let issi = defaults.string(forKey: "flutter.issi") ?? ""
+        let proto  = defaults.string(forKey: "flutter.protocol") ?? "https"
+        let server = defaults.string(forKey: "flutter.server")   ?? ""
+        let token  = defaults.string(forKey: "flutter.token")    ?? ""
+        let issi   = defaults.string(forKey: "flutter.issi")     ?? ""
 
-        guard !server.isEmpty, !token.isEmpty, !issi.isEmpty else { return }
-
-        let urlString = "\(protocol_)://\(server)/\(token)/setstatus?issi=\(issi)&status=\(status)"
-        guard let url = URL(string: urlString) else { return }
-
-        let task = URLSession.shared.dataTask(with: url) { [weak self] _, response, error in
-            DispatchQueue.main.async {
-                if let httpResponse = response as? HTTPURLResponse,
-                   httpResponse.statusCode == 200 {
-                    self?.currentStatus = status
-                    self?.saveCurrentStatus(status)
-                }
-            }
+        guard !server.isEmpty, !token.isEmpty, !issi.isEmpty,
+              let url = URL(string: "\(proto)://\(server)/\(token)/setstatus?issi=\(issi)&status=\(status)")
+        else {
+            connectionOk = false
+            DispatchQueue.main.async { [weak self] in self?.refreshTemplate() }
+            return
         }
-        task.resume()
+
+        URLSession.shared.dataTask(with: url) { [weak self] _, response, error in
+            guard let self else { return }
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            DispatchQueue.main.async {
+                self.connectionOk = ok
+                if ok {
+                    self.saveCurrentStatus(status)
+                }
+                self.refreshTemplate()
+            }
+        }.resume()
     }
 
-    // MARK: - Persistence (SharedPreferences-kompatibel)
+    // MARK: - Icon
+
+    private func makeIcon(sfSymbol: String, color: UIColor, active: Bool) -> UIImage {
+        let config = UIImage.SymbolConfiguration(pointSize: 28, weight: .medium)
+        let tintColor = active ? color : color.withAlphaComponent(0.35)
+        if let symbol = UIImage(systemName: sfSymbol, withConfiguration: config) {
+            return symbol.withTintColor(tintColor, renderingMode: .alwaysOriginal)
+        }
+        // Fallback: farbiger Kreis
+        let size = CGSize(width: 44, height: 44)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            tintColor.setFill()
+            UIBezierPath(ovalIn: CGRect(origin: .zero, size: size)).fill()
+        }
+    }
+
+    // MARK: - Persistence
 
     private func loadCurrentStatus() {
         let defaults = UserDefaults.standard
-        // Flutter SharedPreferences nutzt "flutter." Prefix
-        currentStatus = defaults.integer(forKey: "flutter.lastStatus")
-        if currentStatus == 0 && defaults.object(forKey: "flutter.lastStatus") == nil {
-            currentStatus = 1  // Default: Einsatzbereit
-        }
+        let saved = defaults.integer(forKey: "flutter.lastStatus")
+        // integer(forKey:) returns 0 when key is missing — use status 1 as default
+        currentStatus = (saved > 0) ? saved : 1
     }
 
     private func saveCurrentStatus(_ status: Int) {
-        let defaults = UserDefaults.standard
-        defaults.set(status, forKey: "flutter.lastStatus")
+        UserDefaults.standard.set(status, forKey: "flutter.lastStatus")
     }
 }
