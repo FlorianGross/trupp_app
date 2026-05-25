@@ -12,14 +12,12 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
-subprojects {
-    project.evaluationDependsOn(":app")
-}
 
-tasks.register<Delete>("clean") {
-    delete(rootProject.layout.buildDirectory)
-}
-
+// WICHTIG: afterEvaluate-Hooks MÜSSEN vor evaluationDependsOn(":app") registriert
+// werden. Letzteres triggert die Evaluation der Plugin-Subprojekte sofort, und
+// danach lässt sich afterEvaluate auf bereits evaluierten Projekten nicht mehr
+// aufrufen ("Cannot run Project.afterEvaluate(Action) when the project is already
+// evaluated").
 subprojects {
     afterEvaluate {
         // Spezialfall: disable_battery_optimization braucht außerdem ältere SDK-Levels.
@@ -52,6 +50,13 @@ subprojects {
                 androidExt.compileOptions.targetCompatibility = JavaVersion.VERSION_11
             }
         }
-
     }
+}
+
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+tasks.register<Delete>("clean") {
+    delete(rootProject.layout.buildDirectory)
 }
