@@ -1183,9 +1183,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Widget _buildMenuContent() {
     return SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
           Text(
             'Menü',
             style: TextStyle(
@@ -1305,6 +1306,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             },
           ),
         ],
+        ),
       ),
     );
   }
