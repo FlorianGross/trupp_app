@@ -50,6 +50,15 @@ subprojects {
                 androidExt.compileOptions.targetCompatibility = JavaVersion.VERSION_11
             }
         }
+
+        // Kotlin jvmTarget ebenfalls auf 11 zwingen — sonst kommt es zu
+        // "Inconsistent JVM-target compatibility" wenn ein Plugin (z.B.
+        // battery_plus) intern jvmTarget = 17 setzt.
+        tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+            compilerOptions {
+                jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+            }
+        }
     }
 }
 
