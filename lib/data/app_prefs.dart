@@ -41,6 +41,12 @@ abstract final class AppPrefsKeys {
   static const lastDbCleanupMs = 'lastDbCleanupMs';
   static const iosBgLastAlarmTs = 'ios_bg_last_alarm_ts';
 
+  // Display-Verhalten
+  /// Display im Einsatz dauerhaft wachhalten (Wakelock).
+  /// Default true — am Halter im Fahrzeug sinnvoll, in der Tasche aber
+  /// Akku-Killer, daher abschaltbar.
+  static const wakelockInDeployment = 'wakelock_in_deployment';
+
   // Alarm
   static const alarmSeenCount = 'alarm_seen_count';
 }

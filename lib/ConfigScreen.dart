@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
-import 'status_overview_screen.dart';
+import 'home_shell.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
 import 'data/alarm_service.dart';
@@ -10,6 +10,7 @@ import 'data/profile_store.dart';
 import 'pro/pro_dashboard_screen.dart';
 import 'pro/issi_picker_screen.dart';
 import 'data/app_logger.dart';
+import 'theme/brand_colors.dart';
 
 class ConfigScreen extends StatefulWidget {
   const ConfigScreen({super.key});
@@ -195,10 +196,10 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
               final api = EdpApiPro.instance;
               if (api == null || !api.hasToken) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                        'Bitte zuerst Pro-API einrichten (AppBar → ★)'),
-                    backgroundColor: Colors.orange,
+                  SnackBar(
+                    content: const Text(
+                        'Bitte zuerst Pro-Funktionen einrichten (Karte unten)'),
+                    backgroundColor: Theme.of(context).brand.warning,
                   ),
                 );
                 return;
@@ -215,8 +216,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             icon: const Icon(Icons.radio, size: 18),
             label: const Text('Server', style: TextStyle(fontSize: 12)),
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red.shade800,
-              side: BorderSide(color: Colors.red.shade800),
+              foregroundColor: Theme.of(context).colorScheme.primary,
+              side: BorderSide(color: Theme.of(context).colorScheme.primary),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12)),
               padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -275,7 +276,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
               await AlarmService.savePbUrl(pbUrlController.text.trim());
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
-                  MaterialPageRoute(builder: (_) => const StatusOverview()),
+                  MaterialPageRoute(builder: (_) => const HomeShell()),
                   (_) => false,
                 );
               }
@@ -288,7 +289,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         await AlarmService.savePbUrl(pbUrlController.text.trim());
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (_) => const StatusOverview()),
+            MaterialPageRoute(builder: (_) => const HomeShell()),
             (_) => false,
           );
         }
@@ -352,7 +353,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Profil "$profileName" gespeichert'),
-          backgroundColor: Colors.green,
+          backgroundColor: Theme.of(context).brand.success,
         ),
       );
     }
@@ -423,10 +424,10 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           await EdpApiPro.saveCredentials(edpUser, edpPass);
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Pro-API automatisch verbunden'),
-                backgroundColor: Colors.green,
-                duration: Duration(seconds: 3),
+              SnackBar(
+                content: const Text('Pro-API automatisch verbunden'),
+                backgroundColor: Theme.of(context).brand.success,
+                duration: const Duration(seconds: 3),
               ),
             );
           }
@@ -553,7 +554,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
         title: const Text('Konfiguration'),
-        backgroundColor: Colors.red.shade800,
         elevation: 0,
         centerTitle: true,
         actions: [
@@ -561,15 +561,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             icon: const Icon(Icons.qr_code_scanner),
             tooltip: 'Per QR übernehmen',
             onPressed: _openScannerSheet,
-          ),
-          IconButton(
-            icon: const Icon(Icons.star),
-            tooltip: 'Pro Funktionen',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) => const ProDashboardScreen()),
-            ),
           ),
         ],
       ),
@@ -602,8 +593,63 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 ? _buildManualConfigSection()
                 : const SizedBox.shrink(),
           ),
+          const SizedBox(height: 16),
+          _buildProCard(),
           SizedBox(height: MediaQuery.of(context).padding.bottom + 16),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProCard() {
+    final cs = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: Colors.grey.shade300),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const ProDashboardScreen()),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.workspace_premium,
+                    color: cs.primary, size: 24),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Pro-Funktionen',
+                      style: TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Einsatzliste, EDP-Bestand, ISSI-Auswahl',
+                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -620,22 +666,24 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: _hasConfig
-                        ? Colors.green.shade50
-                        : Colors.red.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    _hasConfig ? Icons.check_circle : Icons.qr_code,
-                    color: _hasConfig
-                        ? Colors.green.shade700
-                        : Colors.red.shade800,
-                    size: 28,
-                  ),
-                ),
+                Builder(builder: (context) {
+                  final brand = Theme.of(context).brand;
+                  final accent = _hasConfig
+                      ? brand.success
+                      : Theme.of(context).colorScheme.primary;
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: accent.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      _hasConfig ? Icons.check_circle : Icons.qr_code,
+                      color: accent,
+                      size: 28,
+                    ),
+                  );
+                }),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -673,8 +721,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
               icon: const Icon(Icons.qr_code_scanner),
               label: Text(_hasConfig ? 'Neu einscannen' : 'QR-Code scannen'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade800,
-                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Theme.of(context).colorScheme.onPrimary,
                 minimumSize: const Size.fromHeight(50),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
@@ -820,8 +868,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           icon: const Icon(Icons.save),
           label: const Text('Speichern und fortfahren'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red.shade800,
-            foregroundColor: Colors.white,
+            backgroundColor: Theme.of(context).colorScheme.primary,
+            foregroundColor: Theme.of(context).colorScheme.onPrimary,
             minimumSize: const Size.fromHeight(54),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12)),
@@ -833,8 +881,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           icon: const Icon(Icons.person_add_alt_1),
           label: const Text('Als Profil speichern'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: Colors.red.shade800,
-            side: BorderSide(color: Colors.red.shade800),
+            foregroundColor: Theme.of(context).colorScheme.primary,
+            side: BorderSide(color: Theme.of(context).colorScheme.primary),
             minimumSize: const Size.fromHeight(50),
             shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12)),

@@ -65,7 +65,6 @@
 	    <string>fetch</string>
 		<string>location</string>
 		<string>processing</string>
-		<string>audio</string>
 	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>

@@ -187,7 +187,6 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final appBarBg = isDark ? Colors.red.shade900 : Colors.red.shade800;
     final center = _currentPosition ?? const LatLng(51.1657, 10.4515);
 
     final isReplay = _mode == _MapMode.replay;
@@ -197,7 +196,6 @@ class _MapScreenState extends State<MapScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Karte'),
-        backgroundColor: appBarBg,
         elevation: 0,
         centerTitle: true,
         actions: [

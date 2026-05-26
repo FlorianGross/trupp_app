@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
 import 'pro/staerke_edp_screen.dart';
+import 'theme/brand_colors.dart';
 
 /// Hilfsklasse zum Kodieren/Dekodieren von ISSIs im BOS-Format.
 ///
@@ -149,10 +150,11 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
   }
 
   void _showSnackbar(String msg, {bool success = true}) {
+    final brand = Theme.of(context).brand;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor: success ? Colors.green : Colors.red,
+        backgroundColor: success ? brand.success : brand.warning,
         duration: const Duration(seconds: 2),
       ),
     );
@@ -164,10 +166,9 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Melde-Editor'),
-        backgroundColor: Colors.red.shade800,
-        foregroundColor: Colors.white,
+        title: const Text('Stärkemeldung'),
         elevation: 0,
+        centerTitle: true,
       ),
       backgroundColor: _isDark
           ? Theme.of(context).scaffoldBackgroundColor
@@ -228,30 +229,33 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                     ),
                     if (_decodedName.isNotEmpty) ...[
                       const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.green.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(Icons.check_circle_outline,
-                                size: 16, color: Colors.green.shade700),
-                            const SizedBox(width: 8),
-                            Text(
-                              _decodedName,
-                              style: TextStyle(
-                                fontWeight: FontWeight.w600,
-                                color: Colors.green.shade700,
-                                fontSize: 13,
+                      Builder(builder: (context) {
+                        final success = Theme.of(context).brand.success;
+                        return Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: success.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: success.withOpacity(0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.check_circle_outline,
+                                  size: 16, color: success),
+                              const SizedBox(width: 8),
+                              Text(
+                                _decodedName,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  color: success,
+                                  fontSize: 13,
+                                ),
                               ),
-                            ),
-                          ],
-                        ),
-                      ),
+                            ],
+                          ),
+                        );
+                      }),
                     ],
                     const SizedBox(height: 6),
                     Text(
@@ -358,8 +362,8 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                       : const Icon(Icons.send),
                   label: Text(_isSending ? 'Sendet...' : 'Stärke melden'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.shade800,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12)),

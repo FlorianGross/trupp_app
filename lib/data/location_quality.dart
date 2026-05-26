@@ -2,9 +2,11 @@
 import 'package:geolocator/geolocator.dart';
 
 class LocationQualityFilter {
-  // Schwellwerte – bei Bedarf über Config/Prefs parametrisierbar
+  // Schwellwerte – einige sind veränderbar damit der Service sie zur
+  // Laufzeit an den aktuellen TrackingMode anpassen kann (highAccuracy
+  // braucht andere Distanz-Schwelle als powerSaver).
   final double maxAccuracyM;      // z.B. 50 m
-  final double minDistanceM;      // z.B. 15 m (gegen Rauschen im Stand)
+  double minDistanceM;            // wird vom Service mode-abhängig gesetzt
   final Duration minInterval;     // z.B. 5 s (gegen Spam)
   final double maxJumpSpeedMs;    // z.B. 20 m/s (~72 km/h) – unrealistische Sprünge filtern
   final Duration heartbeatInterval;
@@ -21,6 +23,13 @@ class LocationQualityFilter {
   });
 
   DateTime? get lastSentAt => _lastSentAt;
+
+  /// Setzt die Mindestdistanz zur Laufzeit. Vom Service bei jedem Mode-Wechsel
+  /// aufgerufen, damit der Filter sich zum Stream-distanceFilter passt
+  /// (z.B. Stream gibt nur Updates >100 m → Filter muss nicht bei 5 m greifen).
+  void setMinDistance(double meters) {
+    minDistanceM = meters;
+  }
 
   bool isGood(Position p, {DateTime? now, bool forceByHeartbeat = false}) {
     final tNow = now ?? DateTime.now();

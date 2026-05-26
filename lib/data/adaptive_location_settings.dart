@@ -53,23 +53,28 @@ class AdaptiveLocationSettings {
     return TrackingMode.powerSaver;
   }
 
-  /// Erstellt LocationSettings basierend auf Tracking-Modus
+  /// Erstellt LocationSettings basierend auf Tracking-Modus.
+  ///
+  /// Android: `forceLocationManager: false` — Fused Location Provider verwenden
+  /// (energieeffizient, Sensor-Fusion). Der ältere LocationManager-Pfad ist
+  /// stromhungriger und sollte nur als expliziter Fallback dienen.
+  ///
+  /// iOS: Accuracy wird modusabhängig gemappt — nur highAccuracy nutzt
+  /// `bestForNavigation` (sehr stromhungrig), balanced fällt auf `best`,
+  /// powerSaver auf `nearestTenMeters` zurück.
   static LocationSettings buildSettings(TrackingMode mode) {
     if (defaultTargetPlatform == TargetPlatform.android) {
       return AndroidSettings(
-        accuracy: mode == TrackingMode.highAccuracy
-            ? LocationAccuracy.high
-            : LocationAccuracy.medium,  // Auch powerSaver: GPS statt nur Funk
+        accuracy: _androidAccuracyFor(mode),
         distanceFilter: _getDistanceFilter(mode),
         intervalDuration: _getInterval(mode),
-        forceLocationManager: mode == TrackingMode.highAccuracy,
+        // Fused Location Provider in allen Modi — kein LocationManager-Force
+        forceLocationManager: false,
       );
     } else if (defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS) {
       return AppleSettings(
-        accuracy: mode == TrackingMode.highAccuracy
-            ? LocationAccuracy.best
-            : LocationAccuracy.bestForNavigation,  // GPS auch im Hintergrund
+        accuracy: _iosAccuracyFor(mode),
         activityType: ActivityType.otherNavigation,
         distanceFilter: _getDistanceFilter(mode),
         pauseLocationUpdatesAutomatically: false,  // Nie automatisch pausieren
@@ -78,11 +83,45 @@ class AdaptiveLocationSettings {
       );
     } else {
       return LocationSettings(
-        accuracy: mode == TrackingMode.highAccuracy
-            ? LocationAccuracy.high
-            : LocationAccuracy.medium,
+        accuracy: _genericAccuracyFor(mode),
         distanceFilter: _getDistanceFilter(mode),
       );
+    }
+  }
+
+  static LocationAccuracy _androidAccuracyFor(TrackingMode mode) {
+    switch (mode) {
+      case TrackingMode.highAccuracy:
+        return LocationAccuracy.high;
+      case TrackingMode.balanced:
+        return LocationAccuracy.medium;
+      case TrackingMode.powerSaver:
+        return LocationAccuracy.low;
+    }
+  }
+
+  /// iOS-Accuracy modusabhängig — `bestForNavigation` ist sehr stromhungrig
+  /// und nur im Einsatz gerechtfertigt. `medium` entspricht auf iOS ~100m,
+  /// genug für den Bereitschafts-/Heartbeat-Fall.
+  static LocationAccuracy _iosAccuracyFor(TrackingMode mode) {
+    switch (mode) {
+      case TrackingMode.highAccuracy:
+        return LocationAccuracy.bestForNavigation;
+      case TrackingMode.balanced:
+        return LocationAccuracy.best;
+      case TrackingMode.powerSaver:
+        return LocationAccuracy.medium;
+    }
+  }
+
+  static LocationAccuracy _genericAccuracyFor(TrackingMode mode) {
+    switch (mode) {
+      case TrackingMode.highAccuracy:
+        return LocationAccuracy.high;
+      case TrackingMode.balanced:
+        return LocationAccuracy.medium;
+      case TrackingMode.powerSaver:
+        return LocationAccuracy.low;
     }
   }
 
@@ -123,6 +162,32 @@ class AdaptiveLocationSettings {
         return const Duration(seconds: 60);
       case TrackingMode.powerSaver:
         return const Duration(minutes: 2);
+    }
+  }
+
+  /// Accuracy für einmalige Heartbeat-GPS-Abfragen (One-Shot via
+  /// `getCurrentPosition`). Wird modusabhängig gemappt, damit der Heartbeat
+  /// im powerSaver-Modus nicht denselben Stromverbrauch wie ein Einsatz-Fix
+  /// hat.
+  static LocationAccuracy getOneShotAccuracy(TrackingMode mode) {
+    if (defaultTargetPlatform == TargetPlatform.iOS ||
+        defaultTargetPlatform == TargetPlatform.macOS) {
+      return _iosAccuracyFor(mode);
+    }
+    return _androidAccuracyFor(mode);
+  }
+
+  /// Timeout für einmalige Heartbeat-GPS-Abfragen — bei `powerSaver` darf
+  /// der Fix länger dauern (Cold-Start aus dem Sleep), im Einsatz muss er
+  /// schnell kommen.
+  static Duration getOneShotTimeout(TrackingMode mode) {
+    switch (mode) {
+      case TrackingMode.highAccuracy:
+        return const Duration(seconds: 8);
+      case TrackingMode.balanced:
+        return const Duration(seconds: 12);
+      case TrackingMode.powerSaver:
+        return const Duration(seconds: 20);
     }
   }
 
