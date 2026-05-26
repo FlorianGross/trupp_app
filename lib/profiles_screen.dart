@@ -4,9 +4,9 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/edp_api.dart';
-import 'data/alarm_service.dart';
 import 'data/app_prefs.dart';
 import 'data/profile_store.dart';
+import 'theme/brand_colors.dart';
 
 class ProfilesScreen extends StatefulWidget {
   const ProfilesScreen({super.key});
@@ -61,7 +61,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Profil "${profile.name}" aktiviert'),
-          backgroundColor: Colors.green,
+          backgroundColor: Theme.of(context).brand.success,
         ),
       );
     }
@@ -105,12 +105,9 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Profile'),
-        backgroundColor: isDark ? Colors.red.shade900 : Colors.red.shade800,
-        foregroundColor: Colors.white,
+        title: const Text('Konfigurationsprofile'),
         elevation: 0,
         centerTitle: true,
       ),
@@ -121,8 +118,6 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
               : _buildList(),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openEditor(),
-        backgroundColor: Colors.red.shade800,
-        foregroundColor: Colors.white,
         tooltip: 'Neues Profil',
         child: const Icon(Icons.add),
       ),
@@ -372,13 +367,10 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final isEdit = widget.profile != null;
     return Scaffold(
       appBar: AppBar(
         title: Text(isEdit ? 'Profil bearbeiten' : 'Neues Profil'),
-        backgroundColor: isDark ? Colors.red.shade900 : Colors.red.shade800,
-        foregroundColor: Colors.white,
         elevation: 0,
         centerTitle: true,
         actions: [

@@ -1,16 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:trupp_app/alarm_notification.dart';
-import 'package:trupp_app/alarm_overview_screen.dart';
 import 'package:trupp_app/alarm_detail_screen.dart';
 import 'package:trupp_app/alarm_overlay.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
-import 'ConfigScreen.dart';
+import 'home_shell.dart';
 import 'onboarding_screen.dart';
 import 'data/alarm_model.dart';
 import 'data/unit_type_store.dart';
-import 'status_overview_screen.dart';
+import 'theme/brand_colors.dart';
 import 'unit_type_picker_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
@@ -44,17 +43,9 @@ Future<void> toggleTheme() async {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  try {
-    await initializeBackgroundService();
-  } catch (e, st) {
-    // Auf dem Simulator nicht unterstützt — auf echten Geräten unerwartet
-    AppLogger.w('main', 'Background-Service Init fehlgeschlagen', e);
-    if (st.toString().isNotEmpty) AppLogger.e('main', '', null, st);
-  }
-
-  await _loadThemePreference();
-
-  // Benachrichtigungs-Plugin im Haupt-Isolate initialisieren.
+  // WICHTIG: Notification-Channels MÜSSEN vor initializeBackgroundService()
+  // angelegt sein — das Plugin referenziert die FGS-Channel-ID, legt sie
+  // aber nicht selbst an. Reihenfolge umgekehrt zur Intuition.
   await AlarmNotificationService.initialize(
     onTap: (alarm) {
       navigatorKey.currentState?.push(
@@ -64,6 +55,16 @@ Future<void> main() async {
       );
     },
   );
+
+  try {
+    await initializeBackgroundService();
+  } catch (e, st) {
+    // Auf dem Simulator nicht unterstützt — auf echten Geräten unerwartet
+    AppLogger.w('main', 'Background-Service Init fehlgeschlagen', e);
+    if (st.toString().isNotEmpty) AppLogger.e('main', '', null, st);
+  }
+
+  await _loadThemePreference();
 
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;
@@ -111,6 +112,7 @@ final _lightTheme = ThemeData(
     backgroundColor: Colors.red.shade800,
     foregroundColor: Colors.white,
   ),
+  extensions: const <ThemeExtension<dynamic>>[BrandColors.light],
 );
 
 final _darkTheme = ThemeData(
@@ -123,6 +125,7 @@ final _darkTheme = ThemeData(
     backgroundColor: Colors.red.shade900,
     foregroundColor: Colors.white,
   ),
+  extensions: const <ThemeExtension<dynamic>>[BrandColors.dark],
 );
 
 class MyApp extends StatefulWidget {
@@ -161,10 +164,10 @@ class _MyAppState extends State<MyApp> {
     if (widget.unitType == null) {
       return UnitTypePickerScreen(
         allowBack: false,
-        onComplete: () => const StatusOverview(),
+        onComplete: () => const HomeShell(),
       );
     }
-    return const StatusOverview();
+    return const HomeShell();
   }
 
   @override

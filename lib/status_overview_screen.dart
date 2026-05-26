@@ -13,33 +13,24 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'data/app_prefs.dart';
 import 'package:battery_plus/battery_plus.dart';
-import 'package:trupp_app/system_check_screen.dart';
-import 'ConfigScreen.dart';
 import 'keypad_widget.dart';
 import 'data/edp_api.dart';
 import 'data/gpx_exporter.dart';
-import 'data/location_queue.dart';
 import 'data/location_sync_manager.dart';
 import 'data/deployment_state.dart';
-import 'data/adaptive_location_settings.dart';
-import 'main.dart' show themeNotifier, toggleTheme;
 import 'map_screen.dart';
-import 'profiles_screen.dart';
-import 'data/profile_store.dart';
-import 'staerke_editor_screen.dart';
-import 'status_history_screen.dart';
+import 'staerke_editor_screen.dart' show IssiHelper;
+import 'status_history_screen.dart' show StatusHistory;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'iot_car_helper.dart';
-import 'alarm_overview_screen.dart';
 import 'alarm_detail_screen.dart';
 import 'alarm_notification.dart';
 import 'alarm_overlay.dart' show kOverlayOpenDetail;
-import 'data/alarm_store.dart';
 import 'data/alarm_service.dart';
 
 import 'data/unit_type_store.dart';
 import 'simplified_status_panel.dart';
-import 'unit_type_picker_screen.dart';
+import 'theme/brand_colors.dart';
 enum _ConnectionState { unknown, connected, degraded, disconnected }
 
 class StatusOverview extends StatefulWidget {
@@ -74,7 +65,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   // Deployment & Tracking State
   DeploymentMode _deploymentMode = DeploymentMode.standby;
-  TrackingMode _trackingMode = TrackingMode.balanced;
   int _batteryLevel = 100;
 
   // Stats
@@ -88,21 +78,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Timer? _deploymentTickTimer;
   int _deploymentStartMs = 0;
 
-  // Alarmierungs-Badge + Realtime-Listener
-  int _alarmUnread = 0;
-  StreamSubscription? _alarmEventSub;
-
-  // Tracking ist immer gewünscht, sobald konfiguriert
-  bool get _trackingDesired => true;
-
   // Hintergrund-Tracking-Indikator (GPS-Übertragung aktiv)
   bool _bgTrackingActive = false;
-
-  // Auto-Deaktivierung in Minuten (0 = aus)
-  int _autoDeactivateMinutes = 0;
-
-  // Aktiver Profilname (für AppBar-Anzeige)
-  String _activeProfileName = '';
 
   UnitType? _unitType;
   bool _gpsLoading = false;
@@ -114,10 +91,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     9: Duration(seconds: 5),
     5: Duration(seconds: 5),
   };
-
-  // Sende-Drossel
-  DateTime _lastSent = DateTime.fromMillisecondsSinceEpoch(0);
-  static const Duration _sendInterval = Duration(seconds: 2);
 
   final TextEditingController _infoCtrl = TextEditingController();
 
@@ -151,7 +124,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     _statsRefreshTimer?.cancel();
     _connectionCheckTimer?.cancel();
     _deploymentTickTimer?.cancel();
-    _alarmEventSub?.cancel();
     _infoCtrl.dispose();
     _animationController.dispose();
     super.dispose();
@@ -188,21 +160,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   /// Wird aufgerufen wenn die App wieder in den Vordergrund kommt.
   /// Flusht die Queue sofort und aktualisiert den GPS-Tracking-Modus.
-  Future<void> _refreshAlarmBadge() async {
-    final count = await AlarmStore.unreadCount();
-    if (mounted) setState(() => _alarmUnread = count);
-  }
-
-  Future<void> _openAlarmOverview() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const AlarmOverviewScreen()),
-    );
-    // Badge zurücksetzen nachdem Nutzer die Übersicht besucht hat
-    await AlarmStore.markAllSeen();
-    if (mounted) setState(() => _alarmUnread = 0);
-  }
-
   Future<void> _onAppResumed() async {
     // Queue sofort flushen (Daten die im Hintergrund aufgelaufen sind)
     try {
@@ -221,8 +178,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         await _setBackgroundTracking(true);
       }
     }
-
-    await _refreshAlarmBadge();
 
     // Overlay-Detail-Flag: wenn aus dem Alarm-Overlay auf "Details" getippt wurde
     await _checkOverlayDetailRequest();
@@ -248,7 +203,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     await _updateBatteryLevel();
     await _ensureNotificationPermission();
     await _checkLocationServicesSilently();
-    await _refreshAlarmBadge();
 
     final prefs = await SharedPreferences.getInstance();
     final firstRun = !(prefs.getBool(AppPrefsKeys.onboarded) ?? false);
@@ -273,16 +227,11 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
 
     final last = prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
-    final autoDeact = prefs.getInt('autoDeactivateMinutes') ?? 0;
-
-    final activeProfile = await ProfileStore.activeName() ?? '';
 
     // GPS-Übertragungsstatus: main.dart hat transmissionEnabled auf false gesetzt,
     // daher ist hier immer false (neu nach Neustart) – Service läuft evtl. für Alarmierung
     if (mounted) setState(() {
       _bgTrackingActive = false;
-      _autoDeactivateMinutes = autoDeact;
-      _activeProfileName = activeProfile;
     });
     await _onPersistentStatus(last, notify: false);
 
@@ -291,10 +240,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       _refreshStats();
     });
 
-    // Alarm-Badge live aktualisieren wenn Background-Service einen neuen Alarm meldet
-    _alarmEventSub = FlutterBackgroundService()
-        .on('newAlarm')
-        .listen((_) => _refreshAlarmBadge());
     _connectionCheckTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _checkConnection();
     });
@@ -391,18 +336,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   Future<void> _loadDeploymentState() async {
     _deploymentMode = await DeploymentState.getMode();
-    final status = await _getCurrentStatus();
-    _trackingMode = await AdaptiveLocationSettings.determineMode(
-      deployment: _deploymentMode,
-      currentStatus: status,
-    );
 
     // Einsatz-Timer laden
     if (_deploymentMode == DeploymentMode.deployed) {
       final prefs = await SharedPreferences.getInstance();
       _deploymentStartMs = prefs.getInt(AppPrefsKeys.deploymentStartMs) ?? 0;
       _startDeploymentTimer();
-      WakelockPlus.enable();
+      // Display wachhalten nur wenn vom Nutzer erlaubt (Default an —
+      // typischer Fahrzeug-Use-Case am Halter).
+      final wakelock = prefs.getBool(AppPrefsKeys.wakelockInDeployment) ?? true;
+      if (wakelock) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
     } else {
       _deploymentStartMs = 0;
       _deploymentTickTimer?.cancel();
@@ -431,11 +378,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       return '${h}h ${m.toString().padLeft(2, '0')}m';
     }
     return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
-  }
-
-  Future<int> _getCurrentStatus() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
   }
 
   Future<void> _updateBatteryLevel() async {
@@ -692,7 +634,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         }
 
         await LocationSyncManager.instance.flushPendingNow();
-        _lastSent = DateTime.now();
         _showSnackbar('Status $st gesendet', success: true);
       } catch (_) {
         _showSnackbar('Status $st gespeichert (offline)', success: false);
@@ -750,7 +691,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         }
       }
 
-      _lastSent = DateTime.now();
       _showSnackbar('Status $st gesendet', success: true);
     } catch (_) {
       _showSnackbar('Status $st gespeichert (offline)', success: false);
@@ -938,7 +878,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: const Text('Einsatz beendet'),
-        backgroundColor: Colors.green,
+        backgroundColor: Theme.of(context).brand.success,
         action: startMs > 0
             ? SnackBarAction(
                 label: 'Replay',
@@ -1007,43 +947,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
   }
 
-  Future<void> _exportGpx() async {
-    try {
-      final path = await GpxExporter.exportAllFixesToGpx();
-      await Share.shareXFiles([XFile(path)], text: 'GPX-Export');
-    } catch (e) {
-      _showSnackbar('Export fehlgeschlagen: $e', success: false);
-    }
-  }
-
-  Future<void> _clearQueue() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Warteschlange löschen?'),
-        content: const Text('Alle gespeicherten Positionen werden gelöscht.'),
-        actions: [
-          TextButton(
-            child: const Text('Abbrechen'),
-            onPressed: () => Navigator.pop(context, false),
-          ),
-          TextButton(
-            child: const Text('Löschen'),
-            onPressed: () => Navigator.pop(context, true),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm == true) {
-      await LocationQueue.instance.deleteAll();
-      await _refreshStats();
-      _showSnackbar('Warteschlange geleert', success: true);
-    }
-  }
-
   void _showSnackbar(String msg, {bool success = true}) {
-    final color = success ? Colors.green : Colors.red;
+    final brand = Theme.of(context).brand;
+    final color = success ? brand.success : brand.warning;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
@@ -1112,205 +1018,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     return res ?? false;
   }
 
-  Future<void> _reloadConfig() async {
-    await EdpApi.initFromPrefs();
-    final prefs = await SharedPreferences.getInstance();
-    if (!mounted) return;
-    setState(() {
-      protocol = prefs.getString(AppPrefsKeys.protocol) ?? protocol;
-      server = prefs.getString(AppPrefsKeys.server) ?? server;
-      token = prefs.getString(AppPrefsKeys.token) ?? token;
-      trupp = prefs.getString(AppPrefsKeys.trupp) ?? trupp;
-      leiter = prefs.getString(AppPrefsKeys.leiter) ?? leiter;
-      issi = prefs.getString(AppPrefsKeys.issi) ?? issi;
-    });
-  }
-
-  Future<void> _showAutoDeactivateDialog() async {
-    const options = [
-      (0, 'Aus'),
-      (30, '30 Minuten'),
-      (60, '1 Stunde'),
-      (120, '2 Stunden'),
-      (240, '4 Stunden'),
-      (480, '8 Stunden'),
-    ];
-
-    final selected = await showDialog<int>(
-      context: context,
-      builder: (ctx) => SimpleDialog(
-        title: const Text('Auto-Deaktivierung'),
-        children: options.map((opt) {
-          final (minutes, label) = opt;
-          return SimpleDialogOption(
-            onPressed: () => Navigator.pop(ctx, minutes),
-            child: Row(
-              children: [
-                Radio<int>(
-                  value: minutes,
-                  groupValue: _autoDeactivateMinutes,
-                  onChanged: (_) => Navigator.pop(ctx, minutes),
-                ),
-                Text(label),
-              ],
-            ),
-          );
-        }).toList(),
-      ),
-    );
-
-    if (selected == null || !mounted) return;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt('autoDeactivateMinutes', selected);
-    setState(() => _autoDeactivateMinutes = selected);
-
-    final msg = selected == 0
-        ? 'Auto-Deaktivierung deaktiviert'
-        : 'Auto-Deaktivierung nach ${selected >= 60 ? '${selected ~/ 60}h' : '${selected}min'} Inaktivität';
-    _showSnackbar(msg, success: true);
-  }
-
-  void _showMenu() {
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => Container(
-        padding: const EdgeInsets.all(20),
-        color: _isDark ? Theme.of(context).colorScheme.surface : null,
-        child: _buildMenuContent(),
-      ),
-    );
-  }
-
-  Widget _buildMenuContent() {
-    return SafeArea(
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-          Text(
-            'Menü',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-              color: Colors.red.shade800,
-            ),
-          ),
-          const SizedBox(height: 16),
-          _buildMenuItem(
-            icon: Icons.assignment_ind,
-            title: 'Melde-Editor',
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                    builder: (_) => const StaerkeEditorScreen()),
-              );
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.health_and_safety,
-            title: 'System-Check',
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const SystemCheckScreen()),
-              );
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.settings,
-            title: 'Konfiguration',
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ConfigScreen()),
-              );
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.switch_account,
-            title: _activeProfileName.isNotEmpty
-                ? 'Profile  (${_activeProfileName})'
-                : 'Profile',
-            onTap: () async {
-              Navigator.pop(context);
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const ProfilesScreen()),
-              );
-              // Profil könnte gewechselt worden sein → Config neu laden
-              final active = await ProfileStore.activeName() ?? '';
-              if (mounted) setState(() => _activeProfileName = active);
-              await _reloadConfig();
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.history,
-            title: 'Statusverlauf',
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const StatusHistoryScreen()),
-              );
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.map,
-            title: 'Live-Karte',
-            onTap: () {
-              Navigator.pop(context);
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MapScreen()),
-              );
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.download,
-            title: 'GPX Export (Gesamt)',
-            onTap: () {
-              Navigator.pop(context);
-              _exportGpx();
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.timer_off,
-            title: _autoDeactivateMinutes == 0
-                ? 'Auto-Deaktivierung: Aus'
-                : 'Auto-Deaktivierung: ${_autoDeactivateMinutes >= 60 ? '${_autoDeactivateMinutes ~/ 60}h' : '${_autoDeactivateMinutes}min'}',
-            onTap: () {
-              Navigator.pop(context);
-              _showAutoDeactivateDialog();
-            },
-          ),
-          _buildMenuItem(
-            icon: Icons.directions_run,
-            title: 'Einheit wechseln',
-            onTap: () {
-              Navigator.pop(context);
-              _changeUnitType();
-            },
-          ),
-          _buildMenuItem(
-            icon: themeNotifier.value == ThemeMode.dark
-                ? Icons.light_mode
-                : Icons.dark_mode,
-            title: themeNotifier.value == ThemeMode.dark ? 'Light Mode' : 'Dark Mode',
-            onTap: () {
-              Navigator.pop(context);
-              toggleTheme();
-            },
-          ),
-        ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _manualSendGps() async {
     setState(() => _gpsLoading = true);
     try {
@@ -1334,54 +1041,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     } finally {
       if (mounted) setState(() => _gpsLoading = false);
     }
-  }
-
-  Future<void> _changeUnitType() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => UnitTypePickerScreen(
-          allowBack: true,
-          onComplete: null,
-        ),
-      ),
-    );
-    if (mounted) {
-      final type = await UnitTypeStore.load();
-      setState(() => _unitType = type);
-    }
-  }
-
-
-  Widget _buildMenuItem({
-    required IconData icon,
-    required String title,
-    required VoidCallback onTap,
-  }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-        child: Row(
-          children: [
-            Icon(icon, color: Colors.red.shade800, size: 22),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: const TextStyle(fontSize: 16),
-              ),
-            ),
-            const Icon(
-              Icons.chevron_right,
-              color: Colors.grey,
-              size: 20,
-            ),
-          ],
-        ),
-      ),
-    );
   }
 
   Future<void> _showQrCode() async {
@@ -1429,7 +1088,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
-                  color: Colors.red.shade800,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
               const SizedBox(height: 4),
@@ -1474,8 +1133,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                   icon: const Icon(Icons.copy_rounded, size: 18),
                   label: const Text('Link kopieren'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.shade800,
-                    foregroundColor: Colors.white,
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    foregroundColor: Theme.of(context).colorScheme.onPrimary,
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
                 ),
@@ -1494,56 +1153,18 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     final scaffoldBg = _isDark
         ? Theme.of(context).scaffoldBackgroundColor
         : Colors.grey[100];
-    final appBarBg = _isDark ? Colors.red.shade900 : Colors.red.shade800;
 
     return Scaffold(
       backgroundColor: scaffoldBg,
       appBar: AppBar(
         title: const Text('Status'),
-        backgroundColor: appBarBg,
         elevation: 0,
         centerTitle: true,
         actions: [
-          // Alarm-Glocke mit Badge
-          Stack(
-            alignment: Alignment.center,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.campaign_outlined, size: 24),
-                tooltip: 'Alarmierungen',
-                onPressed: _openAlarmOverview,
-              ),
-              if (_alarmUnread > 0)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: IgnorePointer(
-                    child: Container(
-                      padding: const EdgeInsets.all(3),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                      child: Text(
-                        _alarmUnread > 99 ? '99+' : '$_alarmUnread',
-                        style: TextStyle(
-                          color: Colors.red.shade800,
-                          fontSize: 9,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
           IconButton(
             icon: const Icon(Icons.qr_code, size: 22),
+            tooltip: 'Konfigurations-QR-Code teilen',
             onPressed: _showQrCode,
-          ),
-          IconButton(
-            icon: const Icon(Icons.more_vert, size: 22),
-            onPressed: _showMenu,
           ),
         ],
       ),
@@ -1604,57 +1225,80 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Kompakter Status-Bar (kombiniert Deployment + Tracking + Battery)
   Widget _buildCompactStatusBar() {
     final isDeployed = _deploymentMode == DeploymentMode.deployed;
-    final baseColor = isDeployed ? Colors.green : Colors.blue;
+    final brand = Theme.of(context).brand;
+    final baseColor = isDeployed ? brand.deployed : brand.ready;
+    final tooltipMsg = isDeployed
+        ? 'Einsatz läuft – tippen zum Beenden'
+        : 'Bereitschaft – tippen zum Einsatz starten';
 
-    return GestureDetector(
-      onTap: _toggleDeploymentMode,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
-        decoration: BoxDecoration(
-          color: baseColor.shade700,
-          border: Border(bottom: BorderSide(color: baseColor.shade900, width: 1)),
-        ),
-        child: Row(
-          children: [
-            // Deployment Status
-            Icon(
-              isDeployed ? Icons.emergency : Icons.home,
-              color: Colors.white,
-              size: 18,
+    return Tooltip(
+      message: tooltipMsg,
+      child: InkWell(
+        onTap: _toggleDeploymentMode,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+          decoration: BoxDecoration(
+            color: baseColor,
+            border: Border(
+              bottom: BorderSide(color: Colors.black26, width: 1),
             ),
-            const SizedBox(width: 8),
-            Text(
-              isDeployed ? 'EINSATZ' : 'BEREIT',
-              style: const TextStyle(
+          ),
+          child: Row(
+            children: [
+              // Deployment Status
+              Icon(
+                isDeployed ? Icons.emergency : Icons.home,
                 color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                letterSpacing: 0.8,
+                size: 18,
               ),
-            ),
-
-            // Einsatz-Timer
-            if (isDeployed && _deploymentStartMs > 0) ...[
               const SizedBox(width: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  _formatDeploymentDuration(),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    fontFamily: 'monospace',
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isDeployed ? 'EINSATZ' : 'BEREIT',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      letterSpacing: 0.8,
+                      height: 1.1,
+                    ),
+                  ),
+                  Text(
+                    isDeployed ? 'GPS aktiv' : 'Standby – tippen für Einsatz',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.85),
+                      fontSize: 10,
+                      height: 1.1,
+                    ),
+                  ),
+                ],
+              ),
+
+              // Einsatz-Timer
+              if (isDeployed && _deploymentStartMs > 0) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    _formatDeploymentDuration(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      fontFamily: 'monospace',
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
 
-            const Spacer(),
+              const Spacer(),
 
             // Verbindungsstatus-Indikator
             _buildConnectionDot(),
@@ -1736,6 +1380,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             ),
           ],
         ),
+        ),
       ),
     );
   }
@@ -1748,19 +1393,20 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   Widget _buildConnectionDot() {
+    final brand = Theme.of(context).brand;
     Color dotColor;
     String tooltip;
     switch (_connectionState) {
       case _ConnectionState.connected:
-        dotColor = Colors.greenAccent;
+        dotColor = brand.connectionOk;
         tooltip = 'Verbunden';
         break;
       case _ConnectionState.degraded:
-        dotColor = Colors.orangeAccent;
+        dotColor = brand.connectionDegraded;
         tooltip = 'Warteschlange';
         break;
       case _ConnectionState.disconnected:
-        dotColor = Colors.redAccent;
+        dotColor = brand.connectionOffline;
         tooltip = 'Offline';
         break;
       case _ConnectionState.unknown:
@@ -1837,7 +1483,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     decoration: BoxDecoration(
                       color: selectedStatus != null
-                          ? Colors.red.shade800.withOpacity(0.1)
+                          ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
                           : Colors.grey.shade200,
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -1850,7 +1496,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
                             color: selectedStatus != null
-                                ? Colors.red.shade800
+                                ? Theme.of(context).colorScheme.primary
                                 : Colors.grey.shade600,
                           ),
                         ),
@@ -1862,38 +1508,35 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 const SizedBox(width: 12),
 
                 // Queue kompakt
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: _stats['pending']! > 0
-                        ? Colors.orange.shade100
-                        : Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.storage,
-                        size: 16,
-                        color: _stats['pending']! > 0
-                            ? Colors.orange.shade800
-                            : Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '${_stats['pending']}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
-                          color: _stats['pending']! > 0
-                              ? Colors.orange.shade800
-                              : Colors.grey.shade600,
+                Builder(builder: (context) {
+                  final hasPending = _stats['pending']! > 0;
+                  final brand = Theme.of(context).brand;
+                  final bg = hasPending ? brand.queuePending : Colors.grey.shade100;
+                  final fg = hasPending ? brand.warning : Colors.grey.shade600;
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: bg,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.storage, size: 16, color: fg),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${_stats['pending']}',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: fg,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
+                      ],
+                    ),
+                  );
+                }),
               ],
             ),
           ],
@@ -1906,7 +1549,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 18, color: Colors.red.shade800),
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
@@ -1945,7 +1588,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 padding: const EdgeInsets.all(14),
                 child: Row(
                   children: [
-                    Icon(Icons.groups, color: Colors.red.shade800, size: 18),
+                    Icon(Icons.groups,
+                        color: Theme.of(context).colorScheme.primary, size: 18),
                     const SizedBox(width: 10),
                     const Expanded(
                       child: Text(
@@ -2027,7 +1671,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     SizedBox(
                       width: double.infinity,
                       child: Material(
-                        color: Colors.red.shade800,
+                        color: Theme.of(context).colorScheme.primary,
                         borderRadius: BorderRadius.circular(10),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(10),
@@ -2130,6 +1774,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     required VoidCallback? onTap,
     required bool primary,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(6),
@@ -2138,7 +1783,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         height: 26,
         decoration: BoxDecoration(
           color: (primary && onTap != null)
-              ? Colors.red.shade800
+              ? cs.primary
               : Colors.grey.shade200,
           borderRadius: BorderRadius.circular(6),
         ),
@@ -2146,7 +1791,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           icon,
           size: 15,
           color: (primary && onTap != null)
-              ? Colors.white
+              ? cs.onPrimary
               : (onTap != null ? Colors.black87 : Colors.grey.shade400),
         ),
       ),
@@ -2178,7 +1823,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                   children: [
                     Icon(
                       Icons.message,
-                      color: Colors.red.shade800,
+                      color: Theme.of(context).colorScheme.primary,
                       size: 18,
                     ),
                     const SizedBox(width: 10),
@@ -2230,7 +1875,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     ),
                     const SizedBox(width: 10),
                     Material(
-                      color: Colors.red.shade800,
+                      color: Theme.of(context).colorScheme.primary,
                       borderRadius: BorderRadius.circular(10),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(10),

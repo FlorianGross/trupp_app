@@ -20,6 +20,17 @@ const _kIosCategoryId = 'trupp_alarm_category';
 const _kLastAlarmKey = 'last_alarm_key';
 const _kPendingAlarmJson = 'pending_alarm_json';
 
+/// Channel-ID für die Foreground-Service-Notification (dauerhaftes
+/// Statussymbol in der Statusleiste). Wird vom flutter_background_service
+/// Plugin via AndroidConfiguration.notificationChannelId referenziert.
+/// MUSS vor `service.configure()` per `createNotificationChannel` angelegt
+/// sein (siehe AlarmNotificationService.initialize).
+const kForegroundChannelId = 'trupp_foreground';
+const _kForegroundChannelName = 'Hintergrund-Tracking';
+const _kForegroundChannelDesc =
+    'Zeigt an, dass die App im Hintergrund GPS-Positionen sendet oder '
+    'auf Alarme wartet. Diese Benachrichtigung ist systembedingt erforderlich.';
+
 typedef AlarmTapCallback = void Function(AlarmData alarm);
 
 class AlarmNotificationService {
@@ -72,7 +83,7 @@ class AlarmNotificationService {
         ?.initialize(iosSettings);
 
     // Alarm-Kanal: Importance.max + Alarm-Kategorie → bricht durch DND auf Android
-    const channel = AndroidNotificationChannel(
+    const alarmChannel = AndroidNotificationChannel(
       _kChannelId,
       _kChannelName,
       description: _kChannelDesc,
@@ -81,9 +92,24 @@ class AlarmNotificationService {
       enableVibration: true,
       enableLights: true,
     );
-    await _plugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-        ?.createNotificationChannel(channel);
+
+    // Foreground-Service-Channel: niedrige Priorität, kein Sound/Vibration —
+    // erscheint stumm in der „silent"-Sektion der Statusleiste.
+    const fgsChannel = AndroidNotificationChannel(
+      kForegroundChannelId,
+      _kForegroundChannelName,
+      description: _kForegroundChannelDesc,
+      importance: Importance.low,
+      playSound: false,
+      enableVibration: false,
+      enableLights: false,
+      showBadge: false,
+    );
+
+    final android = _plugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+    await android?.createNotificationChannel(alarmChannel);
+    await android?.createNotificationChannel(fgsChannel);
   }
 
   static Future<bool> show(AlarmData alarm) async {

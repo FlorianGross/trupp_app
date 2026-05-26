@@ -101,12 +101,10 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final appBarBg = isDark ? Colors.red.shade900 : Colors.red.shade800;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Statusverlauf'),
-        backgroundColor: appBarBg,
         elevation: 0,
         centerTitle: true,
       ),

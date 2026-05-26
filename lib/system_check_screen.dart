@@ -10,6 +10,7 @@ import 'package:battery_plus/battery_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'data/app_prefs.dart';
 import 'data/unit_type_store.dart';
+import 'theme/brand_colors.dart';
 import 'unit_type_picker_screen.dart';
 
 enum CheckStatus { ok, warning, error, checking }
@@ -491,13 +492,14 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   }
 
   Color _getStatusColor(CheckStatus status) {
+    final brand = Theme.of(context).brand;
     switch (status) {
       case CheckStatus.ok:
-        return Colors.green;
+        return brand.success;
       case CheckStatus.warning:
-        return Colors.orange;
+        return brand.warning;
       case CheckStatus.error:
-        return Colors.red;
+        return brand.connectionOffline;
       case CheckStatus.checking:
         return Colors.grey;
     }
@@ -523,8 +525,8 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
     return Scaffold(
       backgroundColor: Colors.grey[100],
       appBar: AppBar(
-        title: const Text('System-Check'),
-        backgroundColor: allOk ? Colors.green.shade800 : Colors.red.shade800,
+        title: const Text('Systemprüfung'),
+        backgroundColor: allOk ? Theme.of(context).brand.success : null,
         elevation: 0,
         centerTitle: true,
         actions: [
@@ -551,16 +553,14 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   }
 
   Widget _buildSummaryHeader(bool allOk) {
+    final brand = Theme.of(context).brand;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: allOk ? Colors.green.shade800 : Colors.red.shade800,
-        border: Border(
-          bottom: BorderSide(
-            color: allOk ? Colors.green.shade900 : Colors.red.shade900,
-            width: 2,
-          ),
+        color: allOk ? brand.success : brand.connectionOffline,
+        border: const Border(
+          bottom: BorderSide(color: Colors.black26, width: 2),
         ),
       ),
       child: Column(
@@ -586,21 +586,21 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
               _buildSummaryBadge(
                 icon: Icons.check_circle,
                 count: _okCount,
-                color: Colors.green.shade300,
+                color: Colors.white.withOpacity(0.85),
               ),
               const SizedBox(width: 12),
               if (_warningCount > 0)
                 _buildSummaryBadge(
                   icon: Icons.warning,
                   count: _warningCount,
-                  color: Colors.orange.shade300,
+                  color: Colors.white.withOpacity(0.85),
                 ),
               if (_warningCount > 0) const SizedBox(width: 12),
               if (_errorCount > 0)
                 _buildSummaryBadge(
                   icon: Icons.error,
                   count: _errorCount,
-                  color: Colors.red.shade300,
+                  color: Colors.white.withOpacity(0.85),
                 ),
             ],
           ),

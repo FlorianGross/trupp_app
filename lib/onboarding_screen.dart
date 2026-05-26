@@ -13,7 +13,8 @@ import 'data/edp_api_pro.dart';
 import 'data/alarm_service.dart';
 import 'data/unit_type_store.dart';
 import 'issi_picker_screen.dart';
-import 'status_overview_screen.dart';
+import 'home_shell.dart';
+import 'theme/brand_colors.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -360,7 +361,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     }
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const StatusOverview()),
+      MaterialPageRoute(builder: (_) => const HomeShell()),
       (_) => false,
     );
   }
@@ -418,9 +419,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             if (_hostCtrl.text.trim().isEmpty ||
                 _tokenCtrl.text.trim().isEmpty) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Bitte Server und Token ausfüllen.'),
-                  backgroundColor: Colors.orange,
+                SnackBar(
+                  content: const Text('Bitte Server und Token ausfüllen.'),
+                  backgroundColor: Theme.of(context).brand.warning,
                 ),
               );
               return;
@@ -724,7 +725,8 @@ class _QrScannerSheetState extends State<_QrScannerSheet> {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('QR-Code ungültig: $e'),
-                            backgroundColor: Colors.red,
+                            backgroundColor:
+                                Theme.of(context).brand.warning,
                           ),
                         );
                       }

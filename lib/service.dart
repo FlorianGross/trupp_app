@@ -85,9 +85,55 @@ Timer? _modeCheckTimer;
 Timer? _flushTimer;
 StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
 
+// Connectivity-Flush-Debounce: ein Wiederherstellungs-Event darf nicht
+// sofort 200 HTTP-Requests starten. Bei flakiger Verbindung kommen oft
+// mehrere Events kurz hintereinander — wir warten 10 s und feuern dann
+// genau einmal. Zusätzlich ein Reentrancy-Guard: läuft schon ein Flush,
+// nicht parallel starten.
+Timer? _connectivityFlushDebounce;
+bool _flushInProgress = false;
+
+/// Minimum-Intervall zwischen zwei Notification-Updates. Verhindert dass
+/// `setForegroundNotificationInfo` 17 000 Mal/Tag im highAccuracy-Modus
+/// (alle 5 s) den StatusBar-Redraw triggert.
+const _kMinNotificationInterval = Duration(seconds: 30);
+DateTime? _lastNotificationUpdate;
+String? _lastNotificationContent;
+
+/// Aktualisiert die FGS-Notification nur, wenn (a) der Inhalt sich ändert UND
+/// (b) seit dem letzten Update mind. [_kMinNotificationInterval] vergangen
+/// ist — ODER [force] gesetzt ist (z.B. bei Status-/Deployment-Wechsel,
+/// damit der Nutzer das Update sofort sieht).
+Future<void> _updateNotificationIfDue(
+  ServiceInstance service, {
+  required String title,
+  required String content,
+  bool force = false,
+}) async {
+  if (service is! AndroidServiceInstance) return;
+
+  // Inhalts-Dedup: gleicher Text → kein Update (egal ob force).
+  if (content == _lastNotificationContent && !force) return;
+
+  // Throttle: wenn nicht erzwungen und das letzte Update <30 s her ist,
+  // skippen.
+  final now = DateTime.now();
+  if (!force &&
+      _lastNotificationUpdate != null &&
+      now.difference(_lastNotificationUpdate!) < _kMinNotificationInterval) {
+    return;
+  }
+
+  _lastNotificationContent = content;
+  _lastNotificationUpdate = now;
+  await service.setForegroundNotificationInfo(title: title, content: content);
+}
+
 Future<int> _readStatusFromPrefs() async {
   final prefs = await SharedPreferences.getInstance();
-  return prefs.getInt(AppPrefsKeys.lastStatus) ?? 0;
+  // Default 1 = „Einsatzbereit". Status 0 wäre „Dringender Notruf" (TETRA)
+  // und darf nicht versehentlich aus einem leeren Pref entstehen.
+  return prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
 }
 
 Future<bool> _hasValidConfig() async {
@@ -117,12 +163,11 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
 
   // Qualität / Drosselung
   if (!_quality.isGood(pos, now: now, forceByHeartbeat: forceByHeartbeat)) {
-    if (service is AndroidServiceInstance) {
-      await service.setForegroundNotificationInfo(
-        title: 'Trupp App',
-        content: _getNotificationContent(isWaiting: true),
-      );
-    }
+    await _updateNotificationIfDue(
+      service,
+      title: 'Trupp App',
+      content: _getNotificationContent(isWaiting: true),
+    );
     return;
   }
 
@@ -142,12 +187,11 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
 
     _quality.markSent(pos, now: now);
 
-    if (service is AndroidServiceInstance) {
-      await service.setForegroundNotificationInfo(
-        title: 'Trupp App',
-        content: _getNotificationContent(),
-      );
-    }
+    await _updateNotificationIfDue(
+      service,
+      title: 'Trupp App',
+      content: _getNotificationContent(),
+    );
   } catch (e, st) {
     AppLogger.e('LocationService', 'Positionsübertragung fehlgeschlagen', e, st);
   }
@@ -184,11 +228,18 @@ String _getNotificationContent({bool isWaiting = false}) {
 
 Future<void> _heartbeatTick(ServiceInstance service) async {
   try {
+    // Accuracy + Timeout an den aktuellen Tracking-Modus anpassen —
+    // im powerSaver muss kein bestForNavigation-Fix angefordert werden,
+    // im Einsatz darf der Fix nicht zu lange dauern.
+    final accuracy =
+        AdaptiveLocationSettings.getOneShotAccuracy(_trackingMode);
+    final timeout = AdaptiveLocationSettings.getOneShotTimeout(_trackingMode);
+
     // Immer frische Position holen - nie veralteten Cache senden
     final pos = await Geolocator.getCurrentPosition(
       locationSettings: LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: const Duration(seconds: 10),
+        accuracy: accuracy,
+        timeLimit: timeout,
       ),
     );
 
@@ -210,6 +261,21 @@ void _scheduleNextHeartbeat(ServiceInstance service) {
 /// bei Moduswechsel neu starten kann.
 Future<void> Function()? _restartStreamCallback;
 
+/// Liefert die zum TrackingMode passende Quality-Filter-Mindestdistanz.
+/// Faustregel: ~halber Stream-distanceFilter, damit der Filter im powerSaver
+/// (Stream-DF 100 m) nicht alles durchlässt was er nicht schon vom OS
+/// gefiltert bekommen hat.
+double _minDistanceForMode(TrackingMode mode) {
+  switch (mode) {
+    case TrackingMode.highAccuracy:
+      return 5.0;
+    case TrackingMode.balanced:
+      return 12.0;
+    case TrackingMode.powerSaver:
+      return 50.0;
+  }
+}
+
 Future<void> _updateTrackingMode(ServiceInstance service) async {
   final newMode = await AdaptiveLocationSettings.determineMode(
     deployment: _deploymentMode,
@@ -218,18 +284,21 @@ Future<void> _updateTrackingMode(ServiceInstance service) async {
 
   if (newMode != _trackingMode) {
     _trackingMode = newMode;
+    _quality.setMinDistance(_minDistanceForMode(newMode));
 
     // GPS-Stream mit neuen Einstellungen neu starten
     if (_restartStreamCallback != null) {
       await _restartStreamCallback!();
     }
 
-    if (service is AndroidServiceInstance) {
-      await service.setForegroundNotificationInfo(
-        title: 'Trupp App',
-        content: _getNotificationContent(),
-      );
-    }
+    // Modus-Wechsel ist eine sichtbare Zustandsänderung → force=true,
+    // damit der Nutzer sofort sieht "Energiesparmodus" statt nach 30 s.
+    await _updateNotificationIfDue(
+      service,
+      title: 'Trupp App',
+      content: _getNotificationContent(),
+      force: true,
+    );
   }
 }
 
@@ -249,6 +318,7 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
       _hbTimer?.cancel();
       _flushTimer?.cancel();
       _connectivitySub?.cancel();
+      _connectivityFlushDebounce?.cancel();
       await AlarmService.stop();
       await service.stopSelf();
       return;
@@ -263,26 +333,45 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
   });
 }
 
-/// Periodischer Flush: alle 3 Minuten ausstehende Positionen an den Server senden
+/// Periodischer Flush: alle 3 Minuten ausstehende Positionen an den Server senden.
+/// Skippt komplett wenn die Queue leer ist (kein HTTP, keine Notification).
 void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer?.cancel();
   _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
+    // Guard: nichts zu flushen → kein Wake, keine Notification.
+    final stats = await LocationSyncManager.instance.getStats();
+    final pending = stats['pending'] ?? 0;
+    if (pending == 0) return;
+
     try {
-      await LocationSyncManager.instance.flushPendingNow(batchSize: 100);
+      await _runFlushGuarded(batchSize: 100);
     } catch (e, st) {
       AppLogger.e('LocationService', 'Periodischer Flush fehlgeschlagen', e, st);
     }
     // Notification aktualisieren mit aktuellem Pending-Count
-    if (service is AndroidServiceInstance) {
-      await service.setForegroundNotificationInfo(
-        title: 'Trupp App',
-        content: await _getNotificationContentAsync(),
-      );
-    }
+    await _updateNotificationIfDue(
+      service,
+      title: 'Trupp App',
+      content: await _getNotificationContentAsync(),
+    );
   });
 }
 
-/// Connectivity-Listener: Bei Netzwerk-Wiederherstellung sofort Queue flushen
+/// Reentrancy-geschützter Flush: läuft schon einer, sofort raus.
+Future<bool> _runFlushGuarded({int batchSize = 100}) async {
+  if (_flushInProgress) return false;
+  _flushInProgress = true;
+  try {
+    return await LocationSyncManager.instance.flushPendingNow(batchSize: batchSize);
+  } finally {
+    _flushInProgress = false;
+  }
+}
+
+/// Connectivity-Listener: Bei Netzwerk-Wiederherstellung Queue flushen —
+/// aber debounced (10 s warten, dann genau einmal feuern) und gegen
+/// parallele Flushes geschützt. Vermeidet 200-HTTP-Bursts bei flakiger
+/// Verbindung (Tunnel/Aufzug/Funkloch).
 void _startConnectivityListener() {
   _connectivitySub?.cancel();
   _connectivitySub = Connectivity().onConnectivityChanged.listen((results) async {
@@ -290,14 +379,21 @@ void _startConnectivityListener() {
         r == ConnectivityResult.wifi ||
         r == ConnectivityResult.mobile ||
         r == ConnectivityResult.ethernet);
-    if (hasConnection) {
-      // Netzwerk ist (wieder) da → sofort ausstehende Positionen senden
+    if (!hasConnection) {
+      _connectivityFlushDebounce?.cancel();
+      return;
+    }
+    // Bestehenden Debounce-Timer ersetzen — bei mehreren Events kurz
+    // hintereinander wird so nur der letzte ausgeführt.
+    _connectivityFlushDebounce?.cancel();
+    _connectivityFlushDebounce =
+        Timer(const Duration(seconds: 10), () async {
       try {
-        await LocationSyncManager.instance.flushPendingNow(batchSize: 200);
+        await _runFlushGuarded(batchSize: 200);
       } catch (e, st) {
         AppLogger.e('LocationService', 'Connectivity-Flush fehlgeschlagen', e, st);
       }
-    }
+    });
   });
 }
 
@@ -328,14 +424,17 @@ Future<void> onStart(ServiceInstance service) async {
     deployment: _deploymentMode,
     currentStatus: _currentStatus,
   );
+  _quality.setMinDistance(_minDistanceForMode(_trackingMode));
 
   if (service is AndroidServiceInstance) {
     await service.setAsForegroundService();
-    await service.setForegroundNotificationInfo(
-      title: 'Trupp App',
-      content: _getNotificationContent(),
-    );
   }
+  await _updateNotificationIfDue(
+    service,
+    title: 'Trupp App',
+    content: _getNotificationContent(),
+    force: true,
+  );
 
   // Status-Änderungen lauschen
   service.on('statusChanged').listen((event) async {
@@ -345,12 +444,13 @@ Future<void> onStart(ServiceInstance service) async {
       await DeploymentState.updateActivity();
       await _updateTrackingMode(service);
 
-      if (service is AndroidServiceInstance) {
-        await service.setForegroundNotificationInfo(
-          title: 'Trupp App',
-          content: _getNotificationContent(),
-        );
-      }
+      // Status-Wechsel ist sichtbare User-Aktion → force.
+      await _updateNotificationIfDue(
+        service,
+        title: 'Trupp App',
+        content: _getNotificationContent(),
+        force: true,
+      );
     }
   });
 
@@ -364,12 +464,13 @@ Future<void> onStart(ServiceInstance service) async {
       );
       await _updateTrackingMode(service);
 
-      if (service is AndroidServiceInstance) {
-        await service.setForegroundNotificationInfo(
-          title: 'Trupp App',
-          content: _getNotificationContent(),
-        );
-      }
+      // Deployment-Wechsel (Einsatz ↔ Bereitschaft) → force.
+      await _updateNotificationIfDue(
+        service,
+        title: 'Trupp App',
+        content: _getNotificationContent(),
+        force: true,
+      );
     }
   });
 
@@ -397,17 +498,25 @@ Future<void> onStart(ServiceInstance service) async {
   /// Startet oder aktualisiert den GPS-Stream mit aktuellen Einstellungen
   Future<void> startTracking() async {
     if (!await _hasValidConfig()) {
-      if (service is AndroidServiceInstance) {
-        await service.setForegroundNotificationInfo(
-          title: 'Trupp App',
-          content: 'Keine gültige Konfiguration',
-        );
-      }
+      await _updateNotificationIfDue(
+        service,
+        title: 'Trupp App',
+        content: 'Keine gültige Konfiguration',
+        force: true,
+      );
       return;
     }
 
     await _ensureFullAccuracyIfPossible();
     await _updateTrackingMode(service);
+
+    // Initialen Pending-Count laden, damit die Notification beim ersten
+    // Update nicht „0 ausstehend" zeigt, obwohl die Queue schon Einträge
+    // aus einem vorherigen Service-Lauf hat.
+    try {
+      final stats = await LocationSyncManager.instance.getStats();
+      _lastPendingCount = stats['pending'] ?? 0;
+    } catch (_) {}
 
     // Stream neu starten falls bereits aktiv (Mode-Wechsel)
     if (trackingEnabled) {
@@ -454,12 +563,12 @@ Future<void> onStart(ServiceInstance service) async {
     _schedulePeriodicFlush(service);
     _startConnectivityListener();
 
-    if (service is AndroidServiceInstance) {
-      await service.setForegroundNotificationInfo(
-        title: 'Trupp App',
-        content: 'Hintergrund-Tracking (Status $_currentStatus) - Energiesparmodus',
-      );
-    }
+    await _updateNotificationIfDue(
+      service,
+      title: 'Trupp App',
+      content: 'Hintergrund-Tracking (Status $_currentStatus) - Energiesparmodus',
+      force: true,
+    );
   }
 
   Future<void> stopTracking() async {
@@ -482,13 +591,15 @@ Future<void> onStart(ServiceInstance service) async {
 
     _connectivitySub?.cancel();
     _connectivitySub = null;
+    _connectivityFlushDebounce?.cancel();
+    _connectivityFlushDebounce = null;
 
-    if (service is AndroidServiceInstance) {
-      await service.setForegroundNotificationInfo(
-        title: 'Trupp App',
-        content: 'Standby (Status $_currentStatus)',
-      );
-    }
+    await _updateNotificationIfDue(
+      service,
+      title: 'Trupp App',
+      content: 'Standby (Status $_currentStatus)',
+      force: true,
+    );
   }
 
   service.on('setTracking').listen((event) async {
@@ -547,10 +658,14 @@ Future<bool> onIosBackground(ServiceInstance service) async {
       currentStatus: _currentStatus,
     );
 
-    // 1) aktuellen Fix holen
+    // 1) aktuellen Fix holen — iOS BG-Fetch hat ~30 s Budget, daher hartes
+    // Timeout, sonst killt iOS den Task und wir verlieren auch den Flush.
     Position? pos = await Geolocator.getLastKnownPosition();
     pos ??= await Geolocator.getCurrentPosition(
-      locationSettings: AdaptiveLocationSettings.buildSettings(_trackingMode),
+      locationSettings: LocationSettings(
+        accuracy: AdaptiveLocationSettings.getOneShotAccuracy(_trackingMode),
+        timeLimit: const Duration(seconds: 15),
+      ),
     );
 
     // 2) Qualität prüfen & direkt senden (nicht nur queuen)
@@ -625,6 +740,15 @@ Future<void> initializeBackgroundService() async {
       autoStart: false,
       isForegroundMode: true,
       foregroundServiceNotificationId: 880,
+      // Eigener Low-Importance-Channel (in AlarmNotificationService.initialize
+      // angelegt) — stumm, keine Lockscreen-Pops, klar erkennbarer Name in
+      // Android-Einstellungen statt generisch "Background Service".
+      notificationChannelId: kForegroundChannelId,
+      initialNotificationTitle: 'Trupp App',
+      initialNotificationContent: 'Bereitschaft',
+      // Android 14+ verlangt explizite Foreground-Service-Typen. Wir sind
+      // ein location-tracker (siehe AndroidManifest).
+      foregroundServiceTypes: const [AndroidForegroundType.location],
     ),
     iosConfiguration: IosConfiguration(
       autoStart: false,
