@@ -235,11 +235,10 @@ class _MapScreenState extends State<MapScreen> {
             ),
             children: [
               TileLayer(
-                urlTemplate: isDark
-                    ? 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png'
-                    : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate:
+                      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 subdomains:
-                    isDark ? const ['a', 'b', 'c', 'd'] : const ['a', 'b', 'c'],
+                const ['a', 'b', 'c'],
                 userAgentPackageName: 'de.floriang.trupp_app',
               ),
               // Vollständiger Track im Replay gedimmt
