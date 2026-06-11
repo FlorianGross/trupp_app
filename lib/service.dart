@@ -12,6 +12,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'data/edp_api.dart';
 import 'data/location_quality.dart';
+import 'data/profile_store.dart';
 import 'data/location_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
@@ -305,6 +306,38 @@ Future<void> _updateTrackingMode(ServiceInstance service) async {
 void _schedulePeriodicModeCheck(ServiceInstance service) {
   _modeCheckTimer?.cancel();
   _modeCheckTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+    // Abgelaufenes temporäres Einsatz-Profil aufräumen: Profil wird gelöscht
+    // und das Standard-Profil aktiviert, damit keine Positionen mehr unter
+    // der vergessenen Einsatz-Kennung gesendet werden.
+    final expired = await ProfileStore.expireTemporaryIfDue();
+    if (expired != null) {
+      AppLogger.i('LocationService',
+          'Einsatz-Profil "${expired.expiredName}" abgelaufen und gelöscht');
+      if (expired.fallback != null) {
+        // Standard-Profil übernehmen: Config neu laden, GPS-Stream neu starten
+        await EdpApi.initFromPrefs();
+        if (_restartStreamCallback != null) {
+          await _restartStreamCallback!();
+        }
+        await _updateNotificationIfDue(
+          service,
+          title: 'Trupp App',
+          content:
+              'Einsatz-Profil abgelaufen – "${expired.fallback!.name}" aktiviert',
+          force: true,
+        );
+      } else {
+        // Kein Standard-Profil hinterlegt → Übertragung komplett stoppen
+        _hbTimer?.cancel();
+        _flushTimer?.cancel();
+        _connectivitySub?.cancel();
+        _connectivityFlushDebounce?.cancel();
+        await AlarmService.stop();
+        await service.stopSelf();
+        return;
+      }
+    }
+
     await _updateTrackingMode(service);
 
     // Konfigurierbarer Auto-Deaktivierungs-Timer
