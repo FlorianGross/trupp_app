@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/alarm_model.dart';
 import 'data/edp_api.dart';
+import 'data/status_sync_manager.dart';
 
 const kOverlayOpenDetail = 'overlay_open_detail';
 
@@ -68,9 +69,9 @@ class _AlarmOverlayWidgetState extends State<AlarmOverlayWidget> {
       _sending = true;
       _sentStatus = code;
     });
-    try {
-      await EdpApi.instance.sendStatus(code);
-    } catch (_) {}
+    // Queued bei Offline und wird vom Background-Service nachgesendet —
+    // das Overlay darf sich danach bedenkenlos schließen.
+    await StatusSyncManager.instance.sendOrQueue(code);
     await Future.delayed(const Duration(milliseconds: 400));
     await FlutterOverlayWindow.closeOverlay();
   }

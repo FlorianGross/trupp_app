@@ -16,12 +16,16 @@
 //   POST {pb_url}/api/collections/alarms/records
 // Die App subscribt auf neue Einträge mit Filter issi = "{eigene ISSI}".
 
+import 'dart:async';
+import 'dart:math';
+
 import 'package:pocketbase/pocketbase.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alarm_model.dart';
 import 'alarm_store.dart';
 import 'app_prefs.dart';
+import 'app_logger.dart';
 import '../alarm_notification.dart';
 
 typedef AlarmReceivedCallback = void Function(AlarmData alarm);
@@ -29,6 +33,14 @@ typedef AlarmReceivedCallback = void Function(AlarmData alarm);
 class AlarmService {
   static PocketBase? _pb;
   static UnsubscribeFunc? _unsubscribe;
+
+  // Reconnect-Backoff: schlägt der initiale Subscribe fehl (Server beim
+  // Service-Start nicht erreichbar), blieb die App bisher dauerhaft ohne
+  // Alarm-Empfang. Jetzt wird mit exponentiellem Backoff (5 s … 5 min)
+  // erneut verbunden, bis es klappt oder stop() gerufen wird.
+  static Timer? _retryTimer;
+  static int _retrySeconds = 5;
+  static bool _stopped = true;
 
   /// Schlüssel in SharedPreferences für die PocketBase-URL.
   static const kPbUrlKey = AppPrefsKeys.pbUrl;
@@ -38,6 +50,7 @@ class AlarmService {
   // ---------------------------------------------------------------------------
 
   /// Startet die Realtime-Subscription für eingehende Alarme.
+  /// Wirft nie — bei Verbindungsfehlern wird intern mit Backoff retried.
   ///
   /// [pbUrl]  – PocketBase-Instanz-URL, z.B. "https://pb.example.org"
   /// [issi]   – eigene Geräte-ISSI; filtert Alarme auf dieses Gerät
@@ -48,32 +61,57 @@ class AlarmService {
     AlarmReceivedCallback? onNew,
   }) async {
     await stop(); // ggf. bestehende Subscription beenden
+    _stopped = false;
+    _retrySeconds = 5;
+    await _connect(pbUrl: pbUrl, issi: issi, onNew: onNew);
+  }
 
-    _pb = PocketBase(pbUrl);
+  static Future<void> _connect({
+    required String pbUrl,
+    required String issi,
+    AlarmReceivedCallback? onNew,
+  }) async {
+    if (_stopped) return;
+    try {
+      _pb = PocketBase(pbUrl);
 
-    _unsubscribe = await _pb!.collection('alarms').subscribe(
-      '*',
-      (event) async {
-        if (event.action != 'create') return;
-        final record = event.record;
-        if (record == null) return;
+      _unsubscribe = await _pb!.collection('alarms').subscribe(
+        '*',
+        (event) async {
+          if (event.action != 'create') return;
+          final record = event.record;
+          if (record == null) return;
 
-        final alarm = AlarmData.fromJson(record.data);
-        if (alarm.issi != issi) return; // Sicherheitsprüfung, falls Filter serverseitig nicht greift
+          final alarm = AlarmData.fromJson(record.data);
+          if (alarm.issi != issi) return; // Sicherheitsprüfung, falls Filter serverseitig nicht greift
 
-        await AlarmStore.add(alarm);
-        final shown = await AlarmNotificationService.show(alarm);
-        if (shown) {
-          onNew?.call(alarm);
-        }
-      },
-      // Serverseitiger Filter: nur Datensätze für die eigene ISSI
-      filter: 'issi = "$issi"',
-    );
+          await AlarmStore.add(alarm);
+          final shown = await AlarmNotificationService.show(alarm);
+          if (shown) {
+            onNew?.call(alarm);
+          }
+        },
+        // Serverseitiger Filter: nur Datensätze für die eigene ISSI
+        filter: 'issi = "$issi"',
+      );
+      _retrySeconds = 5; // Erfolg → Backoff zurücksetzen
+    } catch (e, st) {
+      AppLogger.e('AlarmService',
+          'Subscribe fehlgeschlagen – Retry in $_retrySeconds s', e, st);
+      _pb = null;
+      _retryTimer?.cancel();
+      _retryTimer = Timer(Duration(seconds: _retrySeconds), () {
+        _connect(pbUrl: pbUrl, issi: issi, onNew: onNew);
+      });
+      _retrySeconds = min(_retrySeconds * 2, 300);
+    }
   }
 
   /// Beendet die aktive Realtime-Subscription.
   static Future<void> stop() async {
+    _stopped = true;
+    _retryTimer?.cancel();
+    _retryTimer = null;
     await _unsubscribe?.call();
     _unsubscribe = null;
     _pb = null;
