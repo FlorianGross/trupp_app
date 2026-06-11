@@ -369,6 +369,22 @@ void _schedulePeriodicFlush(ServiceInstance service) {
       AppLogger.e('LocationService', 'Status-Flush fehlgeschlagen', e, st);
     }
 
+    // Tägliches DB-Housekeeping auch ohne UI: das Cleanup hing bisher nur
+    // am App-Resume — läuft die App wochenlang im Hintergrund, wuchs die
+    // GPS-Datenbank unbegrenzt. Gleicher Pref-Key wie der UI-Pfad, damit
+    // nicht doppelt aufgeräumt wird.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastCleanup = prefs.getInt(AppPrefsKeys.lastDbCleanupMs) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - lastCleanup >= const Duration(hours: 24).inMilliseconds) {
+        await LocationSyncManager.instance.cleanupOldEntries(maxAgeDays: 30);
+        await prefs.setInt(AppPrefsKeys.lastDbCleanupMs, now);
+      }
+    } catch (e, st) {
+      AppLogger.e('LocationService', 'DB-Cleanup fehlgeschlagen', e, st);
+    }
+
     // Guard: nichts zu flushen → kein Wake, keine Notification.
     final stats = await LocationSyncManager.instance.getStats();
     final pending = stats['pending'] ?? 0;

@@ -102,6 +102,21 @@ Future<void> main() async {
   ));
 }
 
+// Gemeinsame Komponenten-Defaults für beide Themes: Eckenradius 12 und
+// Mindesthöhe 48 als Design-Token, statt sie pro Screen zu wiederholen.
+// Explizite styleFrom()/shape-Angaben in einzelnen Screens überschreiben
+// diese Defaults weiterhin.
+final _cardTheme = CardThemeData(
+  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+);
+
+final _elevatedButtonTheme = ElevatedButtonThemeData(
+  style: ElevatedButton.styleFrom(
+    minimumSize: const Size(64, 48),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  ),
+);
+
 final _lightTheme = ThemeData(
   brightness: Brightness.light,
   colorScheme: ColorScheme.fromSeed(
@@ -112,6 +127,8 @@ final _lightTheme = ThemeData(
     backgroundColor: Colors.red.shade800,
     foregroundColor: Colors.white,
   ),
+  cardTheme: _cardTheme,
+  elevatedButtonTheme: _elevatedButtonTheme,
   extensions: const <ThemeExtension<dynamic>>[BrandColors.light],
 );
 
@@ -125,6 +142,8 @@ final _darkTheme = ThemeData(
     backgroundColor: Colors.red.shade900,
     foregroundColor: Colors.white,
   ),
+  cardTheme: _cardTheme,
+  elevatedButtonTheme: _elevatedButtonTheme,
   extensions: const <ThemeExtension<dynamic>>[BrandColors.dark],
 );
 

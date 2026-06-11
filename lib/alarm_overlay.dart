@@ -83,26 +83,30 @@ class _AlarmOverlayWidgetState extends State<AlarmOverlayWidget> {
 
     return Material(
       color: Colors.transparent,
-      child: Center(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C1C1E),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.red.shade700, width: 2),
-            boxShadow: const [
-              BoxShadow(color: Colors.black87, blurRadius: 24, offset: Offset(0, 8)),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildHeader(alarm),
-              _buildInfo(alarm),
-              const Divider(color: Color(0xFF2C2C2E), height: 1),
-              _buildStatusButtons(),
-              _buildCloseButton(),
-            ],
+      // SafeArea: das Overlay liegt über anderen Apps und darf auf
+      // Notch-Geräten nicht unter Statusleiste/Home-Indicator rutschen.
+      child: SafeArea(
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.red.shade700, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Colors.black87, blurRadius: 24, offset: Offset(0, 8)),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(alarm),
+                _buildInfo(alarm),
+                const Divider(color: Color(0xFF2C2C2E), height: 1),
+                _buildStatusButtons(),
+                _buildCloseButton(),
+              ],
+            ),
           ),
         ),
       ),

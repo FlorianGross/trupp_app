@@ -8,6 +8,7 @@ import 'data/edp_api.dart';
 import 'data/status_sync_manager.dart';
 import 'alarm_notification.dart';
 import 'keypad_widget.dart';
+import 'utils/formatters.dart';
 
 class AlarmDetailScreen extends StatefulWidget {
   final AlarmData alarm;
@@ -78,7 +79,7 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
           if (alarm.mittel.isNotEmpty)
             _InfoCard(icon: Icons.local_fire_department, label: 'Einsatzmittel', value: alarm.mittel),
           if (alarm.ts.isNotEmpty)
-            _InfoCard(icon: Icons.schedule, label: 'Alarmzeit', value: _formatTs(alarm.ts)),
+            _InfoCard(icon: Icons.schedule, label: 'Alarmzeit', value: fmtAlarmTsLong(alarm.ts)),
         ],
       ),
     );
@@ -303,15 +304,6 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
     }
   }
 
-  String _formatTs(String ts) {
-    try {
-      final dt = DateTime.parse(ts).toLocal();
-      return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}  '
-          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} Uhr';
-    } catch (_) {
-      return ts;
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

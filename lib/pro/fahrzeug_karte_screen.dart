@@ -1,9 +1,14 @@
 // lib/pro/fahrzeug_karte_screen.dart
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../data/edp_api.dart';
 import '../data/edp_api_pro.dart';
+import '../theme/em_status.dart';
+import '../utils/formatters.dart';
 
 class FahrzeugKarteScreen extends StatefulWidget {
   const FahrzeugKarteScreen({super.key});
@@ -19,6 +24,17 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
   bool _loading = true;
   String? _error;
 
+  // Marker werden NICHT im build() erzeugt, sondern nur wenn sich Daten
+  // oder (für das Clustering relevant) die Zoom-Stufe ändern. Das vermeidet
+  // den kompletten Marker-Neuaufbau bei jedem Rebuild des Screens.
+  List<Marker> _markers = [];
+  int _lastClusterZoom = -1;
+  StreamSubscription<MapEvent>? _mapEvtSub;
+
+  /// Ab dieser Fahrzeugzahl werden nahe Marker zu Clustern zusammengefasst —
+  /// sonst überlappen sie und sind nicht mehr antippbar.
+  static const _clusterThreshold = 20;
+
   static const _defaultCenter = LatLng(51.1657, 10.4515);
   static const _defaultZoom = 6.0;
 
@@ -30,6 +46,7 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
 
   @override
   void dispose() {
+    _mapEvtSub?.cancel();
     _mapController.dispose();
     super.dispose();
   }
@@ -56,6 +73,7 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
         _alle = all;
         _mitPosition = withPos;
         _loading = false;
+        _rebuildMarkers();
       });
       _fitBounds();
     } else {
@@ -85,21 +103,129 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
     });
   }
 
-  Color _markerColor(String? status) {
-    switch (status) {
-      case '1':
-      case '2':
-        return Colors.green.shade600;
-      case '3':
-      case '4':
-        return Colors.orange.shade600;
-      case '5':
-        return Colors.blue.shade600;
-      case '6':
-        return Colors.red.shade700;
-      default:
-        return Colors.grey.shade600;
+  // ─── Marker & Clustering ────────────────────────────────────────────────
+
+  void _onMapReady() {
+    _lastClusterZoom = _mapController.camera.zoom.round();
+    // Cluster nur bei Zoom-Änderung neu berechnen (nicht bei jedem Pan).
+    _mapEvtSub = _mapController.mapEventStream.listen((evt) {
+      if (evt is! MapEventMoveEnd && evt is! MapEventDoubleTapZoomEnd) return;
+      final zoom = _mapController.camera.zoom.round();
+      if (zoom == _lastClusterZoom) return;
+      _lastClusterZoom = zoom;
+      if (_mitPosition.length > _clusterThreshold && mounted) {
+        setState(_rebuildMarkers);
+      }
+    });
+  }
+
+  void _rebuildMarkers() {
+    if (_mitPosition.length <= _clusterThreshold) {
+      _markers = _mitPosition.map(_vehicleMarker).toList();
+      return;
     }
+
+    // Einfaches Grid-Clustering: Fahrzeuge in Zellen von ~½ Kachelbreite
+    // der aktuellen Zoom-Stufe gruppieren. Zelle mit 1 Fahrzeug → normaler
+    // Marker, mehrere → Cluster-Bubble mit Anzahl (Tap zoomt hinein).
+    final zoom = _lastClusterZoom < 0 ? _defaultZoom.round() : _lastClusterZoom;
+    final cellDeg = 360.0 / math.pow(2, zoom) / 2.0;
+
+    final cells = <String, List<EdpEinsatzmittel>>{};
+    for (final em in _mitPosition) {
+      final key =
+          '${(em.koordY! / cellDeg).floor()}_${(em.koordX! / cellDeg).floor()}';
+      cells.putIfAbsent(key, () => []).add(em);
+    }
+
+    _markers = cells.values.map((group) {
+      if (group.length == 1) return _vehicleMarker(group.first);
+      return _clusterMarker(group);
+    }).toList();
+  }
+
+  Marker _vehicleMarker(EdpEinsatzmittel em) {
+    final color = emStatusColor(em.status);
+    return Marker(
+      point: LatLng(em.koordY!, em.koordX!),
+      width: 36,
+      height: 36,
+      child: GestureDetector(
+        onTap: () => _showVehicleInfo(em),
+        child: Tooltip(
+          message: em.displayName,
+          child: Container(
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: color.withOpacity(0.4),
+                  blurRadius: 6,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                em.status ?? '?',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Marker _clusterMarker(List<EdpEinsatzmittel> group) {
+    // Schwerpunkt der Gruppe als Marker-Position
+    final lat = group.map((e) => e.koordY!).reduce((a, b) => a + b) / group.length;
+    final lon = group.map((e) => e.koordX!).reduce((a, b) => a + b) / group.length;
+    return Marker(
+      point: LatLng(lat, lon),
+      width: 44,
+      height: 44,
+      child: GestureDetector(
+        onTap: () {
+          final coords = group.map((e) => LatLng(e.koordY!, e.koordX!)).toList();
+          _mapController.fitCamera(
+            CameraFit.bounds(
+              bounds: LatLngBounds.fromPoints(coords),
+              padding: const EdgeInsets.all(60),
+              maxZoom: 16,
+            ),
+          );
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.red.shade800,
+            shape: BoxShape.circle,
+            border: Border.all(color: Colors.white, width: 2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.3),
+                blurRadius: 6,
+                spreadRadius: 1,
+              ),
+            ],
+          ),
+          child: Center(
+            child: Text(
+              '${group.length}',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 
   void _showVehicleInfo(EdpEinsatzmittel em) {
@@ -129,13 +255,13 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 3),
                     decoration: BoxDecoration(
-                      color: _markerColor(em.status).withOpacity(0.15),
+                      color: emStatusColor(em.status).withOpacity(0.15),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(
                       'Status ${em.status}',
                       style: TextStyle(
-                          color: _markerColor(em.status),
+                          color: emStatusColor(em.status),
                           fontWeight: FontWeight.bold,
                           fontSize: 13),
                     ),
@@ -154,7 +280,7 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
             if (em.besatzungGes != null && em.besatzungGes! > 0)
               _infoRow('Besatzung', '${em.besatzungGes} Personen'),
             if (em.zeitstempel != null)
-              _infoRow('Letzte Meldung', _fmtDt(em.zeitstempel!)),
+              _infoRow('Letzte Meldung', fmtDateTimeShort(em.zeitstempel!)),
           ],
         ),
       ),
@@ -179,12 +305,6 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
         ],
       ),
     );
-  }
-
-  String _fmtDt(DateTime dt) {
-    final l = dt.toLocal();
-    return '${l.day.toString().padLeft(2, '0')}.${l.month.toString().padLeft(2, '0')} '
-        '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -238,9 +358,10 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
                   children: [
                     FlutterMap(
                       mapController: _mapController,
-                      options: const MapOptions(
+                      options: MapOptions(
                         initialCenter: _defaultCenter,
                         initialZoom: _defaultZoom,
+                        onMapReady: _onMapReady,
                       ),
                       children: [
                         TileLayer(
@@ -252,46 +373,7 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
                               : const ['a', 'b', 'c'],
                           userAgentPackageName: 'de.floriang.trupp_app',
                         ),
-                        MarkerLayer(
-                          markers: _mitPosition.map((em) {
-                            final color = _markerColor(em.status);
-                            return Marker(
-                              point: LatLng(em.koordY!, em.koordX!),
-                              width: 36,
-                              height: 36,
-                              child: GestureDetector(
-                                onTap: () => _showVehicleInfo(em),
-                                child: Tooltip(
-                                  message: em.displayName,
-                                  child: Container(
-                                    decoration: BoxDecoration(
-                                      color: color,
-                                      shape: BoxShape.circle,
-                                      border: Border.all(
-                                          color: Colors.white, width: 2),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: color.withOpacity(0.4),
-                                          blurRadius: 6,
-                                          spreadRadius: 1,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Center(
-                                      child: Text(
-                                        em.status ?? '?',
-                                        style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
+                        MarkerLayer(markers: _markers),
                       ],
                     ),
                     if (_mitPosition.isEmpty)

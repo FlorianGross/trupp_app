@@ -629,7 +629,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           lon: position.longitude,
           accuracy: position.accuracy,
           status: st,
-          timestamp: position.timestamp ?? DateTime.now(),
+          timestamp: position.timestamp,
         );
       } catch (gpsError) {
         //print('GPS-Fehler bei Status-Änderung: $gpsError');
@@ -676,7 +676,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         lon: position.longitude,
         accuracy: position.accuracy,
         status: st,
-        timestamp: position.timestamp ?? DateTime.now(),
+        timestamp: position.timestamp,
       );
     } catch (gpsError) {
       //print('GPS-Fehler bei Temp-Status: $gpsError');
@@ -1041,7 +1041,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         lon: position.longitude,
         accuracy: position.accuracy,
         status: selectedStatus ?? 2,
-        timestamp: position.timestamp ?? DateTime.now(),
+        timestamp: position.timestamp,
       );
       await LocationSyncManager.instance.flushPendingNow();
       _showSnackbar('Position gesendet', success: true);

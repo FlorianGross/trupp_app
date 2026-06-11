@@ -11,6 +11,7 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'alarm_detail_screen.dart';
 import 'data/alarm_model.dart';
 import 'data/alarm_store.dart';
+import 'utils/formatters.dart';
 
 class AlarmOverviewScreen extends StatefulWidget {
   /// Wenn gesetzt, wird dieser Alarm in der Liste oben hervorgehoben
@@ -28,6 +29,10 @@ class _AlarmOverviewScreenState extends State<AlarmOverviewScreen> {
   bool _loading = true;
   StreamSubscription? _newAlarmSub;
 
+  /// Dedup-Key des zuletzt live eingetroffenen Alarms — dessen Karte
+  /// animiert beim Einfügen in die Liste (Slide-in + Fade).
+  String? _animateKey;
+
   @override
   void initState() {
     super.initState();
@@ -39,7 +44,10 @@ class _AlarmOverviewScreenState extends State<AlarmOverviewScreen> {
         final alarm = AlarmData.fromJson(Map<String, dynamic>.from(data));
         if (_alarms.isEmpty ||
             _alarms.first.deduplicationKey != alarm.deduplicationKey) {
-          setState(() => _alarms.insert(0, alarm));
+          setState(() {
+            _alarms.insert(0, alarm);
+            _animateKey = alarm.deduplicationKey;
+          });
         }
       } catch (_) {}
     });
@@ -99,18 +107,27 @@ class _AlarmOverviewScreenState extends State<AlarmOverviewScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
                     itemCount: _alarms.length,
                     separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, i) => _AlarmCard(
-                      alarm: _alarms[i],
-                      isLatest: i == 0 && widget.highlightAlarm != null &&
-                          _alarms[i].deduplicationKey ==
-                              widget.highlightAlarm!.deduplicationKey,
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => AlarmDetailScreen(alarm: _alarms[i]),
+                    itemBuilder: (context, i) {
+                      final card = _AlarmCard(
+                        alarm: _alarms[i],
+                        isLatest: i == 0 && widget.highlightAlarm != null &&
+                            _alarms[i].deduplicationKey ==
+                                widget.highlightAlarm!.deduplicationKey,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => AlarmDetailScreen(alarm: _alarms[i]),
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                      if (_alarms[i].deduplicationKey == _animateKey) {
+                        return _SlideInOnMount(
+                          key: ValueKey(_alarms[i].deduplicationKey),
+                          child: card,
+                        );
+                      }
+                      return card;
+                    },
                   ),
                 ),
     );
@@ -252,7 +269,7 @@ class _AlarmCard extends StatelessWidget {
                         Icon(Icons.schedule, size: 12, color: Colors.grey.shade400),
                         const SizedBox(width: 2),
                         Text(
-                          _formatTs(alarm.ts),
+                          fmtAlarmTs(alarm.ts),
                           style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
                         ),
                       ],
@@ -268,17 +285,31 @@ class _AlarmCard extends StatelessWidget {
     );
   }
 
-  String _formatTs(String ts) {
-    try {
-      final dt = DateTime.parse(ts).toLocal();
-      final now = DateTime.now();
-      if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-        return '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} Uhr';
-      }
-      return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}. '
-          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-    } catch (_) {
-      return ts;
-    }
+}
+
+// ---------------------------------------------------------------------------
+// Einfüge-Animation für live eintreffende Alarme
+// ---------------------------------------------------------------------------
+
+class _SlideInOnMount extends StatelessWidget {
+  final Widget child;
+
+  const _SlideInOnMount({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      builder: (_, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * -24),
+          child: child,
+        ),
+      ),
+      child: child,
+    );
   }
 }

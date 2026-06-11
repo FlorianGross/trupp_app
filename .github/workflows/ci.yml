@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  analyze-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Infos (z.B. deprecated withOpacity) sind Altbestand und blockieren
+      # nicht; Warnungen und Fehler schon.
+      - name: Analyze
+        run: flutter analyze --no-fatal-infos
+
+      # sqflite_common_ffi braucht libsqlite3 auf dem Runner
+      - name: Install sqlite3
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+
+      - name: Test
+        run: flutter test
