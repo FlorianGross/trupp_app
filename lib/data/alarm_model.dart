@@ -8,6 +8,7 @@
 import 'dart:convert';
 
 class AlarmData {
+  final int id;            // Datensatz-ID der EDP-API (0 = unbekannt, z.B. PocketBase)
   final String issi;       // ISSI des alarmierten Einsatzmittels
   final String enr;        // Einsatznummer
   final String signal;     // Sondersignal (bereinigt, ohne "0="-Präfix)
@@ -22,6 +23,7 @@ class AlarmData {
   final String ts;         // RFC3339-Zeitstempel des Eingangs
 
   const AlarmData({
+    this.id = 0,
     required this.issi,
     required this.enr,
     required this.signal,
@@ -38,6 +40,7 @@ class AlarmData {
 
   factory AlarmData.fromJson(Map<String, dynamic> json) {
     return AlarmData(
+      id:       (json['id'] is int) ? json['id'] as int : 0,
       issi:     json['issi']     as String? ?? '',
       enr:      json['enr']      as String? ?? '',
       signal:   json['signal']   as String? ?? '',
@@ -54,6 +57,7 @@ class AlarmData {
   }
 
   Map<String, dynamic> toJson() => {
+    if (id != 0) 'id': id,
     'issi':      issi,
     'enr':       enr,
     'signal':    signal,

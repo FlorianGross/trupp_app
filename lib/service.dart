@@ -18,6 +18,7 @@ import 'data/adaptive_location_settings.dart';
 import 'package:pocketbase/pocketbase.dart';
 
 import 'data/alarm_service.dart';
+import 'data/edp_api_alarm_service.dart';
 import 'data/alarm_store.dart';
 import 'data/alarm_model.dart';
 import 'alarm_notification.dart';
@@ -320,6 +321,7 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
       _connectivitySub?.cancel();
       _connectivityFlushDebounce?.cancel();
       await AlarmService.stop();
+      await EdpApiAlarmService.stop();
       await service.stopSelf();
       return;
     }
@@ -414,6 +416,16 @@ Future<void> onStart(ServiceInstance service) async {
       pbUrl: pbUrl,
       issi: ownIssi,
       // Neuen Alarm an den Haupt-Isolate weiterleiten (Badge + Realtime-Liste)
+      onNew: (alarm) => service.invoke('newAlarm', alarm.toJson()),
+    );
+  }
+
+  // Alarmierung über den EDP-API-Server (Polling) – läuft parallel zu
+  // PocketBase. Doppelte Alarme werden in AlarmStore dedupliziert.
+  final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
+  if (proApiUrl.isNotEmpty && ownIssi.isNotEmpty) {
+    await EdpApiAlarmService.start(
+      issi: ownIssi,
       onNew: (alarm) => service.invoke('newAlarm', alarm.toJson()),
     );
   }
@@ -588,6 +600,7 @@ Future<void> onStart(ServiceInstance service) async {
     _flushTimer = null;
 
     await AlarmService.stop();
+    await EdpApiAlarmService.stop();
 
     _connectivitySub?.cancel();
     _connectivitySub = null;
@@ -688,6 +701,14 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
     // 4) PocketBase-Poll: neue Alarme holen (iOS kann keine SSE-Verbindung halten)
     await _pollAlarms();
+
+    // 4b) EDP-API-Poll: neue Alarme vom Pro-API-Server holen.
+    final iosPrefs = await SharedPreferences.getInstance();
+    final ownIssi = iosPrefs.getString(AppPrefsKeys.issi) ?? '';
+    final proApiUrl = iosPrefs.getString(AppPrefsKeys.proApiUrl) ?? '';
+    if (proApiUrl.isNotEmpty && ownIssi.isNotEmpty) {
+      await EdpApiAlarmService.pollOnce(issi: ownIssi);
+    }
   } catch (e, st) {
     AppLogger.e('iOSBackground', 'iOS-Hintergrundhandler fehlgeschlagen', e, st);
   }
