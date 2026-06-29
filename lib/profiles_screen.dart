@@ -49,9 +49,10 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         await Future.delayed(const Duration(milliseconds: 800));
       }
       final prefs = await SharedPreferences.getInstance();
-      final pbConfigured = (prefs.getString(AppPrefsKeys.pbUrl) ?? '').isNotEmpty &&
+      final alarmConfigured =
+          (prefs.getString(AppPrefsKeys.proApiUrl) ?? '').isNotEmpty &&
           (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
-      if (pbConfigured && !await svc.isRunning()) {
+      if (alarmConfigured && !await svc.isRunning()) {
         await svc.startService();
       }
     } catch (_) {}
@@ -304,7 +305,7 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
   late final TextEditingController _issiCtrl;
   late final TextEditingController _truppCtrl;
   late final TextEditingController _leiterCtrl;
-  late final TextEditingController _pbUrlCtrl;
+  late final TextEditingController _proApiUrlCtrl;
   late String _protocol;
 
   @override
@@ -328,14 +329,14 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
     _issiCtrl = TextEditingController(text: p?.issi ?? '');
     _truppCtrl = TextEditingController(text: p?.trupp ?? '');
     _leiterCtrl = TextEditingController(text: p?.leiter ?? '');
-    _pbUrlCtrl = TextEditingController(text: p?.pbUrl ?? '');
+    _proApiUrlCtrl = TextEditingController(text: p?.proApiUrl ?? '');
   }
 
   @override
   void dispose() {
     for (final c in [
       _nameCtrl, _hostCtrl, _portCtrl, _tokenCtrl,
-      _issiCtrl, _truppCtrl, _leiterCtrl, _pbUrlCtrl,
+      _issiCtrl, _truppCtrl, _leiterCtrl, _proApiUrlCtrl,
     ]) {
       c.dispose();
     }
@@ -353,7 +354,7 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
       issi: _issiCtrl.text.trim(),
       trupp: _truppCtrl.text.trim(),
       leiter: _leiterCtrl.text.trim(),
-      pbUrl: _pbUrlCtrl.text.trim(),
+      proApiUrl: _proApiUrlCtrl.text.trim(),
     );
     Navigator.pop(context, profile);
   }
@@ -441,11 +442,11 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
             const SizedBox(height: 12),
             TextFormField(controller: _leiterCtrl, decoration: _dec('Ansprechpartner')),
             const SizedBox(height: 20),
-            const _SectionHeader('Alarmierung (optional)'),
+            const _SectionHeader('EDP-Pro-API / Alarmierung (optional)'),
             const SizedBox(height: 12),
             TextFormField(
-              controller: _pbUrlCtrl,
-              decoration: _dec('PocketBase-URL'),
+              controller: _proApiUrlCtrl,
+              decoration: _dec('EDP-Pro-API-URL'),
               keyboardType: TextInputType.url,
             ),
             const SizedBox(height: 32),

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'ConfigScreen.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
-import 'data/alarm_service.dart';
 import 'data/app_logger.dart';
 
 class DeepLinkHandler extends StatefulWidget {
@@ -55,7 +54,6 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
     final server = uri.queryParameters['server'] ?? '';
     final token = uri.queryParameters['token'] ?? '';
     final issi = uri.queryParameters['issi'] ?? '';
-    final hasPbUrl = (uri.queryParameters['pb_url'] ?? '').isNotEmpty;
     final hasProApi = (uri.queryParameters['pro_api_url'] ?? '').isNotEmpty;
 
     final confirmed = await showDialog<bool>(
@@ -83,11 +81,6 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
                   icon: Icons.key_rounded,
                   label: 'Token',
                   value: '${token.substring(0, token.length.clamp(0, 6))}…'),
-            if (hasPbUrl)
-              _DialogRow(
-                  icon: Icons.notifications_rounded,
-                  label: 'Bereitschafts-App',
-                  value: '✓ enthalten'),
             if (hasProApi)
               _DialogRow(
                   icon: Icons.api_rounded,
@@ -135,7 +128,6 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
     final trupp = uri.queryParameters['trupp'] ?? '';
     final leiter = uri.queryParameters['leiter'] ?? '';
     final proApiUrl = uri.queryParameters['pro_api_url'] ?? '';
-    final pbUrl = uri.queryParameters['pb_url'] ?? '';
 
     if (serverPort.isEmpty || token.isEmpty) return;
 
@@ -166,10 +158,6 @@ class _DeepLinkHandlerState extends State<DeepLinkHandler> {
       } catch (e) {
         AppLogger.w('DeepLinkHandler', 'EdpApiPro-Init fehlgeschlagen', e);
       }
-    }
-
-    if (pbUrl.isNotEmpty) {
-      await AlarmService.savePbUrl(pbUrl);
     }
   }
 

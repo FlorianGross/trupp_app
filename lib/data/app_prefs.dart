@@ -19,9 +19,6 @@ abstract final class AppPrefsKeys {
   static const leiter = 'leiter';
   static const proApiUrl = 'pro_api_url';
 
-  // PocketBase / Alarmierung
-  static const pbUrl = 'pb_url';
-
   // EDP-API-Alarmierung (Polling über den Pro-API-Server)
   /// Höchste bereits empfangene Alarm-ID (Polling-Cursor).
   static const edpAlarmLastId = 'edp_alarm_last_id';
@@ -43,7 +40,6 @@ abstract final class AppPrefsKeys {
   static const lastActivityMs = 'last_activity_ms';
   static const lastFlushMs = 'lastFlushMs';
   static const lastDbCleanupMs = 'lastDbCleanupMs';
-  static const iosBgLastAlarmTs = 'ios_bg_last_alarm_ts';
 
   // Display-Verhalten
   /// Display im Einsatz dauerhaft wachhalten (Wakelock).

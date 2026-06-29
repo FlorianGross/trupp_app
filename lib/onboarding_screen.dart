@@ -10,7 +10,6 @@ import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
-import 'data/alarm_service.dart';
 import 'data/unit_type_store.dart';
 import 'issi_picker_screen.dart';
 import 'home_shell.dart';
@@ -35,7 +34,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final _issiCtrl = TextEditingController();
   final _truppCtrl = TextEditingController();
   final _leiterCtrl = TextEditingController();
-  final _pbUrlCtrl = TextEditingController();
   final _proApiUrlCtrl = TextEditingController();
   String _protocol = 'https';
   bool _showManualForm = false;
@@ -83,7 +81,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _issiCtrl.dispose();
     _truppCtrl.dispose();
     _leiterCtrl.dispose();
-    _pbUrlCtrl.dispose();
     _proApiUrlCtrl.dispose();
     super.dispose();
   }
@@ -163,7 +160,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final server = uri.queryParameters['server'] ?? '';
     final issi = uri.queryParameters['issi'] ?? '';
     final token = uri.queryParameters['token'] ?? '';
-    final hasPbUrl = (uri.queryParameters['pb_url'] ?? '').isNotEmpty;
     final hasProApi = (uri.queryParameters['pro_api_url'] ?? '').isNotEmpty;
 
     return showDialog<bool>(
@@ -192,8 +188,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 label: 'Token',
                 value: '${token.substring(0, token.length.clamp(0, 6))}…',
               ),
-            if (hasPbUrl)
-              _ScanRow(icon: Icons.notifications_rounded, label: 'Bereitschafts-App', value: '✓ enthalten'),
             if (hasProApi)
               _ScanRow(icon: Icons.api_rounded, label: 'EDP-Pro-API', value: '✓ enthalten'),
           ],
@@ -232,7 +226,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     final issi = uri.queryParameters['issi'] ?? '';
     final trupp = uri.queryParameters['trupp'] ?? '';
     final leiter = uri.queryParameters['leiter'] ?? '';
-    final pbUrl = uri.queryParameters['pb_url'] ?? '';
     final proApiUrl = uri.queryParameters['pro_api_url'] ?? '';
 
     setState(() {
@@ -242,7 +235,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _issiCtrl.text = issi;
       _truppCtrl.text = trupp;
       _leiterCtrl.text = leiter;
-      _pbUrlCtrl.text = pbUrl;
       _proApiUrlCtrl.text = proApiUrl;
       _protocol = proto;
       _configReady = host.isNotEmpty && token.isNotEmpty;
@@ -346,7 +338,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         proApiUrl: _proApiUrlCtrl.text.trim(),
       );
       await EdpApi.initWithConfig(cfg);
-      await AlarmService.savePbUrl(_pbUrlCtrl.text.trim());
       if (mounted) setState(() => _isSaving = false);
       return true;
     } catch (_) {
@@ -407,7 +398,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           tokenCtrl: _tokenCtrl,
           truppCtrl: _truppCtrl,
           leiterCtrl: _leiterCtrl,
-          pbUrlCtrl: _pbUrlCtrl,
           proApiUrlCtrl: _proApiUrlCtrl,
           isSaving: _isSaving,
           configReady: _configReady,
@@ -758,7 +748,6 @@ class _WelcomePage extends StatelessWidget {
   final TextEditingController tokenCtrl;
   final TextEditingController truppCtrl;
   final TextEditingController leiterCtrl;
-  final TextEditingController pbUrlCtrl;
   final TextEditingController proApiUrlCtrl;
   final bool isSaving;
   final bool configReady;
@@ -776,7 +765,6 @@ class _WelcomePage extends StatelessWidget {
     required this.tokenCtrl,
     required this.truppCtrl,
     required this.leiterCtrl,
-    required this.pbUrlCtrl,
     required this.proApiUrlCtrl,
     required this.isSaving,
     required this.configReady,
@@ -911,7 +899,6 @@ class _WelcomePage extends StatelessWidget {
                     tokenCtrl: tokenCtrl,
                     truppCtrl: truppCtrl,
                     leiterCtrl: leiterCtrl,
-                    pbUrlCtrl: pbUrlCtrl,
                     proApiUrlCtrl: proApiUrlCtrl,
                     onFieldChanged: onFieldChanged,
                   )
@@ -960,7 +947,6 @@ class _ManualConfigForm extends StatelessWidget {
   final TextEditingController tokenCtrl;
   final TextEditingController truppCtrl;
   final TextEditingController leiterCtrl;
-  final TextEditingController pbUrlCtrl;
   final TextEditingController proApiUrlCtrl;
   final VoidCallback onFieldChanged;
 
@@ -972,7 +958,6 @@ class _ManualConfigForm extends StatelessWidget {
     required this.tokenCtrl,
     required this.truppCtrl,
     required this.leiterCtrl,
-    required this.pbUrlCtrl,
     required this.proApiUrlCtrl,
     required this.onFieldChanged,
   });
@@ -1066,10 +1051,11 @@ class _ManualConfigForm extends StatelessWidget {
             decoration: _dec('Ansprechpartner'),
           ),
           const SizedBox(height: 20),
-          _SectionLabel('EDP-Pro-API (optional)'),
+          _SectionLabel('EDP-Pro-API / Alarmierung (optional)'),
           const SizedBox(height: 6),
           Text(
-            'Separater EDP-Pro-API-Server – nur für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage).',
+            'EDP-Pro-API-Server – für ISSI-Auswahl (Tetra-Endgeräte, '
+            'Fahrzeugabfrage) und Alarmierung.',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 12),
@@ -1077,19 +1063,6 @@ class _ManualConfigForm extends StatelessWidget {
             controller: proApiUrlCtrl,
             keyboardType: TextInputType.url,
             decoration: _dec('EDP-Pro-API-URL (z. B. https://api.example.org)'),
-          ),
-          const SizedBox(height: 20),
-          _SectionLabel('Bereitschafts-App / Alarmierung (optional)'),
-          const SizedBox(height: 6),
-          Text(
-            'PocketBase-Server der Bereitschafts-App – für Echtzeit-Alarmierungen.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: pbUrlCtrl,
-            keyboardType: TextInputType.url,
-            decoration: _dec('Bereitschafts-App-URL (z. B. https://pb.example.org)'),
           ),
           const SizedBox(height: 8),
           Text(

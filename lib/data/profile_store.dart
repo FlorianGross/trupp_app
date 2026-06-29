@@ -11,7 +11,7 @@ class AppProfile {
   final String issi;
   final String trupp;
   final String leiter;
-  final String pbUrl;
+  final String proApiUrl;
 
   const AppProfile({
     required this.name,
@@ -21,7 +21,7 @@ class AppProfile {
     required this.issi,
     this.trupp = '',
     this.leiter = '',
-    this.pbUrl = '',
+    this.proApiUrl = '',
   });
 
   Map<String, dynamic> toJson() => {
@@ -32,7 +32,7 @@ class AppProfile {
         AppPrefsKeys.issi: issi,
         AppPrefsKeys.trupp: trupp,
         AppPrefsKeys.leiter: leiter,
-        'pbUrl': pbUrl,
+        AppPrefsKeys.proApiUrl: proApiUrl,
       };
 
   static AppProfile fromJson(Map<String, dynamic> j) => AppProfile(
@@ -43,7 +43,8 @@ class AppProfile {
         issi: j[AppPrefsKeys.issi] as String? ?? '',
         trupp: j[AppPrefsKeys.trupp] as String? ?? '',
         leiter: j[AppPrefsKeys.leiter] as String? ?? '',
-        pbUrl: j['pbUrl'] as String? ?? '',
+        // Abwärtskompatibel: altes 'pbUrl'-Feld wird ignoriert.
+        proApiUrl: j[AppPrefsKeys.proApiUrl] as String? ?? '',
       );
 
   bool get isValid => name.isNotEmpty && server.isNotEmpty && token.isNotEmpty && issi.isNotEmpty;
@@ -56,7 +57,7 @@ class AppProfile {
     String? issi,
     String? trupp,
     String? leiter,
-    String? pbUrl,
+    String? proApiUrl,
   }) =>
       AppProfile(
         name: name ?? this.name,
@@ -66,7 +67,7 @@ class AppProfile {
         issi: issi ?? this.issi,
         trupp: trupp ?? this.trupp,
         leiter: leiter ?? this.leiter,
-        pbUrl: pbUrl ?? this.pbUrl,
+        proApiUrl: proApiUrl ?? this.proApiUrl,
       );
 }
 
@@ -124,11 +125,11 @@ class ProfileStore {
     await prefs.setString(AppPrefsKeys.trupp, profile.trupp);
     await prefs.setString(AppPrefsKeys.leiter, profile.leiter);
     await prefs.setBool('hasConfig', true);
-    // PocketBase-URL
-    if (profile.pbUrl.isNotEmpty) {
-      await prefs.setString(AppPrefsKeys.pbUrl, profile.pbUrl);
+    // EDP-API-URL (für Datenabruf + Alarmierung)
+    if (profile.proApiUrl.isNotEmpty) {
+      await prefs.setString(AppPrefsKeys.proApiUrl, profile.proApiUrl);
     } else {
-      await prefs.remove(AppPrefsKeys.pbUrl);
+      await prefs.remove(AppPrefsKeys.proApiUrl);
     }
     await prefs.setString(_activeKey, profile.name);
   }
@@ -149,7 +150,7 @@ class ProfileStore {
       issi: issi,
       trupp: prefs.getString(AppPrefsKeys.trupp) ?? '',
       leiter: prefs.getString(AppPrefsKeys.leiter) ?? '',
-      pbUrl: prefs.getString(AppPrefsKeys.pbUrl) ?? '',
+      proApiUrl: prefs.getString(AppPrefsKeys.proApiUrl) ?? '',
     );
   }
 }

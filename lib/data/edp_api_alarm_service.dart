@@ -1,15 +1,14 @@
 // lib/data/edp_api_alarm_service.dart
 //
-// Alarmierung über den EDP-API-Server (Gegenstück zu AlarmService, das auf
-// PocketBase setzt). Da die EDP-API rein REST ist (keine SSE/WebSockets),
-// fragt dieser Dienst den Endpoint regelmäßig ab:
+// Alarmierung über den EDP-API-Server. Da die EDP-API rein REST ist
+// (keine SSE/WebSockets), fragt dieser Dienst den Endpoint regelmäßig ab:
 //
 //   GET /api/v1/alarmierung?issi={issi}&sinceId={lastId}
 //
-// Neue Datensätze werden – wie bei AlarmService – lokal gespeichert, als
-// Benachrichtigung angezeigt und per Quittung bestätigt. Der höchste bereits
-// gesehene Datensatz wird als Cursor (edpAlarmLastId) persistiert, sodass nach
-// einem Neustart keine Alarme doppelt erscheinen.
+// Neue Datensätze werden lokal gespeichert (AlarmStore), als Benachrichtigung
+// angezeigt und per Quittung bestätigt. Der höchste bereits gesehene Datensatz
+// wird als Cursor (edpAlarmLastId) persistiert, sodass nach einem Neustart
+// keine Alarme doppelt erscheinen.
 
 import 'dart:async';
 

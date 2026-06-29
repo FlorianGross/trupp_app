@@ -1,14 +1,14 @@
 // lib/data/alarm_model.dart
 //
 // Datenmodell für einen eingehenden EDP-Alarm.
-// Das Backend stellt den Alarm unter GET /{token}/getalarm?issi={issi} bereit.
-// Die TruppApp pollt diesen Endpoint und zeigt bei 200-Antwort eine
-// Alarmbenachrichtigung an.
+// Die EDP-API stellt Alarme unter GET /api/v1/alarmierung?issi={issi} bereit.
+// Die TruppApp pollt diesen Endpoint (EdpApiAlarmService) und zeigt neue
+// Datensätze als Alarmbenachrichtigung an.
 
 import 'dart:convert';
 
 class AlarmData {
-  final int id;            // Datensatz-ID der EDP-API (0 = unbekannt, z.B. PocketBase)
+  final int id;            // Datensatz-ID der EDP-API (0 = unbekannt)
   final String issi;       // ISSI des alarmierten Einsatzmittels
   final String enr;        // Einsatznummer
   final String signal;     // Sondersignal (bereinigt, ohne "0="-Präfix)
