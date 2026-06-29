@@ -86,6 +86,36 @@ class AlarmData {
   /// Eindeutiger Schlüssel zur Deduplizierung (ENR + Timestamp).
   String get deduplicationKey => '${enr}_$ts';
 
+  /// Geparster Zeitstempel in lokaler Zeit (null wenn nicht parsebar).
+  DateTime? get timestamp {
+    try {
+      return DateTime.parse(ts).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// true wenn eine Sondersignal-Fahrt (Blaulicht/Martinshorn) angefordert ist.
+  bool get hasSondersignal {
+    final s = signal.trim().toLowerCase();
+    return s.isNotEmpty && s != '0' && s != 'nein' && s != 'ohne';
+  }
+
+  /// Menschenlesbare relative Zeit seit Eingang, z.B. "vor 5 Min".
+  String get relativeTime {
+    final dt = timestamp;
+    if (dt == null) return '';
+    final diff = DateTime.now().difference(dt);
+    if (diff.isNegative || diff.inSeconds < 45) return 'gerade eben';
+    if (diff.inMinutes < 60) return 'vor ${diff.inMinutes} Min';
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return 'vor $h Std';
+    }
+    final d = diff.inDays;
+    return d == 1 ? 'vor 1 Tag' : 'vor $d Tagen';
+  }
+
   /// Kurztitel für Benachrichtigung-Header.
   String get shortTitle {
     if (stichwort.isNotEmpty) return stichwort;

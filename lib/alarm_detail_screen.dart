@@ -1,6 +1,9 @@
 // lib/alarm_detail_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'data/alarm_model.dart';
@@ -22,6 +25,22 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   int? _lastSentStatus;
   bool _sendingStatus = false;
   bool _rejected = false;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // Verstrichene Zeit im Header sekündlich aktualisieren.
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,10 +80,20 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _AlarmHeader(alarm: alarm),
+          _AlarmHeader(alarm: alarm, elapsed: _elapsedText()),
           const SizedBox(height: 16),
           if (alarm.address.isNotEmpty)
-            _InfoCard(icon: Icons.location_on, label: 'Adresse', value: alarm.address, highlight: true),
+            _InfoCard(
+              icon: Icons.location_on,
+              label: 'Adresse',
+              value: alarm.address,
+              highlight: true,
+              trailing: IconButton(
+                icon: Icon(Icons.copy, size: 18, color: Colors.red.shade700),
+                tooltip: 'Adresse kopieren',
+                onPressed: () => _copy(alarm.address),
+              ),
+            ),
           const SizedBox(height: 8),
           if (alarm.enr.isNotEmpty)
             _InfoCard(icon: Icons.tag, label: 'Einsatznummer', value: alarm.enr),
@@ -317,6 +346,29 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
       return ts;
     }
   }
+
+  /// Live verstrichene Zeit seit Alarmierung, z.B. "12min 04s".
+  String _elapsedText() {
+    final dt = alarm.timestamp;
+    if (dt == null) return '';
+    final d = DateTime.now().difference(dt);
+    if (d.isNegative) return 'gerade eben';
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    final s = d.inSeconds % 60;
+    if (h > 0) return '${h}h ${m.toString().padLeft(2, '0')}min';
+    if (m > 0) return '${m}min ${s.toString().padLeft(2, '0')}s';
+    return '${s}s';
+  }
+
+  Future<void> _copy(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adresse kopiert'), duration: Duration(seconds: 2)),
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -408,30 +460,116 @@ class _KeypadStyleButton extends StatelessWidget {
 
 class _AlarmHeader extends StatelessWidget {
   final AlarmData alarm;
-  const _AlarmHeader({required this.alarm});
+  final String elapsed;
+  const _AlarmHeader({required this.alarm, required this.elapsed});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.campaign, color: Colors.white, size: 32),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                alarm.stichwort.isNotEmpty ? alarm.stichwort : 'Alarm',
-                style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.red.shade700, Colors.red.shade900],
         ),
-        if (alarm.klartext.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(alarm.klartext, style: TextStyle(color: Colors.red.shade100, fontSize: 16)),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
         ],
-      ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.campaign, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  alarm.stichwort.isNotEmpty ? alarm.stichwort : 'Alarm',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1),
+                ),
+              ),
+            ],
+          ),
+          if (alarm.klartext.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(alarm.klartext,
+                style: TextStyle(color: Colors.red.shade50, fontSize: 16)),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (alarm.hasSondersignal)
+                const _HeaderChip(
+                  icon: Icons.emergency_share,
+                  label: 'Sondersignal',
+                  bg: Color(0xFF1565C0),
+                ),
+              if (elapsed.isNotEmpty)
+                _HeaderChip(
+                  icon: Icons.timer_outlined,
+                  label: 'seit $elapsed',
+                  bg: Colors.black26,
+                ),
+              if (alarm.mittel.isNotEmpty)
+                _HeaderChip(
+                  icon: Icons.local_fire_department,
+                  label: alarm.mittel,
+                  bg: Colors.black26,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color bg;
+  const _HeaderChip({required this.icon, required this.label, required this.bg});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 14),
+          const SizedBox(width: 5),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 }
@@ -441,18 +579,26 @@ class _InfoCard extends StatelessWidget {
   final String label;
   final String value;
   final bool highlight;
+  final Widget? trailing;
 
-  const _InfoCard({required this.icon, required this.label, required this.value, this.highlight = false});
+  const _InfoCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.highlight = false,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Card(
       color: highlight ? Colors.white : Colors.red.shade800,
       margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: EdgeInsets.fromLTRB(12, 10, trailing != null ? 4 : 12, 10),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(icon, size: 20,
                 color: highlight ? Colors.red.shade900 : Colors.red.shade200),
@@ -473,6 +619,7 @@ class _InfoCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (trailing != null) trailing!,
           ],
         ),
       ),
