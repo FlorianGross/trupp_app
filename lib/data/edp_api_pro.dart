@@ -384,6 +384,27 @@ class EdpApiPro {
     }
   }
 
+  /// Einzelnen Einsatz per Einsatznummer laden.
+  Future<EdpProResult<EdpEinsatz>> getEinsatz(int einsatznummer) async {
+    try {
+      final resp = await _get(_uri('einsaetze/$einsatznummer'));
+      if (resp.statusCode == 404) {
+        return const EdpProResult.failure(404, 'Einsatz nicht gefunden');
+      }
+      if (resp.statusCode != 200) {
+        return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
+      }
+      final body = jsonDecode(resp.body) as Map<String, dynamic>;
+      final data = body['data'];
+      if (data is! Map<String, dynamic>) {
+        return const EdpProResult.failure(204, 'Keine Daten');
+      }
+      return EdpProResult.success(EdpEinsatz.fromJson(data));
+    } catch (e) {
+      return EdpProResult.failure(-1, e.toString());
+    }
+  }
+
   Future<EdpProResult<List<EdpEinsatzmittel>>> getEinsatzmittel({
     String? einsatznummer,
     String? status,

@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'data/alarm_model.dart';
 import 'data/edp_api.dart';
+import 'data/edp_api_pro.dart';
 import 'alarm_notification.dart';
 import 'keypad_widget.dart';
 
@@ -27,12 +28,32 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   bool _rejected = false;
   Timer? _tick;
 
+  // Vollständiger Einsatz aus der EDP-API (per Einsatznummer nachgeladen).
+  EdpEinsatz? _einsatz;
+  bool _loadingEinsatz = false;
+
   @override
   void initState() {
     super.initState();
     // Verstrichene Zeit im Header sekündlich aktualisieren.
     _tick = Timer.periodic(const Duration(seconds: 1), (_) {
       if (mounted) setState(() {});
+    });
+    _loadEinsatz();
+  }
+
+  /// Lädt den vollständigen Einsatz zur Alarm-Einsatznummer aus der EDP-API.
+  Future<void> _loadEinsatz() async {
+    final enr = int.tryParse(alarm.enr.trim());
+    if (enr == null) return;
+    final api = EdpApiPro.instance ?? await EdpApiPro.initFromPrefs();
+    if (api == null) return;
+    if (mounted) setState(() => _loadingEinsatz = true);
+    final res = await api.getEinsatz(enr);
+    if (!mounted) return;
+    setState(() {
+      _loadingEinsatz = false;
+      if (res.ok) _einsatz = res.data;
     });
   }
 
@@ -107,8 +128,89 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
             _InfoCard(icon: Icons.local_fire_department, label: 'Einsatzmittel', value: alarm.mittel),
           if (alarm.ts.isNotEmpty)
             _InfoCard(icon: Icons.schedule, label: 'Alarmzeit', value: _formatTs(alarm.ts)),
+          _buildEinsatzSection(),
         ],
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Einsatzübersicht – aus der EDP-API nachgeladene Detaildaten
+  // ---------------------------------------------------------------------------
+
+  Widget _buildEinsatzSection() {
+    if (_loadingEinsatz) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(4, 18, 4, 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+            ),
+            SizedBox(width: 10),
+            Text('Einsatzdetails werden geladen…',
+                style: TextStyle(color: Colors.white70, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    final e = _einsatz;
+    if (e == null) return const SizedBox.shrink();
+
+    // Nur Felder zeigen, die zusätzlichen Wert gegenüber dem Alarm liefern.
+    final rows = <Widget>[];
+    void add(IconData icon, String label, String? value) {
+      if (value != null && value.trim().isNotEmpty) {
+        rows.add(_InfoCard(icon: icon, label: label, value: value.trim()));
+      }
+    }
+
+    add(Icons.flag, 'Status', e.status);
+    add(Icons.priority_high, 'Priorität', e.prioritaet);
+    add(Icons.category, 'Einsatzart', e.einsatzart);
+    add(Icons.record_voice_over, 'Meldende:r', e.meldender);
+    add(Icons.map, 'Ortsteil', e.ortsteil);
+    add(Icons.sticky_note_2, 'Bemerkung', e.bemerkung);
+    if (e.eroeff != null) {
+      add(Icons.access_time, 'Eröffnet', _formatDt(e.eroeff!));
+    }
+    if (e.hasCoordinates) {
+      rows.add(_InfoCard(
+        icon: Icons.my_location,
+        label: 'Koordinaten',
+        value: '${e.koordy!.toStringAsFixed(5)}, ${e.koordx!.toStringAsFixed(5)}',
+        trailing: IconButton(
+          icon: const Icon(Icons.copy, size: 18, color: Colors.red),
+          tooltip: 'Koordinaten kopieren',
+          onPressed: () => _copy('${e.koordy},${e.koordx}'),
+        ),
+      ));
+    }
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 18, 4, 6),
+          child: Row(
+            children: [
+              Icon(Icons.assignment_outlined, color: Colors.white70, size: 16),
+              SizedBox(width: 6),
+              Text('EINSATZDETAILS',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8)),
+            ],
+          ),
+        ),
+        ...rows,
+      ],
     );
   }
 
@@ -168,8 +270,13 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   // Untere Aktionsleiste: Navigieren + Ablehnen
   // ---------------------------------------------------------------------------
 
+  bool get _hasDestination =>
+      alarm.address.isNotEmpty ||
+      alarm.ort.isNotEmpty ||
+      (_einsatz?.hasCoordinates ?? false);
+
   Widget _buildBottomRow(BuildContext context) {
-    if (alarm.address.isEmpty && alarm.ort.isEmpty) {
+    if (!_hasDestination) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
         child: _buildRejectButton(context, fullWidth: true),
@@ -327,7 +434,20 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   }
 
   Future<void> _openNavigation(BuildContext context) async {
-    final uri = Uri.parse(alarm.mapsUrl);
+    // Präzise Koordinaten aus dem Einsatz bevorzugen, sonst Adresse.
+    final e = _einsatz;
+    Uri uri;
+    if (e != null && e.hasCoordinates) {
+      final lat = e.koordy!;
+      final lon = e.koordx!;
+      final label = Uri.encodeComponent(alarm.shortTitle);
+      uri = Uri.parse('geo:$lat,$lon?q=$lat,$lon($label)');
+      if (!await canLaunchUrl(uri)) {
+        uri = Uri.parse('https://maps.google.com/?q=$lat,$lon');
+      }
+    } else {
+      uri = Uri.parse(alarm.mapsUrl);
+    }
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -339,12 +459,16 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
 
   String _formatTs(String ts) {
     try {
-      final dt = DateTime.parse(ts).toLocal();
-      return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}  '
-          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} Uhr';
+      return _formatDt(DateTime.parse(ts).toLocal());
     } catch (_) {
       return ts;
     }
+  }
+
+  String _formatDt(DateTime dt) {
+    final d = dt.toLocal();
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}  '
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')} Uhr';
   }
 
   /// Live verstrichene Zeit seit Alarmierung, z.B. "12min 04s".

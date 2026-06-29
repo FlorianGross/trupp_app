@@ -28,6 +28,11 @@ class EdpApiAlarmService {
   /// Standard-Polling-Intervall.
   static const Duration defaultInterval = Duration(seconds: 20);
 
+  /// Maximale Anzahl Benachrichtigungen pro Poll. Verhindert einen
+  /// Notification-Sturm, wenn nach einer Offline-Phase viele Alarme auf einmal
+  /// nachgeliefert werden – ältere werden still in die Liste übernommen.
+  static const int _maxNotificationsPerPoll = 3;
+
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
@@ -77,26 +82,59 @@ class EdpApiAlarmService {
       final lastId = prefs.getInt(AppPrefsKeys.edpAlarmLastId) ?? 0;
 
       final result = await api.pollAlarme(issi: issi, sinceId: lastId);
-      if (!result.ok || result.data == null || result.data!.isEmpty) return;
+      if (!result.ok) {
+        AppLogger.w('EdpApiAlarmService',
+            'Poll fehlgeschlagen (HTTP ${result.statusCode})');
+        return;
+      }
+      final data = result.data;
+      if (data == null || data.isEmpty) return;
 
-      // Aufsteigend nach ID (Server liefert bereits so) verarbeiten.
-      final alarms = result.data!..sort((a, b) => a.id.compareTo(b.id));
+      // Aufsteigend nach ID verarbeiten (defensiv kopieren + sortieren).
+      final alarms = [...data]..sort((a, b) => a.id.compareTo(b.id));
+
+      // Bei großem Rückstau nur die neuesten als Benachrichtigung zeigen.
+      final notifyFrom = alarms.length > _maxNotificationsPerPoll
+          ? alarms.length - _maxNotificationsPerPoll
+          : 0;
+      if (notifyFrom > 0) {
+        AppLogger.i('EdpApiAlarmService',
+            '${alarms.length} neue Alarme – nur die letzten '
+            '$_maxNotificationsPerPoll werden als Benachrichtigung gezeigt');
+      }
+
       var maxId = lastId;
-      for (final alarm in alarms) {
-        await AlarmStore.add(alarm);
-        final shown = await AlarmNotificationService.show(alarm);
-        if (shown) onNew?.call(alarm);
-
-        // Empfang quittieren (best effort).
-        if (alarm.id > 0) {
-          unawaited(api.quittiereAlarm(alarm.id));
+      var stored = 0;
+      for (var i = 0; i < alarms.length; i++) {
+        final alarm = alarms[i];
+        try {
+          await AlarmStore.add(alarm);
+          stored++;
+          if (i >= notifyFrom) {
+            final shown = await AlarmNotificationService.show(alarm);
+            if (shown) onNew?.call(alarm);
+          } else {
+            // Stiller Nachtrag in Liste/Badge ohne Benachrichtigung.
+            onNew?.call(alarm);
+          }
+          // Empfang quittieren (best effort, blockiert den Ablauf nicht).
+          if (alarm.id > 0) {
+            unawaited(api.quittiereAlarm(alarm.id));
+          }
+        } catch (e, st) {
+          AppLogger.e('EdpApiAlarmService',
+              'Verarbeitung von Alarm ${alarm.id} fehlgeschlagen', e, st);
         }
+        // Cursor immer fortschreiben – ein einzelner kaputter Datensatz darf
+        // nicht dazu führen, dass jede Runde dieselben Alarme erneut kommen.
         if (alarm.id > maxId) maxId = alarm.id;
       }
 
       if (maxId > lastId) {
         await prefs.setInt(AppPrefsKeys.edpAlarmLastId, maxId);
       }
+      AppLogger.i('EdpApiAlarmService',
+          '$stored/${alarms.length} Alarme verarbeitet, Cursor=$maxId');
     } catch (e, st) {
       AppLogger.e('EdpApiAlarmService', 'Alarm-Polling fehlgeschlagen', e, st);
     } finally {

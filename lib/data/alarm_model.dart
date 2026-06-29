@@ -40,7 +40,7 @@ class AlarmData {
 
   factory AlarmData.fromJson(Map<String, dynamic> json) {
     return AlarmData(
-      id:       (json['id'] is int) ? json['id'] as int : 0,
+      id:       _asInt(json['id']),
       issi:     json['issi']     as String? ?? '',
       enr:      json['enr']      as String? ?? '',
       signal:   json['signal']   as String? ?? '',
@@ -71,6 +71,14 @@ class AlarmData {
     'mittel':    mittel,
     'ts':        ts,
   };
+
+  /// Robuste Int-Konvertierung – akzeptiert int, double und numerische Strings.
+  static int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? 0;
+    return 0;
+  }
 
   String toJsonString() => jsonEncode(toJson());
 
