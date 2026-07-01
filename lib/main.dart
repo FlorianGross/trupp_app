@@ -8,6 +8,7 @@ import 'package:trupp_app/service.dart';
 import 'home_shell.dart';
 import 'onboarding_screen.dart';
 import 'data/alarm_model.dart';
+import 'data/profile_store.dart';
 import 'data/unit_type_store.dart';
 import 'theme/brand_colors.dart';
 import 'unit_type_picker_screen.dart';
@@ -65,6 +66,15 @@ Future<void> main() async {
   }
 
   await _loadThemePreference();
+
+  // Abgelaufenes temporäres Einsatz-Profil aufräumen (z. B. wenn die App
+  // während des Ablaufs geschlossen war): Profil löschen, Standard aktivieren.
+  final expiredProfile = await ProfileStore.expireTemporaryIfDue();
+  if (expiredProfile != null) {
+    AppLogger.i('main',
+        'Einsatz-Profil "${expiredProfile.expiredName}" abgelaufen und gelöscht'
+        '${expiredProfile.fallback != null ? ' – "${expiredProfile.fallback!.name}" aktiviert' : ''}');
+  }
 
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;

@@ -373,6 +373,9 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     final profileName = nameResult?.trim() ?? '';
     if (profileName.isEmpty) return;
 
+    // Erstes permanentes Profil wird automatisch Standard-Profil (Fallback
+    // nach Ablauf eines temporären Einsatz-Profils)
+    final hasDefault = await ProfileStore.defaultProfile() != null;
     final profile = AppProfile(
       name: profileName,
       protocol: _selectedProtocol,
@@ -382,6 +385,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       trupp: truppController.text.trim(),
       leiter: leiterController.text.trim(),
       pbUrl: pbUrlController.text.trim(),
+      isDefault: !hasDefault,
     );
     await ProfileStore.save(profile);
     if (mounted) {

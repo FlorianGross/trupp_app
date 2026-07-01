@@ -22,6 +22,11 @@ abstract final class AppPrefsKeys {
   // PocketBase / Alarmierung
   static const pbUrl = 'pb_url';
 
+  // Konfigurationsprofile
+  /// Ablaufzeitpunkt (Epoch-ms) des aktiven temporären Einsatz-Profils.
+  /// Nicht gesetzt = aktives Profil ist permanent.
+  static const activeProfileExpiresMs = 'active_profile_expires_ms';
+
   // App-Zustand
   static const onboarded = 'onboarded';
   static const darkMode = 'darkMode';
