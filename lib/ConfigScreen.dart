@@ -204,13 +204,21 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 );
                 return;
               }
-              final issi = await Navigator.push<String>(
+              final result = await Navigator.push<IssiPickerResult>(
                 context,
                 MaterialPageRoute(
                     builder: (_) => const IssiPickerScreen()),
               );
-              if (issi != null && mounted) {
-                setState(() => issiController.text = issi);
+              if (result != null && mounted) {
+                setState(() {
+                  issiController.text = result.issi;
+                  if (result.trupp.isNotEmpty) {
+                    truppController.text = result.trupp;
+                  }
+                  if (result.leiter.isNotEmpty) {
+                    leiterController.text = result.leiter;
+                  }
+                });
               }
             },
             icon: const Icon(Icons.radio, size: 18),
@@ -274,6 +282,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             onRetry: () async {
               await api.updateConfig(cfg);
               await AlarmService.savePbUrl(pbUrlController.text.trim());
+              await _autoSaveProfile(cfg);
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -287,6 +296,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
 
         await api.updateConfig(cfg);
         await AlarmService.savePbUrl(pbUrlController.text.trim());
+        await _autoSaveProfile(cfg);
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -298,6 +308,31 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       }
     } else {
       setState(() => _showAllErrors = true);
+    }
+  }
+
+  /// Speichert die aktuelle Konfiguration automatisch als Profil. Der Name
+  /// wird aus Truppname + ISSI zusammengesetzt, damit Profile pro Einheit
+  /// eindeutig sind und beim erneuten Speichern überschrieben werden.
+  Future<void> _autoSaveProfile(EdpConfig cfg) async {
+    final issi = cfg.issi.trim();
+    if (issi.isEmpty) return;
+    final trupp = cfg.trupp.trim();
+    final name = trupp.isNotEmpty ? '$trupp ($issi)' : 'ISSI $issi';
+    final profile = AppProfile(
+      name: name,
+      protocol: cfg.protocol,
+      server: '${cfg.host}:${cfg.port}',
+      token: cfg.token,
+      issi: issi,
+      trupp: trupp,
+      leiter: cfg.leiter,
+      pbUrl: pbUrlController.text.trim(),
+    );
+    try {
+      await ProfileStore.save(profile);
+    } catch (e) {
+      AppLogger.w('ConfigScreen', 'Auto-Save als Profil fehlgeschlagen', e);
     }
   }
 

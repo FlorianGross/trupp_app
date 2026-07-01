@@ -6,6 +6,21 @@ import 'package:flutter/material.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
 
+/// Ergebnis der ISSI-Auswahl: enthält neben der ISSI auch Einheitenkennung
+/// (Trupp) und Ansprechpartner, die aus den Freitext-Feldern (rufname,
+/// rufnameLang, opta, wache) des gewählten Eintrags abgeleitet werden.
+class IssiPickerResult {
+  final String issi;
+  final String trupp;
+  final String leiter;
+
+  const IssiPickerResult({
+    required this.issi,
+    this.trupp = '',
+    this.leiter = '',
+  });
+}
+
 class IssiPickerScreen extends StatefulWidget {
   const IssiPickerScreen({super.key});
 
@@ -353,8 +368,15 @@ class _IssiPickerScreenState extends State<IssiPickerScreen>
                         style: const TextStyle(fontSize: 12),
                       ),
                       trailing: const Icon(Icons.chevron_right_rounded),
-                      // Immer die ISSI zurückgeben
-                      onTap: () => Navigator.of(context).pop(g.issi),
+                      // Neben der ISSI auch Rufname (Trupp) und OPTA
+                      // (Ansprechpartner) als Freitext-Felder zurückgeben.
+                      onTap: () => Navigator.of(context).pop(
+                        IssiPickerResult(
+                          issi: g.issi,
+                          trupp: g.rufname ?? '',
+                          leiter: g.opta ?? '',
+                        ),
+                      ),
                     );
                   },
                 ),
@@ -404,8 +426,18 @@ class _IssiPickerScreenState extends State<IssiPickerScreen>
             style: const TextStyle(fontSize: 12),
           ),
           trailing: const Icon(Icons.chevron_right_rounded),
-          // Rufname als Kennung zurückgeben (Einsatzmittel haben keine ISSI)
-          onTap: () => Navigator.of(context).pop(em.rufname),
+          // Rufname als Kennung zurückgeben (Einsatzmittel haben keine ISSI);
+          // langer Rufname dient als Einheitenkennung, Wache als
+          // Ansprechpartner-Hinweis aus dem Freitext.
+          onTap: () => Navigator.of(context).pop(
+            IssiPickerResult(
+              issi: em.rufname,
+              trupp: (em.rufnameLang?.isNotEmpty == true
+                      ? em.rufnameLang!
+                      : em.rufname),
+              leiter: em.wache ?? '',
+            ),
+          ),
         );
       },
     );

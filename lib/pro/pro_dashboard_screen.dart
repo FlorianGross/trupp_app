@@ -354,15 +354,15 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
                 title: 'ISSI\nauswählen',
                 subtitle: 'Vom Server',
                 onTap: () async {
-                  final issi = await Navigator.push<String>(
+                  final result = await Navigator.push<IssiPickerResult>(
                     context,
                     MaterialPageRoute(
                         builder: (_) => const IssiPickerScreen()),
                   );
-                  if (issi != null && mounted) {
+                  if (result != null && mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                       content: Text(
-                          'ISSI $issi ausgewählt – in Konfiguration übernehmen'),
+                          'ISSI ${result.issi} ausgewählt – in Konfiguration übernehmen'),
                       backgroundColor: Colors.green,
                       duration: const Duration(seconds: 4),
                     ));
