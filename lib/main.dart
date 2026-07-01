@@ -86,20 +86,22 @@ Future<void> main() async {
     // GPS-Übertragung nach jedem App-Start deaktiviert
     await prefs.setBool(AppPrefsKeys.transmissionEnabled, false);
 
-    // Hintergrund-Service für Alarm-Empfang starten – sobald ein EDP-API-Server
-    // (Pro-URL) und eine ISSI konfiguriert sind.
-    final hasIssi = (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
-    final edpAlarmConfigured =
-        (prefs.getString(AppPrefsKeys.proApiUrl) ?? '').isNotEmpty && hasIssi;
-    if (edpAlarmConfigured) {
-      try {
-        final svc = FlutterBackgroundService();
-        if (!await svc.isRunning()) {
-          await svc.startService();
-        }
-      } catch (e, st) {
-        AppLogger.e('main', 'Background-Service konnte nicht gestartet werden', e, st);
+    // Hintergrund-Service starten, sobald eine (Webhook-)Konfiguration vorliegt.
+    // Der Service übernimmt zwei unabhängige Aufgaben:
+    //   • Standort-/Status-Übertragung über die Webhook-Schnittstelle
+    //   • Alarm-Polling über den EDP-API-Server (nur wenn proApiUrl gesetzt)
+    // Der Start wird bewusst NICHT an die EDP-API (proApiUrl) gekoppelt, damit
+    // die Standortübertragung unabhängig von der API funktioniert. Das
+    // Alarm-Polling schaltet sich in onStart intern nur bei gesetzter proApiUrl
+    // zu. GPS wird hier nicht gesendet: transmissionEnabled ist gerade auf false
+    // gesetzt, sodass der Service erst nach expliziter Status-Aktivierung sendet.
+    try {
+      final svc = FlutterBackgroundService();
+      if (!await svc.isRunning()) {
+        await svc.startService();
       }
+    } catch (e, st) {
+      AppLogger.e('main', 'Background-Service konnte nicht gestartet werden', e, st);
     }
 
     unitType = await UnitTypeStore.load();
