@@ -1,5 +1,6 @@
 // lib/service.dart
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:ui';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/foundation.dart';
@@ -176,7 +177,7 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
   }
 
   if (!await _hasValidConfig()) {
-    //print("No valid config, not sending position.");
+    AppLogger.w('DIAG', 'Position NICHT gesendet – keine gültige Webhook-Config');
     return;
   }
 
@@ -188,6 +189,8 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
       status: _currentStatus,
       timestamp: pos.timestamp,
     );
+    AppLogger.i('DIAG',
+        'Position an Webhook übergeben (lat=${pos.latitude.toStringAsFixed(5)}, status=$_currentStatus)');
 
     _quality.markSent(pos, now: now);
 
@@ -481,6 +484,10 @@ Future<void> onStart(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
 
+  // [DIAG] Läuft im Service-Isolate (erwartet: NICHT "main"). Zeigt außerdem,
+  // dass onStart tatsächlich erreicht wird.
+  AppLogger.i('DIAG', 'onStart · isolate=${Isolate.current.debugName}');
+
   await EdpApi.ensureInitialized();
 
   // Benachrichtigungs-Plugin und EDP-API-Alarm-Polling initialisieren
@@ -629,6 +636,8 @@ Future<void> onStart(ServiceInstance service) async {
 
   /// Startet oder aktualisiert den GPS-Stream mit aktuellen Einstellungen
   Future<void> startTracking() async {
+    AppLogger.i('DIAG',
+        'startTracking aufgerufen · validConfig=${await _hasValidConfig()}');
     if (!await _hasValidConfig()) {
       await _updateNotificationIfDue(
         service,
