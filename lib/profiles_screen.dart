@@ -66,17 +66,6 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 
   /// Service neu starten damit die aktuelle Konfiguration genutzt wird
   Future<void> _restartService() async {
-  Future<void> _activate(AppProfile profile) async {
-    // Vor dem Aktivieren fragen, ob die ISSI neu gesetzt werden soll –
-    // sinnvoll wenn das Gerät die Einheit wechselt aber der gleiche Server
-    // benutzt wird.
-    final maybeNewProfile = await _maybeResetIssi(profile);
-    if (maybeNewProfile == null) return; // Abbruch
-    final effective = maybeNewProfile;
-
-    await ProfileStore.activate(effective);
-    await EdpApi.initFromPrefs();
-    // Service neu starten damit neues Profil genutzt wird
     try {
       final svc = FlutterBackgroundService();
       if (await svc.isRunning()) {
@@ -94,23 +83,30 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
   }
 
   Future<void> _activate(AppProfile profile) async {
-    await ProfileStore.activate(profile);
+    // Vor dem Aktivieren fragen, ob die ISSI neu gesetzt werden soll –
+    // sinnvoll wenn das Gerät die Einheit wechselt aber der gleiche Server
+    // benutzt wird.
+    final maybeNewProfile = await _maybeResetIssi(profile);
+    if (maybeNewProfile == null) return; // Abbruch
+    final effective = maybeNewProfile;
+
+    await ProfileStore.activate(effective);
     await EdpApi.initFromPrefs();
     await _restartService();
     final expiresAt = await ProfileStore.activeExpiresAt();
 
     if (mounted) {
       setState(() {
-        _activeName = profile.name;
+        _activeName = effective.name;
         _activeExpiresAt = expiresAt;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            profile.isTemporary && expiresAt != null
-                ? 'Einsatz-Profil "${profile.name}" aktiviert – '
+            effective.isTemporary && expiresAt != null
+                ? 'Einsatz-Profil "${effective.name}" aktiviert – '
                     'wird ${_formatExpiry(expiresAt)} automatisch gelöscht'
-                : 'Profil "${profile.name}" aktiviert',
+                : 'Profil "${effective.name}" aktiviert',
           ),
           backgroundColor: Theme.of(context).brand.success,
         ),
@@ -127,6 +123,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     return sameDay
         ? 'um $hh:$mm Uhr'
         : 'am ${t.day}.${t.month}. um $hh:$mm Uhr';
+  }
+
   /// Fragt vor dem Aktivieren, ob die hinterlegte ISSI neu gewählt werden
   /// soll. Gibt das ggf. angepasste Profil zurück, oder null bei Abbruch.
   /// Eine neu ausgewählte ISSI wird im Profil persistiert, damit beim
