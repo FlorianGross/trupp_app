@@ -1,3 +1,5 @@
+import 'dart:isolate';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:trupp_app/alarm_notification.dart';
@@ -43,6 +45,12 @@ Future<void> toggleTheme() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // [DIAG] Erwartung: main() läuft NUR im Root-/UI-Isolate ("main"). Taucht hier
+  // ein anderer Isolate-Name auf, wird main() fälschlich in einem Hintergrund-
+  // Isolate ausgeführt (Ursache für "This class should only be used in the main
+  // isolate" beim FlutterBackgroundService()-Aufruf weiter unten).
+  AppLogger.i('DIAG', 'main() start · isolate=${Isolate.current.debugName}');
 
   // WICHTIG: Notification-Channels MÜSSEN vor initializeBackgroundService()
   // angelegt sein — das Plugin referenziert die FGS-Channel-ID, legt sie
@@ -95,9 +103,20 @@ Future<void> main() async {
     // Alarm-Polling schaltet sich in onStart intern nur bei gesetzter proApiUrl
     // zu. GPS wird hier nicht gesendet: transmissionEnabled ist gerade auf false
     // gesetzt, sodass der Service erst nach expliziter Status-Aktivierung sendet.
+    // [DIAG] Zeigt, ob die Standort-Voraussetzungen erfüllt sind.
+    AppLogger.i(
+        'DIAG',
+        'Autostart · webhookValid=${await EdpApi.hasValidConfigInPrefs()}'
+        ' · webhookHost=${(prefs.getString(AppPrefsKeys.server) ?? '').isNotEmpty}'
+        ' · token=${(prefs.getString(AppPrefsKeys.token) ?? '').isNotEmpty}'
+        ' · issi=${(prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty}'
+        ' · proApiUrl=${(prefs.getString(AppPrefsKeys.proApiUrl) ?? '').isNotEmpty}');
+
     try {
       final svc = FlutterBackgroundService();
-      if (!await svc.isRunning()) {
+      final running = await svc.isRunning();
+      AppLogger.i('DIAG', 'Autostart · service.isRunning=$running');
+      if (!running) {
         await svc.startService();
       }
     } catch (e, st) {

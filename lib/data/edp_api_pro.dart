@@ -5,6 +5,7 @@ import 'package:http/http.dart' as http;
 import 'edp_api.dart';
 import 'alarm_model.dart';
 import 'app_prefs.dart';
+import 'app_logger.dart';
 
 // ---------------------------------------------------------------------------
 // Models
@@ -267,6 +268,7 @@ class EdpApiPro {
 
   Future<bool> login(String username, String password) async {
     try {
+      AppLogger.i('API', 'POST ${_uri('auth/login')} (login user=$username)');
       final resp = await _client
           .post(
             _uri('auth/login'),
@@ -274,6 +276,7 @@ class EdpApiPro {
             body: jsonEncode({'username': username, 'password': password}),
           )
           .timeout(const Duration(seconds: 12));
+      AppLogger.i('API', '→ HTTP ${resp.statusCode} für POST auth/login');
       if (resp.statusCode != 200) return false;
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
       final data = body['data'] as Map<String, dynamic>?;
@@ -296,6 +299,7 @@ class EdpApiPro {
     final rt = _refreshToken;
     if (rt == null || rt.isEmpty) return false;
     try {
+      AppLogger.i('API', 'POST ${_uri('auth/refresh')}');
       final resp = await _client
           .post(
             _uri('auth/refresh'),
@@ -303,6 +307,7 @@ class EdpApiPro {
             body: jsonEncode({'refreshToken': rt}),
           )
           .timeout(const Duration(seconds: 10));
+      AppLogger.i('API', '→ HTTP ${resp.statusCode} für POST auth/refresh');
       if (resp.statusCode != 200) return false;
       final body = jsonDecode(resp.body) as Map<String, dynamic>;
       final data = body['data'] as Map<String, dynamic>?;
@@ -328,9 +333,11 @@ class EdpApiPro {
 
   Future<http.Response> _get(Uri uri) async {
     await _ensureAuth();
+    AppLogger.i('API', 'GET $uri');
     var resp = await _client
         .get(uri, headers: _headers)
         .timeout(const Duration(seconds: 12));
+    AppLogger.i('API', '→ HTTP ${resp.statusCode} für GET $uri');
     if (resp.statusCode == 401) {
       final recovered = await _tryRefresh() ||
           await login(_kTruppAppUser, _kTruppAppPass);
@@ -345,9 +352,11 @@ class EdpApiPro {
 
   Future<http.Response> _put(Uri uri, Map<String, dynamic> body) async {
     await _ensureAuth();
+    AppLogger.i('API', 'PUT $uri');
     var resp = await _client
         .put(uri, headers: _headers, body: jsonEncode(body))
         .timeout(const Duration(seconds: 12));
+    AppLogger.i('API', '→ HTTP ${resp.statusCode} für PUT $uri');
     if (resp.statusCode == 401) {
       final recovered = await _tryRefresh() ||
           await login(_kTruppAppUser, _kTruppAppPass);
@@ -588,9 +597,12 @@ class EdpApiPro {
   Future<EdpProResult<void>> quittiereAlarm(int id) async {
     try {
       await _ensureAuth();
+      AppLogger.i('API', 'POST ${_uri('alarmierung/$id/quittung')}');
       var resp = await _client
           .post(_uri('alarmierung/$id/quittung'), headers: _headers)
           .timeout(const Duration(seconds: 12));
+      AppLogger.i('API',
+          '→ HTTP ${resp.statusCode} für POST alarmierung/$id/quittung');
       if (resp.statusCode == 401) {
         final recovered = await _tryRefresh() ||
             await login(_kTruppAppUser, _kTruppAppPass);

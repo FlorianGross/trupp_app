@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_prefs.dart';
+import 'app_logger.dart';
 
 /// Bündelt die für EDP nötige Konfiguration.
 @immutable
@@ -184,11 +185,22 @@ class EdpApi {
     return v.toString().replaceAll('.', ',');
   }
 
+  /// URL fürs Logging mit maskiertem Token (Token ist erstes Pfadsegment).
+  String _redactedUrl(Uri url) {
+    final segs = List<String>.from(url.pathSegments);
+    if (segs.isNotEmpty && segs.first == _config.token) segs[0] = '***';
+    return url.replace(pathSegments: segs).toString();
+  }
+
   Future<EdpResult> _getWithRetry(Uri url) async {
     int attempt = 0;
+    // [DIAG] Jeder Webhook-Zugriff wird mit maskierter URL geloggt.
+    AppLogger.i('WEBHOOK', 'GET ${_redactedUrl(url)}');
     while (true) {
       try {
         final r = await _client.get(url).timeout(timeout);
+        AppLogger.i('WEBHOOK',
+            '→ HTTP ${r.statusCode} für ${_redactedUrl(url)}');
         if (r.statusCode >= 200 && r.statusCode < 300) {
           return EdpResult.ok(r.statusCode, body: r.body);
         }
