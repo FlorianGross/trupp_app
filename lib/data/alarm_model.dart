@@ -1,13 +1,14 @@
 // lib/data/alarm_model.dart
 //
 // Datenmodell für einen eingehenden EDP-Alarm.
-// Das Backend stellt den Alarm unter GET /{token}/getalarm?issi={issi} bereit.
-// Die TruppApp pollt diesen Endpoint und zeigt bei 200-Antwort eine
-// Alarmbenachrichtigung an.
+// Die EDP-API stellt Alarme unter GET /api/v1/alarmierung?issi={issi} bereit.
+// Die TruppApp pollt diesen Endpoint (EdpApiAlarmService) und zeigt neue
+// Datensätze als Alarmbenachrichtigung an.
 
 import 'dart:convert';
 
 class AlarmData {
+  final int id;            // Datensatz-ID der EDP-API (0 = unbekannt)
   final String issi;       // ISSI des alarmierten Einsatzmittels
   final String enr;        // Einsatznummer
   final String signal;     // Sondersignal (bereinigt, ohne "0="-Präfix)
@@ -22,6 +23,7 @@ class AlarmData {
   final String ts;         // RFC3339-Zeitstempel des Eingangs
 
   const AlarmData({
+    this.id = 0,
     required this.issi,
     required this.enr,
     required this.signal,
@@ -38,6 +40,7 @@ class AlarmData {
 
   factory AlarmData.fromJson(Map<String, dynamic> json) {
     return AlarmData(
+      id:       _asInt(json['id']),
       issi:     json['issi']     as String? ?? '',
       enr:      json['enr']      as String? ?? '',
       signal:   json['signal']   as String? ?? '',
@@ -54,6 +57,7 @@ class AlarmData {
   }
 
   Map<String, dynamic> toJson() => {
+    if (id != 0) 'id': id,
     'issi':      issi,
     'enr':       enr,
     'signal':    signal,
@@ -68,6 +72,14 @@ class AlarmData {
     'ts':        ts,
   };
 
+  /// Robuste Int-Konvertierung – akzeptiert int, double und numerische Strings.
+  static int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    if (v is String) return int.tryParse(v) ?? 0;
+    return 0;
+  }
+
   String toJsonString() => jsonEncode(toJson());
 
   static AlarmData? tryParseJsonString(String s) {
@@ -81,6 +93,36 @@ class AlarmData {
 
   /// Eindeutiger Schlüssel zur Deduplizierung (ENR + Timestamp).
   String get deduplicationKey => '${enr}_$ts';
+
+  /// Geparster Zeitstempel in lokaler Zeit (null wenn nicht parsebar).
+  DateTime? get timestamp {
+    try {
+      return DateTime.parse(ts).toLocal();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// true wenn eine Sondersignal-Fahrt (Blaulicht/Martinshorn) angefordert ist.
+  bool get hasSondersignal {
+    final s = signal.trim().toLowerCase();
+    return s.isNotEmpty && s != '0' && s != 'nein' && s != 'ohne';
+  }
+
+  /// Menschenlesbare relative Zeit seit Eingang, z.B. "vor 5 Min".
+  String get relativeTime {
+    final dt = timestamp;
+    if (dt == null) return '';
+    final diff = DateTime.now().difference(dt);
+    if (diff.isNegative || diff.inSeconds < 45) return 'gerade eben';
+    if (diff.inMinutes < 60) return 'vor ${diff.inMinutes} Min';
+    if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return 'vor $h Std';
+    }
+    final d = diff.inDays;
+    return d == 1 ? 'vor 1 Tag' : 'vor $d Tagen';
+  }
 
   /// Kurztitel für Benachrichtigung-Header.
   String get shortTitle {

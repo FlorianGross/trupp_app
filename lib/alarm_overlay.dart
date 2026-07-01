@@ -138,6 +138,28 @@ class _AlarmOverlayWidgetState extends State<AlarmOverlayWidget> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          if (alarm.hasSondersignal) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade600,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.emergency_share, color: Colors.white, size: 12),
+                  SizedBox(width: 3),
+                  Text('SoSi',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -170,13 +192,24 @@ class _AlarmOverlayWidgetState extends State<AlarmOverlayWidget> {
                 ),
               ],
             ),
-          if (alarm.enr.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Text(
-              'ENR ${alarm.enr}',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
-            ),
-          ],
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              if (alarm.enr.isNotEmpty)
+                Text(
+                  'ENR ${alarm.enr}',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                ),
+              if (alarm.enr.isNotEmpty && alarm.relativeTime.isNotEmpty)
+                Text('  ·  ',
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 11)),
+              if (alarm.relativeTime.isNotEmpty)
+                Text(
+                  alarm.relativeTime,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 11),
+                ),
+            ],
+          ),
         ],
       ),
     );

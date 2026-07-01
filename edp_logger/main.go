@@ -6,13 +6,14 @@
 //                ^^^ äußere Anführungszeichen sind PFLICHT damit Leerzeichen in Feldern nicht splitten
 //
 // Alarmierungs-Konfiguration (edp_logger.ini):
-//   pb_url   = https://pb.example.org   ← PocketBase-Instanz-URL
-//   pb_token = <optional>               ← PocketBase Admin-/API-Token (falls createRule nicht leer)
+//   edp_api_url = https://api.example.org  ← EDP-API-Server (ohne /api/v1)
+//   edp_user    = dispatcher               ← Benutzer mit Rolle User/Admin
+//   edp_pass    = <passwort>               ← Passwort des Benutzers
 //
-// Bei gesetztem pb_url erzeugt edp_logger beim Einsatz einen Datensatz in der
-// PocketBase-Collection "alarms" (POST /api/collections/alarms/records).
-// Die TruppApp abonniert diese Collection per Realtime-Subscription und
-// alarmiert das Gerät mit der passenden ISSI sofort.
+// Bei gesetzter edp_api_url meldet sich edp_logger beim Einsatz an der EDP-API
+// an (POST /api/v1/auth/login) und löst eine Alarmierung aus
+// (POST /api/v1/alarmierung) für das Gerät mit der passenden ISSI.
+// Die TruppApp pollt /api/v1/alarmierung und alarmiert das Gerät sofort.
 
 package main
 
@@ -49,16 +50,17 @@ var fieldNames = []string{
 // ---------------------------------------------------------------------------
 
 type Config struct {
-	LogDir      string
-	LogPrefix   string
-	DateFmt     string
-	TimeFmt     string
-	Separator   string
-	Rotate      string
-	Console     bool
-	EDPValue    bool
-	PocketBaseURL   string // PocketBase-Instanz-URL, z.B. "https://pb.example.org"
-	PocketBaseToken string // Optionaler Bearer-Token (falls createRule nicht leer ist)
+	LogDir    string
+	LogPrefix string
+	DateFmt   string
+	TimeFmt   string
+	Separator string
+	Rotate    string
+	Console   bool
+	EDPValue  bool
+	EDPApiURL string // EDP-API-Server, z.B. "https://api.example.org" (ohne /api/v1)
+	EDPUser   string // Benutzer mit Rolle User/Admin für die Alarmierung
+	EDPPass   string // Passwort des Benutzers
 }
 
 func programDataDir() string {
@@ -81,16 +83,17 @@ func exeDir() string {
 
 func defaultConfig() *Config {
 	return &Config{
-		LogDir:          filepath.Join(programDataDir(), "EDPLogger", "logs"),
-		LogPrefix:       "einsatz",
-		DateFmt:         "2006-01-02",
-		TimeFmt:         "15:04:05",
-		Separator:       " | ",
-		Rotate:          "daily",
-		Console:         false,
-		EDPValue:        false,
-		PocketBaseURL:   "",
-		PocketBaseToken: "",
+		LogDir:    filepath.Join(programDataDir(), "EDPLogger", "logs"),
+		LogPrefix: "einsatz",
+		DateFmt:   "2006-01-02",
+		TimeFmt:   "15:04:05",
+		Separator: " | ",
+		Rotate:    "daily",
+		Console:   false,
+		EDPValue:  false,
+		EDPApiURL: "",
+		EDPUser:   "",
+		EDPPass:   "",
 	}
 }
 
@@ -138,11 +141,14 @@ func loadConfig() *Config {
 	}
 	cfg.Console = strings.ToLower(sec.Key("console").String()) == "true"
 	cfg.EDPValue = strings.ToLower(sec.Key("edp_value").String()) == "true"
-	if v := sec.Key("pb_url").String(); v != "" {
-		cfg.PocketBaseURL = strings.TrimRight(v, "/")
+	if v := sec.Key("edp_api_url").String(); v != "" {
+		cfg.EDPApiURL = strings.TrimRight(v, "/")
 	}
-	if v := sec.Key("pb_token").String(); v != "" {
-		cfg.PocketBaseToken = v
+	if v := sec.Key("edp_user").String(); v != "" {
+		cfg.EDPUser = v
+	}
+	if v := sec.Key("edp_pass").String(); v != "" {
+		cfg.EDPPass = v
 	}
 	return cfg
 }
@@ -161,11 +167,12 @@ func writeDefaultIni(path string) {
 			"console      = false\n"+
 			"; true wenn EDP 'Wert' als ersten Parameter voranstellt\n"+
 			"edp_value    = false\n\n"+
-			"; --- TruppApp Alarmierung via PocketBase ---\n"+
-			"; PocketBase-Instanz-URL (ohne abschließenden Slash)\n"+
-			"; pb_url   = https://pb.example.org\n"+
-			"; Optionaler Bearer-Token wenn die Collection createRule nicht leer ist\n"+
-			"; pb_token = dein-admin-oder-api-token\n",
+			"; --- TruppApp Alarmierung via EDP-API ---\n"+
+			"; EDP-API-Server-URL (ohne abschließenden Slash, ohne /api/v1)\n"+
+			"; edp_api_url = https://api.example.org\n"+
+			"; Benutzer mit Rolle User/Admin und zugehöriges Passwort\n"+
+			"; edp_user    = dispatcher\n"+
+			"; edp_pass    = dein-passwort\n",
 	), 0644)
 }
 
@@ -314,36 +321,90 @@ func writeLog(path, entry string) error {
 }
 
 // ---------------------------------------------------------------------------
-// PocketBase Alarmierung
+// EDP-API Alarmierung
 // ---------------------------------------------------------------------------
 
-// alarmRecord ist das JSON-Payload für POST /api/collections/alarms/records.
-// Entspricht der PocketBase-Collection "alarms".
-type alarmRecord struct {
-	ISSI      string `json:"issi"`
-	ENR       string `json:"enr"`
-	Signal    string `json:"signal"`
-	Stichwort string `json:"stichwort"`
-	Klartext  string `json:"klartext"`
-	Meldung   string `json:"meldung"`
-	Objekt    string `json:"objekt"`
-	Strasse   string `json:"strasse"`
-	HNR       string `json:"hnr"`
-	Ort       string `json:"ort"`
-	Mittel    string `json:"mittel"`
-	TS        string `json:"ts"`
+// alarmRequest ist das JSON-Payload für POST /api/v1/alarmierung.
+// Entspricht dem AlarmRequest-Modell der EDP-API. Der Zeitstempel (ts) wird
+// serverseitig gesetzt.
+type alarmRequest struct {
+	Issis     []string `json:"issis"`
+	ENR       string   `json:"enr"`
+	Signal    string   `json:"signal"`
+	Stichwort string   `json:"stichwort"`
+	Klartext  string   `json:"klartext"`
+	Meldung   string   `json:"meldung"`
+	Objekt    string   `json:"objekt"`
+	Strasse   string   `json:"strasse"`
+	HNR       string   `json:"hnr"`
+	Ort       string   `json:"ort"`
+	Mittel    string   `json:"mittel"`
 }
 
-// sendAlarm erzeugt einen Alarm-Datensatz in PocketBase für das Gerät mit der
-// angegebenen ISSI (vehicleID). Die TruppApp empfängt ihn per Realtime-Subscription.
-// Fehler werden in startup.log protokolliert, blockieren aber den Ablauf nicht.
+// logAlarmError protokolliert einen Alarmierungsfehler in startup.log,
+// blockiert aber den Ablauf nicht.
+func logAlarmError(format string, a ...any) {
+	d := filepath.Join(programDataDir(), "EDPLogger")
+	if f, ferr := openAppend(filepath.Join(d, "startup.log")); ferr == nil {
+		fmt.Fprintf(f, "[%s] EDP-API-ALARM-FEHLER: ", time.Now().Format("2006-01-02 15:04:05"))
+		fmt.Fprintf(f, format+"\n", a...)
+		f.Close()
+	}
+}
+
+// login meldet sich an der EDP-API an und gibt den Access-Token zurück.
+func login(cfg *Config, client *http.Client) (string, error) {
+	body, _ := json.Marshal(map[string]string{
+		"username": cfg.EDPUser,
+		"password": cfg.EDPPass,
+	})
+	req, err := http.NewRequest(http.MethodPost,
+		cfg.EDPApiURL+"/api/v1/auth/login", bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("login HTTP %d", resp.StatusCode)
+	}
+	var parsed struct {
+		Data struct {
+			AccessToken string `json:"accessToken"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		return "", err
+	}
+	if parsed.Data.AccessToken == "" {
+		return "", fmt.Errorf("kein accessToken in Antwort")
+	}
+	return parsed.Data.AccessToken, nil
+}
+
+// sendAlarm meldet sich an der EDP-API an und löst eine Alarmierung für das
+// Gerät mit der angegebenen ISSI (vehicleID) aus. Die TruppApp empfängt sie
+// per Polling. Fehler werden in startup.log protokolliert, blockieren aber
+// den Ablauf nicht.
 func sendAlarm(fields map[string]string, vehicleID string, cfg *Config) {
-	if cfg.PocketBaseURL == "" || vehicleID == "" {
+	if cfg.EDPApiURL == "" || vehicleID == "" {
 		return
 	}
 
-	record := alarmRecord{
-		ISSI:      vehicleID,
+	client := &http.Client{Timeout: 10 * time.Second}
+
+	token, err := login(cfg, client)
+	if err != nil {
+		logAlarmError("%v", err)
+		return
+	}
+
+	payload := alarmRequest{
+		Issis:     []string{vehicleID},
 		ENR:       g(fields, "EINSATZNUMMER"),
 		Signal:    cleanSignal(g(fields, "SONDERSIGNAL")),
 		Stichwort: g(fields, "STICHWORT"),
@@ -354,38 +415,30 @@ func sendAlarm(fields map[string]string, vehicleID string, cfg *Config) {
 		HNR:       g(fields, "HAUSNUMMER"),
 		Ort:       g(fields, "ORT"),
 		Mittel:    cleanMittel(g(fields, "EINSATZMITTEL")),
-		TS:        time.Now().UTC().Format(time.RFC3339),
 	}
 
-	body, err := json.Marshal(record)
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return
 	}
 
-	url := cfg.PocketBaseURL + "/api/collections/alarms/records"
-	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+	req, err := http.NewRequest(http.MethodPost,
+		cfg.EDPApiURL+"/api/v1/alarmierung", bytes.NewReader(body))
 	if err != nil {
 		return
 	}
 	req.Header.Set("Content-Type", "application/json")
-	if cfg.PocketBaseToken != "" {
-		req.Header.Set("Authorization", "Bearer "+cfg.PocketBaseToken)
-	}
+	req.Header.Set("Authorization", "Bearer "+token)
 
-	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		d := filepath.Join(programDataDir(), "EDPLogger")
-		if f, ferr := openAppend(filepath.Join(d, "startup.log")); ferr == nil {
-			fmt.Fprintf(f, "[%s] PB-ALARM-FEHLER: %v\n", time.Now().Format("2006-01-02 15:04:05"), err)
-			f.Close()
-		}
+		logAlarmError("%v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if cfg.Console {
-		fmt.Printf("[ALARM] PocketBase HTTP %d → ISSI %s\n", resp.StatusCode, vehicleID)
+		fmt.Printf("[ALARM] EDP-API HTTP %d → ISSI %s\n", resp.StatusCode, vehicleID)
 	}
 }
 
@@ -430,7 +483,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Gerät mit der ISSI (vehicleID) über PocketBase alarmieren
+	// Gerät mit der ISSI (vehicleID) über die EDP-API alarmieren
 	if fields != nil {
 		sendAlarm(fields, vehicleID, cfg)
 	}

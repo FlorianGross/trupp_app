@@ -27,7 +27,7 @@ import 'iot_car_helper.dart';
 import 'alarm_detail_screen.dart';
 import 'alarm_notification.dart';
 import 'alarm_overlay.dart' show kOverlayOpenDetail;
-import 'data/alarm_service.dart';
+import 'data/edp_api_alarm_service.dart';
 
 import 'data/unit_type_store.dart';
 import 'simplified_status_panel.dart';
@@ -145,7 +145,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   /// GPS-Übertragung nur wenn der Nutzer sie explizit aktiviert hat.
   Future<void> _onAppPaused() async {
     final svc = FlutterBackgroundService();
-    final alarmConfigured = await AlarmService.isConfigured();
+    final alarmConfigured = await EdpApiAlarmService.isConfigured();
 
     // Service starten wenn nötig (für Alarmierung oder aktives Tracking)
     if (!await svc.isRunning() && (alarmConfigured || _bgTrackingActive)) {
@@ -223,7 +223,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
     // Overlay-Permission anfordern (Android: "Über anderen Apps anzeigen")
     // Nur relevant wenn Alarmierung konfiguriert ist
-    if (Platform.isAndroid && await AlarmService.isConfigured()) {
+    if (Platform.isAndroid && await EdpApiAlarmService.isConfigured()) {
       await _requestOverlayPermission();
     }
 
@@ -579,7 +579,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           svc.invoke('stopService', {});
           // Kurz warten, dann Service für Alarm-Empfang neu starten falls konfiguriert
           await Future.delayed(const Duration(milliseconds: 800));
-          if (await AlarmService.isConfigured() && !await svc.isRunning()) {
+          if (await EdpApiAlarmService.isConfigured() && !await svc.isRunning()) {
             await svc.startService();
           }
         }
@@ -1058,7 +1058,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     // auf Defaults stehen.
     final cfg = EdpApi.instance.config;
     final prefs = await SharedPreferences.getInstance();
-    final pbUrl = prefs.getString(AppPrefsKeys.pbUrl) ?? '';
     // proApiUrl bevorzugt aus config (wurde dort immer mitgespeichert)
     final proApiUrl = cfg.proApiUrl.isNotEmpty
         ? cfg.proApiUrl
@@ -1071,7 +1070,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       'issi': cfg.issi,
       if (cfg.trupp.isNotEmpty) 'trupp': cfg.trupp,
       if (cfg.leiter.isNotEmpty) 'leiter': cfg.leiter,
-      if (pbUrl.isNotEmpty) 'pb_url': pbUrl,
       if (proApiUrl.isNotEmpty) 'pro_api_url': proApiUrl,
     };
     final deeplink = Uri(
@@ -1124,8 +1122,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               Wrap(
                 spacing: 6,
                 children: [
-                  if (pbUrl.isNotEmpty)
-                    _QrParamChip(label: 'Bereitschafts-App'),
                   if (proApiUrl.isNotEmpty)
                     _QrParamChip(label: 'EDP-Pro-API'),
                 ],

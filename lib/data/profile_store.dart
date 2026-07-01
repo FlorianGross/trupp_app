@@ -18,7 +18,7 @@ class AppProfile {
   final String issi;
   final String trupp;
   final String leiter;
-  final String pbUrl;
+  final String proApiUrl;
   final ProfileKind kind;
 
   /// Gültigkeitsdauer in Stunden ab Aktivierung (nur für temporäre Profile).
@@ -36,7 +36,7 @@ class AppProfile {
     required this.issi,
     this.trupp = '',
     this.leiter = '',
-    this.pbUrl = '',
+    this.proApiUrl = '',
     this.kind = ProfileKind.permanent,
     this.ttlHours = 8,
     this.isDefault = false,
@@ -52,7 +52,7 @@ class AppProfile {
         AppPrefsKeys.issi: issi,
         AppPrefsKeys.trupp: trupp,
         AppPrefsKeys.leiter: leiter,
-        'pbUrl': pbUrl,
+        AppPrefsKeys.proApiUrl: proApiUrl,
         'kind': kind.name,
         'ttlHours': ttlHours,
         'isDefault': isDefault,
@@ -66,7 +66,8 @@ class AppProfile {
         issi: j[AppPrefsKeys.issi] as String? ?? '',
         trupp: j[AppPrefsKeys.trupp] as String? ?? '',
         leiter: j[AppPrefsKeys.leiter] as String? ?? '',
-        pbUrl: j['pbUrl'] as String? ?? '',
+        // Abwärtskompatibel: altes 'pbUrl'-Feld wird ignoriert.
+        proApiUrl: j[AppPrefsKeys.proApiUrl] as String? ?? '',
         // Profile aus älteren App-Versionen haben kein kind → permanent
         kind: ProfileKind.values.firstWhere(
           (k) => k.name == j['kind'],
@@ -86,7 +87,7 @@ class AppProfile {
     String? issi,
     String? trupp,
     String? leiter,
-    String? pbUrl,
+    String? proApiUrl,
     ProfileKind? kind,
     int? ttlHours,
     bool? isDefault,
@@ -99,7 +100,7 @@ class AppProfile {
         issi: issi ?? this.issi,
         trupp: trupp ?? this.trupp,
         leiter: leiter ?? this.leiter,
-        pbUrl: pbUrl ?? this.pbUrl,
+        proApiUrl: proApiUrl ?? this.proApiUrl,
         kind: kind ?? this.kind,
         ttlHours: ttlHours ?? this.ttlHours,
         isDefault: isDefault ?? this.isDefault,
@@ -191,11 +192,11 @@ class ProfileStore {
     await prefs.setString(AppPrefsKeys.trupp, profile.trupp);
     await prefs.setString(AppPrefsKeys.leiter, profile.leiter);
     await prefs.setBool('hasConfig', true);
-    // PocketBase-URL
-    if (profile.pbUrl.isNotEmpty) {
-      await prefs.setString(AppPrefsKeys.pbUrl, profile.pbUrl);
+    // EDP-API-URL (für Datenabruf + Alarmierung)
+    if (profile.proApiUrl.isNotEmpty) {
+      await prefs.setString(AppPrefsKeys.proApiUrl, profile.proApiUrl);
     } else {
-      await prefs.remove(AppPrefsKeys.pbUrl);
+      await prefs.remove(AppPrefsKeys.proApiUrl);
     }
     await prefs.setString(_activeKey, profile.name);
     if (profile.isTemporary) {
@@ -256,7 +257,7 @@ class ProfileStore {
       issi: issi,
       trupp: prefs.getString(AppPrefsKeys.trupp) ?? '',
       leiter: prefs.getString(AppPrefsKeys.leiter) ?? '',
-      pbUrl: prefs.getString(AppPrefsKeys.pbUrl) ?? '',
+      proApiUrl: prefs.getString(AppPrefsKeys.proApiUrl) ?? '',
     );
   }
 }

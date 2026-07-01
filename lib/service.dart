@@ -17,11 +17,8 @@ import 'data/location_sync_manager.dart';
 import 'data/status_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
-import 'package:pocketbase/pocketbase.dart';
 
-import 'data/alarm_service.dart';
-import 'data/alarm_store.dart';
-import 'data/alarm_model.dart';
+import 'data/edp_api_alarm_service.dart';
 import 'alarm_notification.dart';
 
 // Globale Variablen für Service-Isolate
@@ -350,7 +347,7 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
         _flushTimer?.cancel();
         _connectivitySub?.cancel();
         _connectivityFlushDebounce?.cancel();
-        await AlarmService.stop();
+        await EdpApiAlarmService.stop();
         await service.stopSelf();
         return;
       }
@@ -374,7 +371,7 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
         s.cancel();
       }
       _serviceEventSubs.clear();
-      await AlarmService.stop();
+      await EdpApiAlarmService.stop();
       await service.stopSelf();
       return;
     }
@@ -486,23 +483,19 @@ Future<void> onStart(ServiceInstance service) async {
 
   await EdpApi.ensureInitialized();
 
-  // Benachrichtigungs-Plugin und PocketBase-Alarm-Subscription initialisieren
+  // Benachrichtigungs-Plugin und EDP-API-Alarm-Polling initialisieren
   await AlarmNotificationService.initialize();
   final prefs = await SharedPreferences.getInstance();
-  final pbUrl = prefs.getString(AlarmService.kPbUrlKey) ?? '';
   final ownIssi = prefs.getString(AppPrefsKeys.issi) ?? '';
-  if (pbUrl.isNotEmpty && ownIssi.isNotEmpty) {
-    try {
-      await AlarmService.start(
-        pbUrl: pbUrl,
-        issi: ownIssi,
-        // Neuen Alarm an den Haupt-Isolate weiterleiten (Badge + Realtime-Liste)
-        onNew: (alarm) => service.invoke('newAlarm', alarm.toJson()),
-      );
-    } catch (e, st) {
-      // Darf onStart nicht abbrechen — AlarmService retried intern mit Backoff.
-      AppLogger.e('AlarmService', 'Alarm-Subscription-Start fehlgeschlagen', e, st);
-    }
+
+  // Alarmierung über den EDP-API-Server (Polling).
+  final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
+  if (proApiUrl.isNotEmpty && ownIssi.isNotEmpty) {
+    await EdpApiAlarmService.start(
+      issi: ownIssi,
+      // Neuen Alarm an den Haupt-Isolate weiterleiten (Badge + Realtime-Liste)
+      onNew: (alarm) => service.invoke('newAlarm', alarm.toJson()),
+    );
   }
 
   // Alte Event-Subscriptions aufräumen, falls onStart im selben Isolate
@@ -681,7 +674,7 @@ Future<void> onStart(ServiceInstance service) async {
     _flushTimer?.cancel();
     _flushTimer = null;
 
-    await AlarmService.stop();
+    await EdpApiAlarmService.stop();
 
     _connectivitySub?.cancel();
     _connectivitySub = null;
@@ -788,50 +781,17 @@ Future<bool> onIosBackground(ServiceInstance service) async {
       await _markFlushedNow();
     }
 
-    // 4) PocketBase-Poll: neue Alarme holen (iOS kann keine SSE-Verbindung halten)
-    await _pollAlarms();
+    // 4) EDP-API-Poll: neue Alarme holen (iOS kann keine Dauerverbindung halten)
+    final iosPrefs = await SharedPreferences.getInstance();
+    final ownIssi = iosPrefs.getString(AppPrefsKeys.issi) ?? '';
+    final proApiUrl = iosPrefs.getString(AppPrefsKeys.proApiUrl) ?? '';
+    if (proApiUrl.isNotEmpty && ownIssi.isNotEmpty) {
+      await EdpApiAlarmService.pollOnce(issi: ownIssi);
+    }
   } catch (e, st) {
     AppLogger.e('iOSBackground', 'iOS-Hintergrundhandler fehlgeschlagen', e, st);
   }
   return true;
-}
-
-/// Pollt die neuesten Alarme aus PocketBase und zeigt ggf. eine Benachrichtigung.
-/// Wird im iOS-Background-Fetch aufgerufen, da SSE dort nicht läuft.
-Future<void> _pollAlarms() async {
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    final pbUrl = prefs.getString(AlarmService.kPbUrlKey) ?? '';
-    final ownIssi = prefs.getString(AppPrefsKeys.issi) ?? '';
-    if (pbUrl.isEmpty || ownIssi.isEmpty) return;
-
-    await AlarmNotificationService.initialize();
-
-    // Letzten bekannten Alarm-Timestamp lesen
-    final lastTs = prefs.getString(AppPrefsKeys.iosBgLastAlarmTs) ?? '';
-
-    final pb = PocketBase(pbUrl);
-    final result = await pb.collection('alarms').getList(
-      page: 1,
-      perPage: 5,
-      filter: 'issi = "$ownIssi"',
-      sort: '-created',
-    );
-
-    if (result.items.isEmpty) return;
-
-    final latestRecord = result.items.first;
-    final latestTs = latestRecord.created;
-    if (latestTs == lastTs) return; // Kein neuer Alarm
-
-    final alarm = AlarmData.fromJson(latestRecord.data);
-    await AlarmStore.add(alarm);
-    await AlarmNotificationService.show(alarm);
-
-    await prefs.setString(AppPrefsKeys.iosBgLastAlarmTs, latestTs);
-  } catch (e, st) {
-    AppLogger.e('iOSBackground', 'Alarm-Poll fehlgeschlagen', e, st);
-  }
 }
 
 Future<void> initializeBackgroundService() async {

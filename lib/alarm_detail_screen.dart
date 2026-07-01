@@ -1,10 +1,14 @@
 // lib/alarm_detail_screen.dart
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'data/alarm_model.dart';
 import 'data/edp_api.dart';
+import 'data/edp_api_pro.dart';
 import 'data/status_sync_manager.dart';
 import 'alarm_notification.dart';
 import 'keypad_widget.dart';
@@ -24,6 +28,42 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   int? _lastSentStatus;
   bool _sendingStatus = false;
   bool _rejected = false;
+  Timer? _tick;
+
+  // Vollständiger Einsatz aus der EDP-API (per Einsatznummer nachgeladen).
+  EdpEinsatz? _einsatz;
+  bool _loadingEinsatz = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Verstrichene Zeit im Header sekündlich aktualisieren.
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+    _loadEinsatz();
+  }
+
+  /// Lädt den vollständigen Einsatz zur Alarm-Einsatznummer aus der EDP-API.
+  Future<void> _loadEinsatz() async {
+    final enr = int.tryParse(alarm.enr.trim());
+    if (enr == null) return;
+    final api = EdpApiPro.instance ?? await EdpApiPro.initFromPrefs();
+    if (api == null) return;
+    if (mounted) setState(() => _loadingEinsatz = true);
+    final res = await api.getEinsatz(enr);
+    if (!mounted) return;
+    setState(() {
+      _loadingEinsatz = false;
+      if (res.ok) _einsatz = res.data;
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -63,10 +103,20 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _AlarmHeader(alarm: alarm),
+          _AlarmHeader(alarm: alarm, elapsed: _elapsedText()),
           const SizedBox(height: 16),
           if (alarm.address.isNotEmpty)
-            _InfoCard(icon: Icons.location_on, label: 'Adresse', value: alarm.address, highlight: true),
+            _InfoCard(
+              icon: Icons.location_on,
+              label: 'Adresse',
+              value: alarm.address,
+              highlight: true,
+              trailing: IconButton(
+                icon: Icon(Icons.copy, size: 18, color: Colors.red.shade700),
+                tooltip: 'Adresse kopieren',
+                onPressed: () => _copy(alarm.address),
+              ),
+            ),
           const SizedBox(height: 8),
           if (alarm.enr.isNotEmpty)
             _InfoCard(icon: Icons.tag, label: 'Einsatznummer', value: alarm.enr),
@@ -80,8 +130,89 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
             _InfoCard(icon: Icons.local_fire_department, label: 'Einsatzmittel', value: alarm.mittel),
           if (alarm.ts.isNotEmpty)
             _InfoCard(icon: Icons.schedule, label: 'Alarmzeit', value: fmtAlarmTsLong(alarm.ts)),
+          _buildEinsatzSection(),
         ],
       ),
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Einsatzübersicht – aus der EDP-API nachgeladene Detaildaten
+  // ---------------------------------------------------------------------------
+
+  Widget _buildEinsatzSection() {
+    if (_loadingEinsatz) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(4, 18, 4, 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16, height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white70),
+            ),
+            SizedBox(width: 10),
+            Text('Einsatzdetails werden geladen…',
+                style: TextStyle(color: Colors.white70, fontSize: 13)),
+          ],
+        ),
+      );
+    }
+
+    final e = _einsatz;
+    if (e == null) return const SizedBox.shrink();
+
+    // Nur Felder zeigen, die zusätzlichen Wert gegenüber dem Alarm liefern.
+    final rows = <Widget>[];
+    void add(IconData icon, String label, String? value) {
+      if (value != null && value.trim().isNotEmpty) {
+        rows.add(_InfoCard(icon: icon, label: label, value: value.trim()));
+      }
+    }
+
+    add(Icons.flag, 'Status', e.status);
+    add(Icons.priority_high, 'Priorität', e.prioritaet);
+    add(Icons.category, 'Einsatzart', e.einsatzart);
+    add(Icons.record_voice_over, 'Meldende:r', e.meldender);
+    add(Icons.map, 'Ortsteil', e.ortsteil);
+    add(Icons.sticky_note_2, 'Bemerkung', e.bemerkung);
+    if (e.eroeff != null) {
+      add(Icons.access_time, 'Eröffnet', _formatDt(e.eroeff!));
+    }
+    if (e.hasCoordinates) {
+      rows.add(_InfoCard(
+        icon: Icons.my_location,
+        label: 'Koordinaten',
+        value: '${e.koordy!.toStringAsFixed(5)}, ${e.koordx!.toStringAsFixed(5)}',
+        trailing: IconButton(
+          icon: const Icon(Icons.copy, size: 18, color: Colors.red),
+          tooltip: 'Koordinaten kopieren',
+          onPressed: () => _copy('${e.koordy},${e.koordx}'),
+        ),
+      ));
+    }
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(4, 18, 4, 6),
+          child: Row(
+            children: [
+              Icon(Icons.assignment_outlined, color: Colors.white70, size: 16),
+              SizedBox(width: 6),
+              Text('EINSATZDETAILS',
+                  style: TextStyle(
+                      color: Colors.white70,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.8)),
+            ],
+          ),
+        ),
+        ...rows,
+      ],
     );
   }
 
@@ -135,8 +266,13 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   // Untere Aktionsleiste: Navigieren + Ablehnen
   // ---------------------------------------------------------------------------
 
+  bool get _hasDestination =>
+      alarm.address.isNotEmpty ||
+      alarm.ort.isNotEmpty ||
+      (_einsatz?.hasCoordinates ?? false);
+
   Widget _buildBottomRow(BuildContext context) {
-    if (alarm.address.isEmpty && alarm.ort.isEmpty) {
+    if (!_hasDestination) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
         child: _buildRejectButton(context, fullWidth: true),
@@ -294,7 +430,20 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   }
 
   Future<void> _openNavigation(BuildContext context) async {
-    final uri = Uri.parse(alarm.mapsUrl);
+    // Präzise Koordinaten aus dem Einsatz bevorzugen, sonst Adresse.
+    final e = _einsatz;
+    Uri uri;
+    if (e != null && e.hasCoordinates) {
+      final lat = e.koordy!;
+      final lon = e.koordx!;
+      final label = Uri.encodeComponent(alarm.shortTitle);
+      uri = Uri.parse('geo:$lat,$lon?q=$lat,$lon($label)');
+      if (!await canLaunchUrl(uri)) {
+        uri = Uri.parse('https://maps.google.com/?q=$lat,$lon');
+      }
+    } else {
+      uri = Uri.parse(alarm.mapsUrl);
+    }
     if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -304,6 +453,34 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
     }
   }
 
+  String _formatDt(DateTime dt) {
+    final d = dt.toLocal();
+    return '${d.day.toString().padLeft(2, '0')}.${d.month.toString().padLeft(2, '0')}.${d.year}  '
+        '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')} Uhr';
+  }
+
+  /// Live verstrichene Zeit seit Alarmierung, z.B. "12min 04s".
+  String _elapsedText() {
+    final dt = alarm.timestamp;
+    if (dt == null) return '';
+    final d = DateTime.now().difference(dt);
+    if (d.isNegative) return 'gerade eben';
+    final h = d.inHours;
+    final m = d.inMinutes % 60;
+    final s = d.inSeconds % 60;
+    if (h > 0) return '${h}h ${m.toString().padLeft(2, '0')}min';
+    if (m > 0) return '${m}min ${s.toString().padLeft(2, '0')}s';
+    return '${s}s';
+  }
+
+  Future<void> _copy(String text) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Adresse kopiert'), duration: Duration(seconds: 2)),
+      );
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -395,30 +572,116 @@ class _KeypadStyleButton extends StatelessWidget {
 
 class _AlarmHeader extends StatelessWidget {
   final AlarmData alarm;
-  const _AlarmHeader({required this.alarm});
+  final String elapsed;
+  const _AlarmHeader({required this.alarm, required this.elapsed});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.campaign, color: Colors.white, size: 32),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                alarm.stichwort.isNotEmpty ? alarm.stichwort : 'Alarm',
-                style: const TextStyle(color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
-              ),
-            ),
-          ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Colors.red.shade700, Colors.red.shade900],
         ),
-        if (alarm.klartext.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Text(alarm.klartext, style: TextStyle(color: Colors.red.shade100, fontSize: 16)),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
         ],
-      ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.campaign, color: Colors.white, size: 28),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  alarm.stichwort.isNotEmpty ? alarm.stichwort : 'Alarm',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1),
+                ),
+              ),
+            ],
+          ),
+          if (alarm.klartext.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(alarm.klartext,
+                style: TextStyle(color: Colors.red.shade50, fontSize: 16)),
+          ],
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (alarm.hasSondersignal)
+                const _HeaderChip(
+                  icon: Icons.emergency_share,
+                  label: 'Sondersignal',
+                  bg: Color(0xFF1565C0),
+                ),
+              if (elapsed.isNotEmpty)
+                _HeaderChip(
+                  icon: Icons.timer_outlined,
+                  label: 'seit $elapsed',
+                  bg: Colors.black26,
+                ),
+              if (alarm.mittel.isNotEmpty)
+                _HeaderChip(
+                  icon: Icons.local_fire_department,
+                  label: alarm.mittel,
+                  bg: Colors.black26,
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeaderChip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color bg;
+  const _HeaderChip({required this.icon, required this.label, required this.bg});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 14),
+          const SizedBox(width: 5),
+          Text(label,
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
+        ],
+      ),
     );
   }
 }
@@ -428,18 +691,26 @@ class _InfoCard extends StatelessWidget {
   final String label;
   final String value;
   final bool highlight;
+  final Widget? trailing;
 
-  const _InfoCard({required this.icon, required this.label, required this.value, this.highlight = false});
+  const _InfoCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.highlight = false,
+    this.trailing,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Card(
       color: highlight ? Colors.white : Colors.red.shade800,
       margin: const EdgeInsets.symmetric(vertical: 4),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: EdgeInsets.fromLTRB(12, 10, trailing != null ? 4 : 12, 10),
         child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             Icon(icon, size: 20,
                 color: highlight ? Colors.red.shade900 : Colors.red.shade200),
@@ -460,6 +731,7 @@ class _InfoCard extends StatelessWidget {
                 ],
               ),
             ),
+            if (trailing != null) trailing!,
           ],
         ),
       ),

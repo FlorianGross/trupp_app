@@ -86,10 +86,12 @@ Future<void> main() async {
     // GPS-Übertragung nach jedem App-Start deaktiviert
     await prefs.setBool(AppPrefsKeys.transmissionEnabled, false);
 
-    // Hintergrund-Service für Alarm-Empfang starten
-    final pbConfigured = (prefs.getString(AppPrefsKeys.pbUrl) ?? '').isNotEmpty
-        && (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
-    if (pbConfigured) {
+    // Hintergrund-Service für Alarm-Empfang starten – sobald ein EDP-API-Server
+    // (Pro-URL) und eine ISSI konfiguriert sind.
+    final hasIssi = (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
+    final edpAlarmConfigured =
+        (prefs.getString(AppPrefsKeys.proApiUrl) ?? '').isNotEmpty && hasIssi;
+    if (edpAlarmConfigured) {
       try {
         final svc = FlutterBackgroundService();
         if (!await svc.isRunning()) {

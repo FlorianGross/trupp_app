@@ -28,8 +28,8 @@ class _HomeShellState extends State<HomeShell> {
   late int _currentIndex = widget.initialIndex;
   final Map<String, Widget> _tabCache = {};
 
-  // Wird in initState aus den SharedPreferences geladen. Ohne Alarm-Server
-  // (PocketBase-URL) wird der Alarme-Tab ausgeblendet.
+  // Wird in initState aus den SharedPreferences geladen. Ohne konfigurierten
+  // EDP-API-Server (Pro-API-URL) wird der Alarme-Tab ausgeblendet.
   bool _hasAlarmServer = false;
   bool _prefsLoaded = false;
 
@@ -82,10 +82,10 @@ class _HomeShellState extends State<HomeShell> {
 
   Future<void> _loadAlarmServerFlag() async {
     final prefs = await SharedPreferences.getInstance();
-    final pbUrl = prefs.getString(AppPrefsKeys.pbUrl) ?? '';
+    final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
     if (!mounted) return;
     setState(() {
-      _hasAlarmServer = pbUrl.isNotEmpty;
+      _hasAlarmServer = proApiUrl.isNotEmpty;
       _prefsLoaded = true;
       // Falls der initialIndex auf einen ausgeblendeten Tab zeigt, fängt
       // _safeIndex das ab.

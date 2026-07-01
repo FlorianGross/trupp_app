@@ -5,7 +5,6 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'home_shell.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
-import 'data/alarm_service.dart';
 import 'data/profile_store.dart';
 import 'pro/pro_dashboard_screen.dart';
 import 'pro/issi_picker_screen.dart';
@@ -27,7 +26,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   final truppController = TextEditingController();
   final leiterController = TextEditingController();
   final issiController = TextEditingController();
-  final pbUrlController = TextEditingController();
   final proApiUrlController = TextEditingController();
 
   String _selectedProtocol = 'https';
@@ -45,7 +43,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     truppController.dispose();
     leiterController.dispose();
     issiController.dispose();
-    pbUrlController.dispose();
     proApiUrlController.dispose();
     _animationController.dispose();
     super.dispose();
@@ -65,10 +62,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     _animationController.forward();
 
     _loadExistingConfig();
-
-    AlarmService.loadPbUrl().then((url) {
-      if (url != null && mounted) pbUrlController.text = url;
-    });
 
     if (widget is ConfigScreenWithPrefill) {
       final uri = (widget as ConfigScreenWithPrefill).initialDeepLink;
@@ -281,7 +274,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 'Trotzdem speichern?',
             onRetry: () async {
               await api.updateConfig(cfg);
-              await AlarmService.savePbUrl(pbUrlController.text.trim());
               await _autoSaveProfile(cfg);
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
@@ -295,7 +287,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         }
 
         await api.updateConfig(cfg);
-        await AlarmService.savePbUrl(pbUrlController.text.trim());
         await _autoSaveProfile(cfg);
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
@@ -327,7 +318,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       issi: issi,
       trupp: trupp,
       leiter: cfg.leiter,
-      pbUrl: pbUrlController.text.trim(),
+      proApiUrl: proApiUrlController.text.trim(),
     );
     try {
       await ProfileStore.save(profile);
@@ -384,7 +375,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       issi: issiController.text.trim(),
       trupp: truppController.text.trim(),
       leiter: leiterController.text.trim(),
-      pbUrl: pbUrlController.text.trim(),
+      proApiUrl: proApiUrlController.text.trim(),
       isDefault: !hasDefault,
     );
     await ProfileStore.save(profile);
@@ -430,9 +421,6 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       truppController.text = uri.queryParameters['trupp'] ?? '';
       leiterController.text = uri.queryParameters['leiter'] ?? '';
       issiController.text = uri.queryParameters['issi'] ?? '';
-      if (uri.queryParameters.containsKey('pb_url')) {
-        pbUrlController.text = uri.queryParameters['pb_url']!;
-      }
       if (uri.queryParameters.containsKey('pro_api_url')) {
         proApiUrlController.text = uri.queryParameters['pro_api_url']!;
       }
@@ -861,36 +849,14 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
-            'Separater EDP-Pro-API-Server – ausschließlich für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage).',
+            'EDP-Pro-API-Server – für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage) '
+            'und Alarmierung.',
             style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
           ),
         ),
         _optionalField(
           label: 'EDP-Pro-API-URL (z. B. https://api.example.org)',
           controller: proApiUrlController,
-          keyboardType: TextInputType.url,
-        ),
-        const SizedBox(height: 24),
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 4),
-          child: Text(
-            'Bereitschafts-App / Alarmierung (optional)',
-            style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 12),
-          child: Text(
-            'PocketBase-Server der Bereitschafts-App – für Echtzeit-Alarmierungen.',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-          ),
-        ),
-        _optionalField(
-          label: 'Bereitschafts-App-URL (z. B. https://pb.example.org)',
-          controller: pbUrlController,
           keyboardType: TextInputType.url,
         ),
         const SizedBox(height: 8),
