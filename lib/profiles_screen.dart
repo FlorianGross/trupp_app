@@ -4,8 +4,10 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/edp_api.dart';
+import 'data/edp_api_pro.dart';
 import 'data/app_prefs.dart';
 import 'data/profile_store.dart';
+import 'issi_picker_screen.dart';
 import 'theme/brand_colors.dart';
 
 class ProfilesScreen extends StatefulWidget {
@@ -18,6 +20,7 @@ class ProfilesScreen extends StatefulWidget {
 class _ProfilesScreenState extends State<ProfilesScreen> {
   List<AppProfile> _profiles = [];
   String? _activeName;
+  DateTime? _activeExpiresAt;
   bool _loading = true;
 
   @override
@@ -27,19 +30,51 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
   }
 
   Future<void> _load() async {
+    // Abgelaufenes temporäres Profil aufräumen bevor die Liste angezeigt wird
+    final expired = await ProfileStore.expireTemporaryIfDue();
+    if (expired != null) {
+      await EdpApi.initFromPrefs();
+      await _restartService();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              expired.fallback != null
+                  ? 'Einsatz-Profil "${expired.expiredName}" abgelaufen und '
+                      'gelöscht – "${expired.fallback!.name}" wurde aktiviert'
+                  : 'Einsatz-Profil "${expired.expiredName}" abgelaufen und '
+                      'gelöscht – kein Standard-Profil hinterlegt',
+            ),
+            backgroundColor: Colors.orange.shade800,
+          ),
+        );
+      }
+    }
+
     final profiles = await ProfileStore.all();
     final active = await ProfileStore.activeName();
+    final expiresAt = await ProfileStore.activeExpiresAt();
     if (mounted) {
       setState(() {
         _profiles = profiles;
         _activeName = active;
+        _activeExpiresAt = expiresAt;
         _loading = false;
       });
     }
   }
 
+  /// Service neu starten damit die aktuelle Konfiguration genutzt wird
+  Future<void> _restartService() async {
   Future<void> _activate(AppProfile profile) async {
-    await ProfileStore.activate(profile);
+    // Vor dem Aktivieren fragen, ob die ISSI neu gesetzt werden soll –
+    // sinnvoll wenn das Gerät die Einheit wechselt aber der gleiche Server
+    // benutzt wird.
+    final maybeNewProfile = await _maybeResetIssi(profile);
+    if (maybeNewProfile == null) return; // Abbruch
+    final effective = maybeNewProfile;
+
+    await ProfileStore.activate(effective);
     await EdpApi.initFromPrefs();
     // Service neu starten damit neues Profil genutzt wird
     try {
@@ -56,16 +91,110 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         await svc.startService();
       }
     } catch (_) {}
+  }
+
+  Future<void> _activate(AppProfile profile) async {
+    await ProfileStore.activate(profile);
+    await EdpApi.initFromPrefs();
+    await _restartService();
+    final expiresAt = await ProfileStore.activeExpiresAt();
 
     if (mounted) {
-      setState(() => _activeName = profile.name);
+      setState(() {
+        _activeName = profile.name;
+        _activeExpiresAt = expiresAt;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Profil "${profile.name}" aktiviert'),
+          content: Text(
+            profile.isTemporary && expiresAt != null
+                ? 'Einsatz-Profil "${profile.name}" aktiviert – '
+                    'wird ${_formatExpiry(expiresAt)} automatisch gelöscht'
+                : 'Profil "${profile.name}" aktiviert',
+          ),
           backgroundColor: Theme.of(context).brand.success,
         ),
       );
     }
+  }
+
+  static String _formatExpiry(DateTime t) {
+    final now = DateTime.now();
+    final sameDay =
+        t.year == now.year && t.month == now.month && t.day == now.day;
+    final hh = t.hour.toString().padLeft(2, '0');
+    final mm = t.minute.toString().padLeft(2, '0');
+    return sameDay
+        ? 'um $hh:$mm Uhr'
+        : 'am ${t.day}.${t.month}. um $hh:$mm Uhr';
+  /// Fragt vor dem Aktivieren, ob die hinterlegte ISSI neu gewählt werden
+  /// soll. Gibt das ggf. angepasste Profil zurück, oder null bei Abbruch.
+  /// Eine neu ausgewählte ISSI wird im Profil persistiert, damit beim
+  /// nächsten Aktivieren wieder direkt die richtige Kennung greift.
+  Future<AppProfile?> _maybeResetIssi(AppProfile profile) async {
+    final choice = await showDialog<_IssiChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('ISSI übernehmen?'),
+        content: Text(
+          'Profil "${profile.name}" wird aktiviert.\n\n'
+          'Soll die hinterlegte ISSI (${profile.issi}) beibehalten oder '
+          'eine neue ISSI ausgewählt werden?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _IssiChoice.cancel),
+            child: const Text('Abbrechen'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _IssiChoice.keep),
+            child: const Text('Beibehalten'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, _IssiChoice.pick),
+            child: const Text('Neu wählen'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null || choice == _IssiChoice.cancel) return null;
+    if (choice == _IssiChoice.keep) return profile;
+
+    // _IssiChoice.pick: ISSI-Picker öffnen. Dafür muss die Pro-API mit dem
+    // Profil-Server initialisiert sein.
+    final api = EdpApiPro.instance;
+    if (api == null || !api.hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Pro-API nicht verbunden – ISSI kann nicht neu gewählt werden.'),
+            backgroundColor: Theme.of(context).brand.warning,
+          ),
+        );
+      }
+      return profile;
+    }
+
+    final result = await Navigator.push<IssiPickerResult>(
+      context,
+      MaterialPageRoute(builder: (_) => const IssiPickerScreen()),
+    );
+    if (result == null) return null; // Picker abgebrochen
+
+    final updated = profile.copyWith(
+      issi: result.issi,
+      trupp: result.trupp.isNotEmpty ? result.trupp : profile.trupp,
+      leiter: result.leiter.isNotEmpty ? result.leiter : profile.leiter,
+    );
+    await ProfileStore.save(updated);
+    return updated;
   }
 
   Future<void> _delete(AppProfile profile) async {
@@ -155,6 +284,23 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     );
   }
 
+  Widget _buildBadge(String text, Color color) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 0.5,
+          ),
+        ),
+      );
+
   Widget _buildCard(AppProfile profile) {
     final isActive = profile.name == _activeName;
     return Card(
@@ -192,7 +338,10 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
                         Text(
                           profile.name,
@@ -202,25 +351,11 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                             color: isActive ? Colors.red.shade800 : null,
                           ),
                         ),
-                        if (isActive) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade800,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text(
-                              'AKTIV',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                        ],
+                        if (isActive) _buildBadge('AKTIV', Colors.red.shade800),
+                        if (profile.isTemporary)
+                          _buildBadge('TEMPORÄR', Colors.orange.shade800),
+                        if (profile.isDefault)
+                          _buildBadge('STANDARD', Colors.blueGrey.shade600),
                       ],
                     ),
                     const SizedBox(height: 4),
@@ -239,6 +374,37 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                         fontSize: 12,
                       ),
                     ),
+                    if (isActive &&
+                        profile.isTemporary &&
+                        _activeExpiresAt != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.timer_outlined,
+                              size: 14, color: Colors.orange.shade800),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Wird ${_formatExpiry(_activeExpiresAt!)} '
+                            'automatisch gelöscht',
+                            style: TextStyle(
+                              color: Colors.orange.shade800,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (profile.isTemporary) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Läuft ${profile.ttlHours} h nach Aktivierung ab',
+                        style: TextStyle(
+                          color: Colors.grey.shade500,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -286,6 +452,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 
 enum _ProfileAction { activate, edit, delete }
 
+enum _IssiChoice { cancel, keep, pick }
+
 // ─── Profil-Editor ────────────────────────────────────────────────────────────
 
 class _ProfileEditorScreen extends StatefulWidget {
@@ -307,6 +475,11 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
   late final TextEditingController _leiterCtrl;
   late final TextEditingController _proApiUrlCtrl;
   late String _protocol;
+  late ProfileKind _kind;
+  late int _ttlHours;
+  late bool _isDefault;
+
+  static const _ttlOptions = [1, 2, 4, 6, 8, 12, 24, 48];
 
   @override
   void initState() {
@@ -314,6 +487,9 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
     final p = widget.profile;
     _nameCtrl = TextEditingController(text: p?.name ?? '');
     _protocol = p?.protocol ?? 'https';
+    _kind = p?.kind ?? ProfileKind.permanent;
+    _ttlHours = _ttlOptions.contains(p?.ttlHours) ? p!.ttlHours : 8;
+    _isDefault = p?.isDefault ?? false;
 
     // server ist 'host:port'
     String host = '';
@@ -346,6 +522,7 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
   void _save() {
     if (!_formKey.currentState!.validate()) return;
     final server = '${_hostCtrl.text.trim()}:${_portCtrl.text.trim()}';
+    final isTemporary = _kind == ProfileKind.temporary;
     final profile = AppProfile(
       name: _nameCtrl.text.trim(),
       protocol: _protocol,
@@ -355,6 +532,10 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
       trupp: _truppCtrl.text.trim(),
       leiter: _leiterCtrl.text.trim(),
       proApiUrl: _proApiUrlCtrl.text.trim(),
+      kind: _kind,
+      ttlHours: _ttlHours,
+      // Nur permanente Profile können Standard-Profil sein
+      isDefault: !isTemporary && _isDefault,
     );
     Navigator.pop(context, profile);
   }
@@ -391,6 +572,66 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
               decoration: _dec('Profilname', required: true),
               validator: (v) => v == null || v.trim().isEmpty ? 'Pflichtfeld' : null,
             ),
+            const SizedBox(height: 20),
+            const _SectionHeader('Profiltyp'),
+            const SizedBox(height: 12),
+            SegmentedButton<ProfileKind>(
+              segments: const [
+                ButtonSegment(
+                  value: ProfileKind.permanent,
+                  label: Text('Permanent'),
+                  icon: Icon(Icons.directions_car_outlined),
+                ),
+                ButtonSegment(
+                  value: ProfileKind.temporary,
+                  label: Text('Temporär'),
+                  icon: Icon(Icons.timer_outlined),
+                ),
+              ],
+              selected: {_kind},
+              onSelectionChanged: (s) => setState(() => _kind = s.first),
+              style: ButtonStyle(
+                backgroundColor: WidgetStateProperty.resolveWith((states) =>
+                    states.contains(WidgetState.selected)
+                        ? Colors.red.shade800
+                        : Colors.grey.shade200),
+                foregroundColor: WidgetStateProperty.resolveWith((states) =>
+                    states.contains(WidgetState.selected) ? Colors.white : Colors.black87),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _kind == ProfileKind.temporary
+                  ? 'Einsatz-Profil: wird nach Ablauf der Gültigkeitsdauer '
+                      'automatisch gelöscht und das Standard-Profil wieder aktiviert.'
+                  : 'Dauerhaftes Profil, z. B. für ein Fahrzeug.',
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            if (_kind == ProfileKind.temporary)
+              DropdownButtonFormField<int>(
+                value: _ttlHours,
+                decoration: _dec('Automatisch löschen nach', required: true),
+                items: _ttlOptions
+                    .map((h) => DropdownMenuItem(
+                          value: h,
+                          child: Text(h == 1 ? '1 Stunde' : '$h Stunden'),
+                        ))
+                    .toList(),
+                onChanged: (v) => setState(() => _ttlHours = v ?? 8),
+              )
+            else
+              SwitchListTile(
+                value: _isDefault,
+                onChanged: (v) => setState(() => _isDefault = v),
+                title: const Text('Standard-Profil'),
+                subtitle: const Text(
+                  'Wird nach Ablauf eines temporären Einsatz-Profils '
+                  'automatisch wieder aktiviert',
+                ),
+                contentPadding: EdgeInsets.zero,
+                activeColor: Colors.red.shade800,
+              ),
             const SizedBox(height: 20),
             const _SectionHeader('EDP-Server'),
             const SizedBox(height: 12),

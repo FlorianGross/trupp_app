@@ -133,12 +133,10 @@ class EdpApi {
     return await initFromPrefs(); // setzt _instance falls Prefs ok
   }
 
-  EdpApi._(
-    this._config, {
-    http.Client? client,
-    this.timeout = const Duration(seconds: 8),
-    this.retries = 3,
-  }) : _client = client ?? http.Client();
+  EdpApi._(this._config, {http.Client? client})
+      : _client = client ?? http.Client(),
+        timeout = const Duration(seconds: 8),
+        retries = 3;
 
   /// Initialisiert das Singleton aus SharedPreferences, falls möglich.
   static Future<EdpApi?> initFromPrefs() async {

@@ -42,26 +42,11 @@ class AlarmNotificationService {
     _onTap = onTap;
 
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    // requestCriticalPermission: iOS erlaubt Critical Alerts nur mit Apple-Entitlement.
-    // Die Anfrage schadet nicht – ohne Entitlement wird sie still ignoriert.
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: true,
-      requestBadgePermission: true,
-      requestSoundPermission: true,
-      requestCriticalPermission: true,
-    );
 
-    await _plugin.initialize(
-      const InitializationSettings(android: androidSettings, iOS: iosSettings),
-      onDidReceiveNotificationResponse: _onNotificationResponse,
-      onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
-    );
-
-    // iOS: Notification-Kategorie mit Aktions-Buttons registrieren
-    await _plugin
-        .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
-        ?.requestPermissions(alert: true, badge: true, sound: true, critical: true);
-
+    // iOS: Notification-Kategorie mit Aktions-Buttons — muss bei der
+    // Initialisierung übergeben werden, sonst zeigen Alarme mit
+    // categoryIdentifier keine Buttons (war vorher gebaut, aber nie
+    // registriert).
     final iosCategory = DarwinNotificationCategory(
       _kIosCategoryId,
       actions: [
@@ -73,14 +58,31 @@ class AlarmNotificationService {
         DarwinNotificationAction.plain(
           'open',
           'Details',
-          options: {DarwinNotificationActionOption.foreground},
+          options: const {DarwinNotificationActionOption.foreground},
         ),
       ],
       options: const {DarwinNotificationCategoryOption.hiddenPreviewShowTitle},
     );
+
+    // requestCriticalPermission: iOS erlaubt Critical Alerts nur mit Apple-Entitlement.
+    // Die Anfrage schadet nicht – ohne Entitlement wird sie still ignoriert.
+    final iosSettings = DarwinInitializationSettings(
+      requestAlertPermission: true,
+      requestBadgePermission: true,
+      requestSoundPermission: true,
+      requestCriticalPermission: true,
+      notificationCategories: [iosCategory],
+    );
+
+    await _plugin.initialize(
+      InitializationSettings(android: androidSettings, iOS: iosSettings),
+      onDidReceiveNotificationResponse: _onNotificationResponse,
+      onDidReceiveBackgroundNotificationResponse: _onBackgroundNotificationResponse,
+    );
+
     await _plugin
         .resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>()
-        ?.initialize(iosSettings);
+        ?.requestPermissions(alert: true, badge: true, sound: true, critical: true);
 
     // Alarm-Kanal: Importance.max + Alarm-Kategorie → bricht durch DND auf Android
     const alarmChannel = AndroidNotificationChannel(

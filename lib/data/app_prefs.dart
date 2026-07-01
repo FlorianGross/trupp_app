@@ -23,6 +23,11 @@ abstract final class AppPrefsKeys {
   /// Höchste bereits empfangene Alarm-ID (Polling-Cursor).
   static const edpAlarmLastId = 'edp_alarm_last_id';
 
+  // Konfigurationsprofile
+  /// Ablaufzeitpunkt (Epoch-ms) des aktiven temporären Einsatz-Profils.
+  /// Nicht gesetzt = aktives Profil ist permanent.
+  static const activeProfileExpiresMs = 'active_profile_expires_ms';
+
   // App-Zustand
   static const onboarded = 'onboarded';
   static const darkMode = 'darkMode';

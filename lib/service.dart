@@ -12,7 +12,9 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'data/edp_api.dart';
 import 'data/location_quality.dart';
+import 'data/profile_store.dart';
 import 'data/location_sync_manager.dart';
+import 'data/status_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
 
@@ -81,6 +83,11 @@ Timer? _hbTimer;
 Timer? _modeCheckTimer;
 Timer? _flushTimer;
 StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
+/// Alle service.on(...)-Subscriptions, damit sie beim Stoppen sauber
+/// gecancelt werden — sonst akkumulieren sich Handler über Service-Neustarts
+/// und alte Handler arbeiten auf verwaistem State weiter.
+final List<StreamSubscription> _serviceEventSubs = [];
 
 // Connectivity-Flush-Debounce: ein Wiederherstellungs-Event darf nicht
 // sofort 200 HTTP-Requests starten. Bei flakiger Verbindung kommen oft
@@ -248,7 +255,19 @@ Future<void> _heartbeatTick(ServiceInstance service) async {
 
 void _scheduleNextHeartbeat(ServiceInstance service) {
   _hbTimer?.cancel();
-  _hbTimer = Timer(SmartHeartbeat.getHeartbeatInterval(), () async {
+
+  // Akku: In Bereitschaft (kein Einsatz) + Energiesparmodus + Stillstand
+  // braucht es keinen 5-Minuten-Heartbeat — 15 Minuten reichen, um „lebendig"
+  // zu bleiben. Bewegung oder Statuswechsel setzen das Intervall sofort
+  // wieder herunter (Stream-Update bzw. _updateTrackingMode).
+  var interval = SmartHeartbeat.getHeartbeatInterval();
+  if (_deploymentMode == DeploymentMode.standby &&
+      _trackingMode == TrackingMode.powerSaver &&
+      SmartHeartbeat.isStationary) {
+    interval = const Duration(minutes: 15);
+  }
+
+  _hbTimer = Timer(interval, () async {
     await _heartbeatTick(service);
     _scheduleNextHeartbeat(service); // Rekursiv mit neuem Intervall
   });
@@ -302,6 +321,38 @@ Future<void> _updateTrackingMode(ServiceInstance service) async {
 void _schedulePeriodicModeCheck(ServiceInstance service) {
   _modeCheckTimer?.cancel();
   _modeCheckTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
+    // Abgelaufenes temporäres Einsatz-Profil aufräumen: Profil wird gelöscht
+    // und das Standard-Profil aktiviert, damit keine Positionen mehr unter
+    // der vergessenen Einsatz-Kennung gesendet werden.
+    final expired = await ProfileStore.expireTemporaryIfDue();
+    if (expired != null) {
+      AppLogger.i('LocationService',
+          'Einsatz-Profil "${expired.expiredName}" abgelaufen und gelöscht');
+      if (expired.fallback != null) {
+        // Standard-Profil übernehmen: Config neu laden, GPS-Stream neu starten
+        await EdpApi.initFromPrefs();
+        if (_restartStreamCallback != null) {
+          await _restartStreamCallback!();
+        }
+        await _updateNotificationIfDue(
+          service,
+          title: 'Trupp App',
+          content:
+              'Einsatz-Profil abgelaufen – "${expired.fallback!.name}" aktiviert',
+          force: true,
+        );
+      } else {
+        // Kein Standard-Profil hinterlegt → Übertragung komplett stoppen
+        _hbTimer?.cancel();
+        _flushTimer?.cancel();
+        _connectivitySub?.cancel();
+        _connectivityFlushDebounce?.cancel();
+        await EdpApiAlarmService.stop();
+        await service.stopSelf();
+        return;
+      }
+    }
+
     await _updateTrackingMode(service);
 
     // Konfigurierbarer Auto-Deaktivierungs-Timer
@@ -316,6 +367,10 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
       _flushTimer?.cancel();
       _connectivitySub?.cancel();
       _connectivityFlushDebounce?.cancel();
+      for (final s in _serviceEventSubs) {
+        s.cancel();
+      }
+      _serviceEventSubs.clear();
       await EdpApiAlarmService.stop();
       await service.stopSelf();
       return;
@@ -335,6 +390,31 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
 void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer?.cancel();
   _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
+    // Ausstehende Statusmeldungen haben Priorität vor GPS-Punkten.
+    try {
+      if (await StatusSyncManager.instance.pendingCount() > 0) {
+        await StatusSyncManager.instance.flushPendingNow();
+      }
+    } catch (e, st) {
+      AppLogger.e('LocationService', 'Status-Flush fehlgeschlagen', e, st);
+    }
+
+    // Tägliches DB-Housekeeping auch ohne UI: das Cleanup hing bisher nur
+    // am App-Resume — läuft die App wochenlang im Hintergrund, wuchs die
+    // GPS-Datenbank unbegrenzt. Gleicher Pref-Key wie der UI-Pfad, damit
+    // nicht doppelt aufgeräumt wird.
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastCleanup = prefs.getInt(AppPrefsKeys.lastDbCleanupMs) ?? 0;
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - lastCleanup >= const Duration(hours: 24).inMilliseconds) {
+        await LocationSyncManager.instance.cleanupOldEntries(maxAgeDays: 30);
+        await prefs.setInt(AppPrefsKeys.lastDbCleanupMs, now);
+      }
+    } catch (e, st) {
+      AppLogger.e('LocationService', 'DB-Cleanup fehlgeschlagen', e, st);
+    }
+
     // Guard: nichts zu flushen → kein Wake, keine Notification.
     final stats = await LocationSyncManager.instance.getStats();
     final pending = stats['pending'] ?? 0;
@@ -386,6 +466,8 @@ void _startConnectivityListener() {
     _connectivityFlushDebounce =
         Timer(const Duration(seconds: 10), () async {
       try {
+        // Zuerst ausstehende Statusmeldungen (wichtiger als GPS-Historie)
+        await StatusSyncManager.instance.flushPendingNow();
         await _runFlushGuarded(batchSize: 200);
       } catch (e, st) {
         AppLogger.e('LocationService', 'Connectivity-Flush fehlgeschlagen', e, st);
@@ -416,6 +498,13 @@ Future<void> onStart(ServiceInstance service) async {
     );
   }
 
+  // Alte Event-Subscriptions aufräumen, falls onStart im selben Isolate
+  // erneut läuft — verhindert doppelte Handler.
+  for (final s in _serviceEventSubs) {
+    s.cancel();
+  }
+  _serviceEventSubs.clear();
+
   _currentStatus = await _readStatusFromPrefs();
   _deploymentMode = await DeploymentState.getMode();
   _trackingMode = await AdaptiveLocationSettings.determineMode(
@@ -435,7 +524,7 @@ Future<void> onStart(ServiceInstance service) async {
   );
 
   // Status-Änderungen lauschen
-  service.on('statusChanged').listen((event) async {
+  _serviceEventSubs.add(service.on('statusChanged').listen((event) async {
     final s = event?['status'];
     if (s is int) {
       _currentStatus = s;
@@ -450,10 +539,10 @@ Future<void> onStart(ServiceInstance service) async {
         force: true,
       );
     }
-  });
+  }));
 
   // Deployment-Modus-Änderungen lauschen
-  service.on('updateDeploymentMode').listen((event) async {
+  _serviceEventSubs.add(service.on('updateDeploymentMode').listen((event) async {
     final mode = event?['mode'] as String?;
     if (mode != null) {
       _deploymentMode = DeploymentMode.values.firstWhere(
@@ -470,7 +559,7 @@ Future<void> onStart(ServiceInstance service) async {
         force: true,
       );
     }
-  });
+  }));
 
   StreamSubscription<Position>? sub;
   bool trackingEnabled = false;
@@ -600,7 +689,7 @@ Future<void> onStart(ServiceInstance service) async {
     );
   }
 
-  service.on('setTracking').listen((event) async {
+  _serviceEventSubs.add(service.on('setTracking').listen((event) async {
     final enabled = event?['enabled'] == true;
     if (enabled) {
       await startTracking();
@@ -609,12 +698,18 @@ Future<void> onStart(ServiceInstance service) async {
       // Damit wird auch im Hintergrund weiter getrackt
       await switchToPowerSaver();
     }
-  });
+  }));
 
-  service.on('stopService').listen((_) async {
+  _serviceEventSubs.add(service.on('stopService').listen((_) async {
     await stopTracking();
+    // Event-Listener canceln — der Service stoppt, alte Handler dürfen bei
+    // einem späteren Neustart nicht weiterleben.
+    for (final s in _serviceEventSubs) {
+      s.cancel();
+    }
+    _serviceEventSubs.clear();
     await service.stopSelf();
-  });
+  }));
 
   // Tracking nur starten wenn vom Nutzer explizit aktiviert
   // (verhindert Auto-Start nach Neustart – Alarm-Subscription läuft bereits)
@@ -678,7 +773,9 @@ Future<bool> onIosBackground(ServiceInstance service) async {
       _quality.markSent(pos, now: DateTime.now());
     }
 
-    // 3) Alle 5 Min: komplette Queue flushen (Standort-Historie übertragen)
+    // 3) Ausstehende Statusmeldungen IMMER nachsenden (klein & kritisch),
+    // GPS-Historie nur alle 5 Min (kann groß sein, iOS-Budget ~30 s).
+    await StatusSyncManager.instance.flushPendingNow();
     if (await _shouldFlushNow()) {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 300);
       await _markFlushedNow();

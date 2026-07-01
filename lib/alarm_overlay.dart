@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/alarm_model.dart';
 import 'data/edp_api.dart';
+import 'data/status_sync_manager.dart';
 
 const kOverlayOpenDetail = 'overlay_open_detail';
 
@@ -68,9 +69,9 @@ class _AlarmOverlayWidgetState extends State<AlarmOverlayWidget> {
       _sending = true;
       _sentStatus = code;
     });
-    try {
-      await EdpApi.instance.sendStatus(code);
-    } catch (_) {}
+    // Queued bei Offline und wird vom Background-Service nachgesendet —
+    // das Overlay darf sich danach bedenkenlos schließen.
+    await StatusSyncManager.instance.sendOrQueue(code);
     await Future.delayed(const Duration(milliseconds: 400));
     await FlutterOverlayWindow.closeOverlay();
   }
@@ -82,26 +83,30 @@ class _AlarmOverlayWidgetState extends State<AlarmOverlayWidget> {
 
     return Material(
       color: Colors.transparent,
-      child: Center(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 20),
-          decoration: BoxDecoration(
-            color: const Color(0xFF1C1C1E),
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(color: Colors.red.shade700, width: 2),
-            boxShadow: const [
-              BoxShadow(color: Colors.black87, blurRadius: 24, offset: Offset(0, 8)),
-            ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildHeader(alarm),
-              _buildInfo(alarm),
-              const Divider(color: Color(0xFF2C2C2E), height: 1),
-              _buildStatusButtons(),
-              _buildCloseButton(),
-            ],
+      // SafeArea: das Overlay liegt über anderen Apps und darf auf
+      // Notch-Geräten nicht unter Statusleiste/Home-Indicator rutschen.
+      child: SafeArea(
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1C1C1E),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.red.shade700, width: 2),
+              boxShadow: const [
+                BoxShadow(color: Colors.black87, blurRadius: 24, offset: Offset(0, 8)),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(alarm),
+                _buildInfo(alarm),
+                const Divider(color: Color(0xFF2C2C2E), height: 1),
+                _buildStatusButtons(),
+                _buildCloseButton(),
+              ],
+            ),
           ),
         ),
       ),

@@ -8,8 +8,10 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 
+import 'data/app_logger.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
+import 'data/profile_store.dart';
 import 'data/unit_type_store.dart';
 import 'issi_picker_screen.dart';
 import 'home_shell.dart';
@@ -337,12 +339,42 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         leiter: _leiterCtrl.text.trim(),
         proApiUrl: _proApiUrlCtrl.text.trim(),
       );
-      await EdpApi.initWithConfig(cfg);
+      final api = await EdpApi.initWithConfig(cfg);
+      // Persistiert die Webhook-Konfiguration in SharedPreferences (inkl.
+      // hasConfig-Flag), damit der nächste App-Start nicht wieder im
+      // Onboarding landet.
+      await api.updateConfig(cfg);
+      await _autoSaveProfile(cfg);
       if (mounted) setState(() => _isSaving = false);
       return true;
     } catch (_) {
       if (mounted) setState(() => _isSaving = false);
       return false;
+    }
+  }
+
+  /// Speichert die Konfiguration zusätzlich als Profil in der Verknüpfungs-
+  /// Liste. Name: "Truppname (ISSI)" – damit Profile pro Einheit eindeutig
+  /// sind und bei erneutem Speichern überschrieben werden.
+  Future<void> _autoSaveProfile(EdpConfig cfg) async {
+    final issi = cfg.issi.trim();
+    if (issi.isEmpty) return;
+    final trupp = cfg.trupp.trim();
+    final name = trupp.isNotEmpty ? '$trupp ($issi)' : 'ISSI $issi';
+    final profile = AppProfile(
+      name: name,
+      protocol: cfg.protocol,
+      server: '${cfg.host}:${cfg.port}',
+      token: cfg.token,
+      issi: issi,
+      trupp: trupp,
+      leiter: cfg.leiter,
+      proApiUrl: _proApiUrlCtrl.text.trim(),
+    );
+    try {
+      await ProfileStore.save(profile);
+    } catch (e) {
+      AppLogger.w('Onboarding', 'Auto-Save als Profil fehlgeschlagen', e);
     }
   }
 
@@ -430,12 +462,16 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           proApiConnected: _proApiConnected,
           isSaving: _isSaving,
           onPick: () async {
-            final issi = await Navigator.push<String>(
+            final result = await Navigator.push<IssiPickerResult>(
               context,
               MaterialPageRoute(builder: (_) => const IssiPickerScreen()),
             );
-            if (issi != null && mounted) {
-              setState(() => _issiCtrl.text = issi);
+            if (result != null && mounted) {
+              setState(() {
+                _issiCtrl.text = result.issi;
+                if (result.trupp.isNotEmpty) _truppCtrl.text = result.trupp;
+                if (result.leiter.isNotEmpty) _leiterCtrl.text = result.leiter;
+              });
             }
           },
           onNext: () async {

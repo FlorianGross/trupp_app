@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 import 'data/location_queue.dart';
+import 'utils/formatters.dart';
 
 enum _MapMode { live, replay }
 
@@ -25,7 +26,6 @@ class _MapScreenState extends State<MapScreen> {
 
   // Live-Modus
   List<LatLng> _trackPoints = [];
-  List<LocationFix> _allFixes = [];
   LatLng? _currentPosition;
   Timer? _refreshTimer;
   bool _followMode = true;
@@ -33,8 +33,14 @@ class _MapScreenState extends State<MapScreen> {
   // Modus
   _MapMode _mode = _MapMode.live;
 
-  // Replay-Modus
-  int _replayIndex = 0;
+  // Replay-Modus.
+  //
+  // Der Replay-Index läuft über einen ValueNotifier statt setState: der
+  // Timer tickt mit bis zu 60 Hz, und ein setState pro Tick würde den
+  // kompletten Screen (inkl. TileLayer) neu bauen. So bauen nur die
+  // kleinen ValueListenableBuilder-Subtrees (Trail, Marker, Infozeile,
+  // Slider) neu.
+  final ValueNotifier<int> _replayIndex = ValueNotifier<int>(0);
   bool _replayPlaying = false;
   int _replaySpeed = 10;
   Timer? _replayTimer;
@@ -58,6 +64,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _refreshTimer?.cancel();
     _replayTimer?.cancel();
+    _replayIndex.dispose();
     _mapController.dispose();
     super.dispose();
   }
@@ -76,7 +83,6 @@ class _MapScreenState extends State<MapScreen> {
       } catch (_) {}
       current ??= points.isNotEmpty ? points.last : null;
       setState(() {
-        _allFixes = fixes;
         _trackPoints = points;
         _currentPosition = current;
       });
@@ -98,10 +104,9 @@ class _MapScreenState extends State<MapScreen> {
         fixes = await LocationQueue.instance.all();
       }
       if (!mounted) return;
+      _replayIndex.value = 0;
       setState(() {
         _replayFixes = fixes;
-        _replayIndex = 0;
-        _allFixes = fixes;
         _trackPoints = fixes.map((f) => LatLng(f.lat, f.lon)).toList();
       });
       if (fixes.isNotEmpty) {
@@ -116,8 +121,8 @@ class _MapScreenState extends State<MapScreen> {
       _replayTimer?.cancel();
       setState(() => _replayPlaying = false);
     } else {
-      if (_replayIndex >= _replayFixes.length - 1) {
-        setState(() => _replayIndex = 0);
+      if (_replayIndex.value >= _replayFixes.length - 1) {
+        _replayIndex.value = 0;
       }
       setState(() => _replayPlaying = true);
       _startReplayTimer();
@@ -130,9 +135,10 @@ class _MapScreenState extends State<MapScreen> {
       Duration(milliseconds: (1000 / _replaySpeed).round()),
       (_) {
         if (!mounted) return;
-        if (_replayIndex < _replayFixes.length - 1) {
-          setState(() => _replayIndex++);
-          final fix = _replayFixes[_replayIndex];
+        if (_replayIndex.value < _replayFixes.length - 1) {
+          // Kein setState — nur der Notifier triggert die kleinen Subtrees.
+          _replayIndex.value++;
+          final fix = _replayFixes[_replayIndex.value];
           _mapController.move(LatLng(fix.lat, fix.lon), _mapController.camera.zoom);
         } else {
           _replayTimer?.cancel();
@@ -144,7 +150,7 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onReplaySliderChanged(double value) {
     final idx = value.round().clamp(0, (_replayFixes.length - 1).clamp(0, 999999));
-    setState(() => _replayIndex = idx);
+    _replayIndex.value = idx;
     if (_replayFixes.isNotEmpty) {
       final fix = _replayFixes[idx];
       _mapController.move(LatLng(fix.lat, fix.lon), _mapController.camera.zoom);
@@ -164,34 +170,13 @@ class _MapScreenState extends State<MapScreen> {
     }
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
-
-  LatLng? get _replayCurrentPos => _replayFixes.isNotEmpty
-      ? LatLng(_replayFixes[_replayIndex].lat, _replayFixes[_replayIndex].lon)
-      : null;
-
-  List<LatLng> get _replayTrailPoints => _replayFixes
-      .take(_replayIndex + 1)
-      .map((f) => LatLng(f.lat, f.lon))
-      .toList();
-
-  String _formatTs(int ms) {
-    final dt = DateTime.fromMillisecondsSinceEpoch(ms).toLocal();
-    return '${dt.hour.toString().padLeft(2, '0')}:'
-        '${dt.minute.toString().padLeft(2, '0')}:'
-        '${dt.second.toString().padLeft(2, '0')}';
-  }
-
   // ─── Build ────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final center = _currentPosition ?? const LatLng(51.1657, 10.4515);
-
     final isReplay = _mode == _MapMode.replay;
-    final trackPts = isReplay ? _replayTrailPoints : _trackPoints;
-    final markerPos = isReplay ? _replayCurrentPos : _currentPosition;
 
     return Scaffold(
       appBar: AppBar(
@@ -203,10 +188,10 @@ class _MapScreenState extends State<MapScreen> {
             onPressed: () {
               _replayTimer?.cancel();
               final goingReplay = _mode == _MapMode.live;
+              _replayIndex.value = 0;
               setState(() {
                 _mode = goingReplay ? _MapMode.replay : _MapMode.live;
                 _replayPlaying = false;
-                _replayIndex = 0;
               });
               if (goingReplay) {
                 _loadReplayTrack();
@@ -252,41 +237,50 @@ class _MapScreenState extends State<MapScreen> {
                     ),
                   ],
                 ),
-              if (trackPts.length >= 2)
+              if (isReplay)
+                ValueListenableBuilder<int>(
+                  valueListenable: _replayIndex,
+                  builder: (_, idx, __) {
+                    if (idx < 1 || _trackPoints.length < 2) {
+                      return const SizedBox.shrink();
+                    }
+                    return PolylineLayer(
+                      polylines: [
+                        Polyline(
+                          // Trail als Sublist des gecachten Tracks — keine
+                          // Neuberechnung der LatLng-Objekte pro Tick.
+                          points: _trackPoints.sublist(0, idx + 1),
+                          strokeWidth: 3.0,
+                          color: Colors.blue.shade600.withOpacity(0.85),
+                        ),
+                      ],
+                    );
+                  },
+                )
+              else if (_trackPoints.length >= 2)
                 PolylineLayer(
                   polylines: [
                     Polyline(
-                      points: trackPts,
+                      points: _trackPoints,
                       strokeWidth: 3.0,
-                      color: (isReplay ? Colors.blue.shade600 : Colors.red.shade700)
-                          .withOpacity(0.85),
+                      color: Colors.red.shade700.withOpacity(0.85),
                     ),
                   ],
                 ),
-              if (markerPos != null)
+              if (isReplay)
+                ValueListenableBuilder<int>(
+                  valueListenable: _replayIndex,
+                  builder: (_, idx, __) {
+                    if (_replayFixes.isEmpty) return const SizedBox.shrink();
+                    final fix = _replayFixes[idx.clamp(0, _replayFixes.length - 1)];
+                    return MarkerLayer(
+                      markers: [_positionMarker(LatLng(fix.lat, fix.lon), replay: true)],
+                    );
+                  },
+                )
+              else if (_currentPosition != null)
                 MarkerLayer(
-                  markers: [
-                    Marker(
-                      point: markerPos,
-                      width: 24,
-                      height: 24,
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: isReplay ? Colors.blue.shade600 : Colors.red.shade700,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (isReplay ? Colors.blue : Colors.red.shade700)
-                                  .withOpacity(0.4),
-                              blurRadius: 8,
-                              spreadRadius: 2,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
+                  markers: [_positionMarker(_currentPosition!, replay: false)],
                 ),
             ],
           ),
@@ -313,34 +307,56 @@ class _MapScreenState extends State<MapScreen> {
                     color: isReplay ? Colors.blue.shade600 : Colors.red.shade700,
                   ),
                   const SizedBox(width: 8),
-                  Text(
-                    isReplay
-                        ? '${_replayIndex + 1} / ${_replayFixes.length} Punkte'
-                        : '${_trackPoints.length} Punkte',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: isDark ? Colors.white : Colors.black87,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (isReplay && _replayFixes.isNotEmpty)
-                    Text(
-                      _formatTs(_replayFixes[_replayIndex].tsMs),
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontFamily: 'monospace',
-                        color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+                  if (isReplay)
+                    Expanded(
+                      child: ValueListenableBuilder<int>(
+                        valueListenable: _replayIndex,
+                        builder: (_, idx, __) => Row(
+                          children: [
+                            Text(
+                              '${idx + 1} / ${_replayFixes.length} Punkte',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                color: isDark ? Colors.white : Colors.black87,
+                              ),
+                            ),
+                            const Spacer(),
+                            if (_replayFixes.isNotEmpty)
+                              Text(
+                                fmtTimeFromMs(_replayFixes[
+                                        idx.clamp(0, _replayFixes.length - 1)]
+                                    .tsMs),
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontFamily: 'monospace',
+                                  color: isDark
+                                      ? Colors.grey.shade300
+                                      : Colors.grey.shade700,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
                     )
-                  else if (!isReplay && _currentPosition != null)
+                  else ...[
                     Text(
-                      '${_currentPosition!.latitude.toStringAsFixed(5)}, '
-                      '${_currentPosition!.longitude.toStringAsFixed(5)}',
+                      '${_trackPoints.length} Punkte',
                       style: TextStyle(
-                        fontSize: 12,
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? Colors.white : Colors.black87,
                       ),
                     ),
+                    const Spacer(),
+                    if (_currentPosition != null)
+                      Text(
+                        '${_currentPosition!.latitude.toStringAsFixed(5)}, '
+                        '${_currentPosition!.longitude.toStringAsFixed(5)}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        ),
+                      ),
+                  ],
                 ],
               ),
             ),
@@ -373,6 +389,28 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  Marker _positionMarker(LatLng point, {required bool replay}) {
+    return Marker(
+      point: point,
+      width: 24,
+      height: 24,
+      child: Container(
+        decoration: BoxDecoration(
+          color: replay ? Colors.blue.shade600 : Colors.red.shade700,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: [
+            BoxShadow(
+              color: (replay ? Colors.blue : Colors.red.shade700).withOpacity(0.4),
+              blurRadius: 8,
+              spreadRadius: 2,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildReplayPanel(bool isDark) {
     final bg = isDark ? Colors.grey.shade900 : Colors.white;
     final hasData = _replayFixes.isNotEmpty;
@@ -401,11 +439,14 @@ class _MapScreenState extends State<MapScreen> {
                   trackHeight: 3,
                   thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
                 ),
-                child: Slider(
-                  value: _replayIndex.toDouble(),
-                  min: 0,
-                  max: (_replayFixes.length - 1).toDouble().clamp(0, double.infinity),
-                  onChanged: _onReplaySliderChanged,
+                child: ValueListenableBuilder<int>(
+                  valueListenable: _replayIndex,
+                  builder: (_, idx, __) => Slider(
+                    value: idx.toDouble(),
+                    min: 0,
+                    max: (_replayFixes.length - 1).toDouble().clamp(0, double.infinity),
+                    onChanged: _onReplaySliderChanged,
+                  ),
                 ),
               )
             else
@@ -418,10 +459,8 @@ class _MapScreenState extends State<MapScreen> {
                   onPressed: hasData
                       ? () {
                           _replayTimer?.cancel();
-                          setState(() {
-                            _replayIndex = 0;
-                            _replayPlaying = false;
-                          });
+                          _replayIndex.value = 0;
+                          setState(() => _replayPlaying = false);
                           if (_replayFixes.isNotEmpty) {
                             _mapController.move(
                               LatLng(_replayFixes.first.lat, _replayFixes.first.lon),
@@ -453,10 +492,8 @@ class _MapScreenState extends State<MapScreen> {
                   onPressed: hasData
                       ? () {
                           _replayTimer?.cancel();
-                          setState(() {
-                            _replayIndex = _replayFixes.length - 1;
-                            _replayPlaying = false;
-                          });
+                          _replayIndex.value = _replayFixes.length - 1;
+                          setState(() => _replayPlaying = false);
                           if (_replayFixes.isNotEmpty) {
                             _mapController.move(
                               LatLng(_replayFixes.last.lat, _replayFixes.last.lon),

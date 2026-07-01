@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../data/edp_api.dart';
 import '../data/edp_api_pro.dart';
+import '../theme/em_status.dart';
+import '../utils/formatters.dart';
 
 class EinsatzDetailScreen extends StatefulWidget {
   final EdpEinsatz einsatz;
@@ -209,9 +211,9 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
         ]),
         const SizedBox(height: 12),
         _infoCard(title: 'Zeitverlauf', rows: [
-          if (e.eroeff != null) _row('Eröffnung', _fmtDt(e.eroeff!)),
+          if (e.eroeff != null) _row('Eröffnung', fmtDateTime(e.eroeff!)),
           if (e.meldungseingang != null)
-            _row('Meldungseingang', _fmtDt(e.meldungseingang!)),
+            _row('Meldungseingang', fmtDateTime(e.meldungseingang!)),
           if (_notEmpty(e.meldender)) _row('Meldender', e.meldender!),
         ]),
         if (_notEmpty(e.meldung)) ...[const SizedBox(height: 12), _textCard('Meldung', e.meldung!)],
@@ -338,7 +340,7 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                   ),
                 const Spacer(),
                 if (e.addTimestamp != null)
-                  Text(_fmtDt(e.addTimestamp!),
+                  Text(fmtDateTime(e.addTimestamp!),
                       style: TextStyle(
                           fontSize: 11, color: Colors.grey.shade500)),
               ],
@@ -505,13 +507,13 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                     padding: const EdgeInsets.symmetric(
                         horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
-                      color: _statusColor(f.status).withOpacity(0.15),
+                      color: emStatusColor(f.status).withOpacity(0.15),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(f.status!,
                         style: TextStyle(
                             fontSize: 12,
-                            color: _statusColor(f.status),
+                            color: emStatusColor(f.status),
                             fontWeight: FontWeight.bold)),
                   ),
                 if (f.besatzungGes != null && f.besatzungGes! > 0) ...
@@ -530,23 +532,6 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
   }
 
   // ─── Helpers ───────────────────────────────────────────────────────────────
-
-  Color _statusColor(String? status) {
-    switch (status) {
-      case '1':
-      case '2':
-        return Colors.green;
-      case '3':
-      case '4':
-        return Colors.orange;
-      case '5':
-        return Colors.blue;
-      case '6':
-        return Colors.red;
-      default:
-        return Colors.grey;
-    }
-  }
 
   bool _notEmpty(String? s) => s != null && s.isNotEmpty;
 
@@ -583,12 +568,4 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
     );
   }
 
-  String _fmtDt(DateTime dt) {
-    final l = dt.toLocal();
-    final d =
-        '${l.day.toString().padLeft(2, '0')}.${l.month.toString().padLeft(2, '0')}.${l.year}';
-    final t =
-        '${l.hour.toString().padLeft(2, '0')}:${l.minute.toString().padLeft(2, '0')}';
-    return '$d $t';
-  }
 }

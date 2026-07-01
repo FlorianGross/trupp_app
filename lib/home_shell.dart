@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'alarm_overview_screen.dart';
 import 'data/alarm_store.dart';
+import 'data/app_prefs.dart';
 import 'map_screen.dart';
 import 'more_screen.dart';
 import 'status_history_screen.dart';
@@ -24,35 +26,46 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   late int _currentIndex = widget.initialIndex;
-  final Map<int, Widget> _tabCache = {};
+  final Map<String, Widget> _tabCache = {};
 
-  static const _tabs = [
-    _TabSpec(
-      icon: Icons.radio_button_unchecked,
-      activeIcon: Icons.radio_button_checked,
-      label: 'Status',
-    ),
-    _TabSpec(
-      icon: Icons.map_outlined,
-      activeIcon: Icons.map,
-      label: 'Karte',
-    ),
-    _TabSpec(
-      icon: Icons.campaign_outlined,
-      activeIcon: Icons.campaign,
-      label: 'Alarme',
-    ),
-    _TabSpec(
-      icon: Icons.history_outlined,
-      activeIcon: Icons.history,
-      label: 'Verlauf',
-    ),
-    _TabSpec(
-      icon: Icons.menu,
-      activeIcon: Icons.menu,
-      label: 'Mehr',
-    ),
-  ];
+  // Wird in initState aus den SharedPreferences geladen. Ohne konfigurierten
+  // EDP-API-Server (Pro-API-URL) wird der Alarme-Tab ausgeblendet.
+  bool _hasAlarmServer = false;
+  bool _prefsLoaded = false;
+
+  static const _statusTab = _TabSpec(
+    icon: Icons.radio_button_unchecked,
+    activeIcon: Icons.radio_button_checked,
+    label: 'Status',
+  );
+  static const _karteTab = _TabSpec(
+    icon: Icons.map_outlined,
+    activeIcon: Icons.map,
+    label: 'Karte',
+  );
+  static const _alarmeTab = _TabSpec(
+    icon: Icons.campaign_outlined,
+    activeIcon: Icons.campaign,
+    label: 'Alarme',
+  );
+  static const _verlaufTab = _TabSpec(
+    icon: Icons.history_outlined,
+    activeIcon: Icons.history,
+    label: 'Verlauf',
+  );
+  static const _mehrTab = _TabSpec(
+    icon: Icons.menu,
+    activeIcon: Icons.menu,
+    label: 'Mehr',
+  );
+
+  List<_TabSpec> get _tabs => [
+        _statusTab,
+        _karteTab,
+        if (_hasAlarmServer) _alarmeTab,
+        _verlaufTab,
+        _mehrTab,
+      ];
 
   int _alarmUnread = 0;
   StreamSubscription? _alarmEventSub;
@@ -60,10 +73,31 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    _loadAlarmServerFlag();
     _refreshAlarmBadge();
     _alarmEventSub = FlutterBackgroundService()
         .on('newAlarm')
         .listen((_) => _refreshAlarmBadge());
+  }
+
+  Future<void> _loadAlarmServerFlag() async {
+    final prefs = await SharedPreferences.getInstance();
+    final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
+    if (!mounted) return;
+    setState(() {
+      _hasAlarmServer = proApiUrl.isNotEmpty;
+      _prefsLoaded = true;
+      // Falls der initialIndex auf einen ausgeblendeten Tab zeigt, fängt
+      // _safeIndex das ab.
+      _currentIndex = _safeIndex(_currentIndex);
+    });
+  }
+
+  int _safeIndex(int i) {
+    final max = _tabs.length - 1;
+    if (i < 0) return 0;
+    if (i > max) return max;
+    return i;
   }
 
   @override
@@ -77,28 +111,21 @@ class _HomeShellState extends State<HomeShell> {
     if (mounted) setState(() => _alarmUnread = count);
   }
 
-  Widget _buildTab(int index) {
-    return _tabCache.putIfAbsent(index, () {
-      switch (index) {
-        case 0:
-          return const StatusOverview();
-        case 1:
-          return const MapScreen();
-        case 2:
-          return const AlarmOverviewScreen();
-        case 3:
-          return const StatusHistoryScreen();
-        case 4:
-          return const MoreScreen();
-        default:
-          return const SizedBox.shrink();
-      }
+  Widget _buildTab(_TabSpec spec) {
+    return _tabCache.putIfAbsent(spec.label, () {
+      if (identical(spec, _statusTab)) return const StatusOverview();
+      if (identical(spec, _karteTab)) return const MapScreen();
+      if (identical(spec, _alarmeTab)) return const AlarmOverviewScreen();
+      if (identical(spec, _verlaufTab)) return const StatusHistoryScreen();
+      if (identical(spec, _mehrTab)) return const MoreScreen();
+      return const SizedBox.shrink();
     });
   }
 
   Future<void> _onTap(int index) async {
+    final spec = _tabs[index];
     // Beim Wechsel zu „Alarme" lokales Badge zurücksetzen
-    if (index == 2) {
+    if (identical(spec, _alarmeTab)) {
       await AlarmStore.markAllSeen();
       if (mounted) setState(() => _alarmUnread = 0);
     }
@@ -107,32 +134,42 @@ class _HomeShellState extends State<HomeShell> {
 
   @override
   Widget build(BuildContext context) {
+    // Bevor die Prefs gelesen sind, zeigt _tabs nur Status/Karte/Verlauf/Mehr;
+    // ein kurzes Flackern beim allerersten Start wäre möglich, also blocken
+    // wir das mit einem leeren Scaffold ab.
+    if (!_prefsLoaded) {
+      return const Scaffold(body: SizedBox.shrink());
+    }
+
+    final tabs = _tabs;
+    final currentIndex = _safeIndex(_currentIndex);
+    final currentSpec = tabs[currentIndex];
+
     // Sicherstellen, dass der aktuelle Tab gebaut ist
-    _buildTab(_currentIndex);
+    _buildTab(currentSpec);
 
     return Scaffold(
       body: IndexedStack(
-        index: _currentIndex,
-        children: List.generate(_tabs.length, (i) {
-          return _tabCache[i] ?? const SizedBox.shrink();
-        }),
+        index: currentIndex,
+        children: tabs
+            .map((t) => _tabCache[t.label] ?? const SizedBox.shrink())
+            .toList(),
       ),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
-        currentIndex: _currentIndex,
+        currentIndex: currentIndex,
         onTap: _onTap,
         selectedItemColor: Theme.of(context).colorScheme.primary,
         unselectedItemColor: Colors.grey,
         showUnselectedLabels: true,
-        items: List.generate(_tabs.length, (i) {
-          final t = _tabs[i];
+        items: tabs.map((t) {
           final icon = Icon(t.icon);
           final activeIcon = Icon(t.activeIcon);
-          // Badge nur für „Alarme"-Tab
-          final iconWithBadge = i == 2 && _alarmUnread > 0
+          final isAlarmTab = identical(t, _alarmeTab);
+          final iconWithBadge = isAlarmTab && _alarmUnread > 0
               ? _badged(icon, _alarmUnread)
               : icon;
-          final activeIconWithBadge = i == 2 && _alarmUnread > 0
+          final activeIconWithBadge = isAlarmTab && _alarmUnread > 0
               ? _badged(activeIcon, _alarmUnread)
               : activeIcon;
           return BottomNavigationBarItem(
@@ -140,7 +177,7 @@ class _HomeShellState extends State<HomeShell> {
             activeIcon: activeIconWithBadge,
             label: t.label,
           );
-        }),
+        }).toList(),
       ),
     );
   }

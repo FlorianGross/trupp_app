@@ -29,6 +29,10 @@ class _AlarmOverviewScreenState extends State<AlarmOverviewScreen> {
   StreamSubscription? _newAlarmSub;
   Timer? _relTimeTimer;
 
+  /// Dedup-Key des zuletzt live eingetroffenen Alarms — dessen Karte
+  /// animiert beim Einfügen in die Liste (Slide-in + Fade).
+  String? _animateKey;
+
   @override
   void initState() {
     super.initState();
@@ -40,7 +44,10 @@ class _AlarmOverviewScreenState extends State<AlarmOverviewScreen> {
         final alarm = AlarmData.fromJson(Map<String, dynamic>.from(data));
         if (_alarms.isEmpty ||
             _alarms.first.deduplicationKey != alarm.deduplicationKey) {
-          setState(() => _alarms.insert(0, alarm));
+          setState(() {
+            _alarms.insert(0, alarm);
+            _animateKey = alarm.deduplicationKey;
+          });
         }
       } catch (_) {}
     });
@@ -151,19 +158,26 @@ class _AlarmOverviewScreenState extends State<AlarmOverviewScreen> {
           );
         }
         final alarm = item as AlarmData;
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 8),
-          child: _AlarmCard(
-            alarm: alarm,
-            isLatest: highlightKey != null &&
-                alarm.deduplicationKey == highlightKey,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AlarmDetailScreen(alarm: alarm),
-              ),
+        final card = _AlarmCard(
+          alarm: alarm,
+          isLatest: highlightKey != null &&
+              alarm.deduplicationKey == highlightKey,
+          onTap: () => Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => AlarmDetailScreen(alarm: alarm),
             ),
           ),
+        );
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          // Live eintreffende Alarme kurz einblenden (Slide-In).
+          child: alarm.deduplicationKey == _animateKey
+              ? _SlideInOnMount(
+                  key: ValueKey(alarm.deduplicationKey),
+                  child: card,
+                )
+              : card,
         );
       },
     );
@@ -425,6 +439,33 @@ class _SignalChip extends StatelessWidget {
                   fontWeight: FontWeight.bold)),
         ],
       ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Einfüge-Animation für live eintreffende Alarme
+// ---------------------------------------------------------------------------
+
+class _SlideInOnMount extends StatelessWidget {
+  final Widget child;
+
+  const _SlideInOnMount({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOutCubic,
+      builder: (_, t, child) => Opacity(
+        opacity: t,
+        child: Transform.translate(
+          offset: Offset(0, (1 - t) * -24),
+          child: child,
+        ),
+      ),
+      child: child,
     );
   }
 }

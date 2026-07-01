@@ -91,7 +91,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         leiterController.text = cfg.leiter;
         proApiUrlController.text = cfg.proApiUrl;
       });
-    } catch (e, st) {
+    } catch (e) {
       AppLogger.w('ConfigScreen', 'Bestehende Config konnte nicht geladen werden', e);
     }
   }
@@ -197,13 +197,21 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 );
                 return;
               }
-              final issi = await Navigator.push<String>(
+              final result = await Navigator.push<IssiPickerResult>(
                 context,
                 MaterialPageRoute(
                     builder: (_) => const IssiPickerScreen()),
               );
-              if (issi != null && mounted) {
-                setState(() => issiController.text = issi);
+              if (result != null && mounted) {
+                setState(() {
+                  issiController.text = result.issi;
+                  if (result.trupp.isNotEmpty) {
+                    truppController.text = result.trupp;
+                  }
+                  if (result.leiter.isNotEmpty) {
+                    leiterController.text = result.leiter;
+                  }
+                });
               }
             },
             icon: const Icon(Icons.radio, size: 18),
@@ -266,6 +274,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 'Trotzdem speichern?',
             onRetry: () async {
               await api.updateConfig(cfg);
+              await _autoSaveProfile(cfg);
               if (mounted) {
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -278,6 +287,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         }
 
         await api.updateConfig(cfg);
+        await _autoSaveProfile(cfg);
         if (mounted) {
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -289,6 +299,31 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       }
     } else {
       setState(() => _showAllErrors = true);
+    }
+  }
+
+  /// Speichert die aktuelle Konfiguration automatisch als Profil. Der Name
+  /// wird aus Truppname + ISSI zusammengesetzt, damit Profile pro Einheit
+  /// eindeutig sind und beim erneuten Speichern überschrieben werden.
+  Future<void> _autoSaveProfile(EdpConfig cfg) async {
+    final issi = cfg.issi.trim();
+    if (issi.isEmpty) return;
+    final trupp = cfg.trupp.trim();
+    final name = trupp.isNotEmpty ? '$trupp ($issi)' : 'ISSI $issi';
+    final profile = AppProfile(
+      name: name,
+      protocol: cfg.protocol,
+      server: '${cfg.host}:${cfg.port}',
+      token: cfg.token,
+      issi: issi,
+      trupp: trupp,
+      leiter: cfg.leiter,
+      proApiUrl: proApiUrlController.text.trim(),
+    );
+    try {
+      await ProfileStore.save(profile);
+    } catch (e) {
+      AppLogger.w('ConfigScreen', 'Auto-Save als Profil fehlgeschlagen', e);
     }
   }
 
@@ -329,6 +364,9 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
     final profileName = nameResult?.trim() ?? '';
     if (profileName.isEmpty) return;
 
+    // Erstes permanentes Profil wird automatisch Standard-Profil (Fallback
+    // nach Ablauf eines temporären Einsatz-Profils)
+    final hasDefault = await ProfileStore.defaultProfile() != null;
     final profile = AppProfile(
       name: profileName,
       protocol: _selectedProtocol,
@@ -338,6 +376,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       trupp: truppController.text.trim(),
       leiter: leiterController.text.trim(),
       proApiUrl: proApiUrlController.text.trim(),
+      isDefault: !hasDefault,
     );
     await ProfileStore.save(profile);
     if (mounted) {
