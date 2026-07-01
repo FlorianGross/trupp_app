@@ -4,8 +4,10 @@ import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/edp_api.dart';
+import 'data/edp_api_pro.dart';
 import 'data/app_prefs.dart';
 import 'data/profile_store.dart';
+import 'issi_picker_screen.dart';
 import 'theme/brand_colors.dart';
 
 class ProfilesScreen extends StatefulWidget {
@@ -39,7 +41,14 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
   }
 
   Future<void> _activate(AppProfile profile) async {
-    await ProfileStore.activate(profile);
+    // Vor dem Aktivieren fragen, ob die ISSI neu gesetzt werden soll –
+    // sinnvoll wenn das Gerät die Einheit wechselt aber der gleiche Server
+    // benutzt wird.
+    final maybeNewProfile = await _maybeResetIssi(profile);
+    if (maybeNewProfile == null) return; // Abbruch
+    final effective = maybeNewProfile;
+
+    await ProfileStore.activate(effective);
     await EdpApi.initFromPrefs();
     // Service neu starten damit neues Profil genutzt wird
     try {
@@ -65,6 +74,76 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         ),
       );
     }
+  }
+
+  /// Fragt vor dem Aktivieren, ob die hinterlegte ISSI neu gewählt werden
+  /// soll. Gibt das ggf. angepasste Profil zurück, oder null bei Abbruch.
+  /// Eine neu ausgewählte ISSI wird im Profil persistiert, damit beim
+  /// nächsten Aktivieren wieder direkt die richtige Kennung greift.
+  Future<AppProfile?> _maybeResetIssi(AppProfile profile) async {
+    final choice = await showDialog<_IssiChoice>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: const Text('ISSI übernehmen?'),
+        content: Text(
+          'Profil "${profile.name}" wird aktiviert.\n\n'
+          'Soll die hinterlegte ISSI (${profile.issi}) beibehalten oder '
+          'eine neue ISSI ausgewählt werden?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _IssiChoice.cancel),
+            child: const Text('Abbrechen'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, _IssiChoice.keep),
+            child: const Text('Beibehalten'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red.shade800,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, _IssiChoice.pick),
+            child: const Text('Neu wählen'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null || choice == _IssiChoice.cancel) return null;
+    if (choice == _IssiChoice.keep) return profile;
+
+    // _IssiChoice.pick: ISSI-Picker öffnen. Dafür muss die Pro-API mit dem
+    // Profil-Server initialisiert sein.
+    final api = EdpApiPro.instance;
+    if (api == null || !api.hasToken) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+                'Pro-API nicht verbunden – ISSI kann nicht neu gewählt werden.'),
+            backgroundColor: Theme.of(context).brand.warning,
+          ),
+        );
+      }
+      return profile;
+    }
+
+    final result = await Navigator.push<IssiPickerResult>(
+      context,
+      MaterialPageRoute(builder: (_) => const IssiPickerScreen()),
+    );
+    if (result == null) return null; // Picker abgebrochen
+
+    final updated = profile.copyWith(
+      issi: result.issi,
+      trupp: result.trupp.isNotEmpty ? result.trupp : profile.trupp,
+      leiter: result.leiter.isNotEmpty ? result.leiter : profile.leiter,
+    );
+    await ProfileStore.save(updated);
+    return updated;
   }
 
   Future<void> _delete(AppProfile profile) async {
@@ -284,6 +363,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
 }
 
 enum _ProfileAction { activate, edit, delete }
+
+enum _IssiChoice { cancel, keep, pick }
 
 // ─── Profil-Editor ────────────────────────────────────────────────────────────
 

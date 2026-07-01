@@ -1,8 +1,10 @@
 // lib/pro/einsatz_navigation_screen.dart
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../data/edp_api.dart';
 import '../data/edp_api_pro.dart';
 import 'einsatz_detail_screen.dart';
+import 'staerke_edp_screen.dart';
 
 class EinsatzNavigationScreen extends StatefulWidget {
   const EinsatzNavigationScreen({super.key});
@@ -38,24 +40,78 @@ class _EinsatzNavigationScreenState
       });
       return;
     }
-    final result = await api.getEinsaetze();
+
+    // Eigene Identifikation: Truppname oder ISSI aus der Webhook-Config.
+    // Wird zum Filtern der zugeordneten Einsätze benötigt.
+    String selfTrupp = '';
+    String selfIssi = '';
+    try {
+      final cfg = EdpApi.instance.config;
+      selfTrupp = cfg.trupp.trim();
+      selfIssi = cfg.issi.trim();
+    } catch (_) {}
+
+    final results = await Future.wait([
+      api.getEinsaetze(),
+      api.getEinsatzmittel(),
+    ]);
     if (!mounted) return;
-    if (result.ok) {
-      final all = result.data ?? [];
-      final active = all
-          .where((e) =>
-              e.aktiv != null && e.aktiv!.isNotEmpty && e.aktiv != '0')
-          .toList();
-      setState(() {
-        _einsaetze = active.isNotEmpty ? active : all;
-        _loading = false;
-      });
-    } else {
+
+    final einsatzResult = results[0] as EdpProResult<List<EdpEinsatz>>;
+    final emResult = results[1] as EdpProResult<List<EdpEinsatzmittel>>;
+
+    if (!einsatzResult.ok) {
       setState(() {
         _loading = false;
-        _error = result.error ?? 'Fehler ${result.statusCode}';
+        _error = einsatzResult.error ?? 'Fehler ${einsatzResult.statusCode}';
       });
+      return;
     }
+
+    final all = einsatzResult.data ?? [];
+    final active = all
+        .where((e) =>
+            e.aktiv != null && e.aktiv!.isNotEmpty && e.aktiv != '0')
+        .toList();
+
+    // Einsatznummern, denen das eigene Einsatzmittel zugeordnet ist.
+    final assignedEnrs = <String>{};
+    if (emResult.ok) {
+      for (final em in (emResult.data ?? const <EdpEinsatzmittel>[])) {
+        final enr = em.einsatznummer;
+        if (enr == null || enr.isEmpty) continue;
+        final matchesTrupp = selfTrupp.isNotEmpty &&
+            em.rufname.toLowerCase() == selfTrupp.toLowerCase();
+        final matchesIssi = selfIssi.isNotEmpty &&
+            em.rufname.toLowerCase() == selfIssi.toLowerCase();
+        if (matchesTrupp || matchesIssi) {
+          assignedEnrs.add(enr);
+        }
+      }
+    }
+
+    // Nur aktive Einsätze listen, denen die eigene Einheit zugeordnet ist.
+    // Wenn keine eigene Kennung bekannt ist (z. B. Config unvollständig),
+    // bleibt das Verhalten wie zuvor: alle aktiven Einsätze.
+    final hasSelfIdent = selfTrupp.isNotEmpty || selfIssi.isNotEmpty;
+    final filtered = hasSelfIdent
+        ? active
+            .where((e) =>
+                assignedEnrs.contains(e.einsatznummer.toString()))
+            .toList()
+        : active;
+
+    setState(() {
+      _einsaetze = filtered;
+      _loading = false;
+    });
+  }
+
+  void _openStaerkeMelden() {
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const StaerkeEdpScreen()),
+    );
   }
 
   List<EdpEinsatz> get _filtered {
@@ -162,6 +218,52 @@ class _EinsatzNavigationScreenState
       );
     }
     if (_filtered.isEmpty) {
+      // Ohne zugeordneten aktiven Einsatz: Übersicht auf die Fahrzeuge
+      // beschränken, damit der Nutzer die Stärke-Meldung abgeben kann.
+      if (_filter.isEmpty) {
+        return Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.inbox_outlined,
+                    size: 48, color: Colors.grey.shade400),
+                const SizedBox(height: 12),
+                Text(
+                  'Keinem aktiven Einsatz zugeordnet',
+                  style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Du kannst direkt die Stärke melden.',
+                  style: TextStyle(
+                      color: Colors.grey.shade500, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 20),
+                ElevatedButton.icon(
+                  onPressed: _openStaerkeMelden,
+                  icon: const Icon(Icons.people),
+                  label: const Text('Stärke melden'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.red.shade800,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 12),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -170,9 +272,7 @@ class _EinsatzNavigationScreenState
                 size: 48, color: Colors.grey.shade400),
             const SizedBox(height: 12),
             Text(
-              _filter.isEmpty
-                  ? 'Keine aktiven Einsätze'
-                  : 'Keine Ergebnisse für "$_filter"',
+              'Keine Ergebnisse für "$_filter"',
               style: TextStyle(color: Colors.grey.shade600),
             ),
           ],
