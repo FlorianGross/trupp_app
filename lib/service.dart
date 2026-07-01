@@ -563,20 +563,65 @@ Future<void> onStart(ServiceInstance service) async {
 
   StreamSubscription<Position>? sub;
   bool trackingEnabled = false;
+  Timer? streamRecovery;
+  int streamRestartAttempts = 0;
 
-  /// Startet den GPS-Stream mit aktuellen Einstellungen neu
-  Future<void> _restartStream() async {
+  // Zentraler, selbstheilender GPS-Stream + Recovery-Planer.
+  //
+  // Auf Android teilen sich mehrere Flutter-Engines (Haupt-UI + Background-
+  // Service) denselben nativen Geolocator-Location-Service. Dabei kann der
+  // Positions-Stream einzelner Engines beendet werden ("position updates
+  // stopped … another flutter engine connected"). Bisher wurden onError
+  // verschluckt und onDone gar nicht behandelt – der Stream blieb dann still
+  // stehen und es wurden keine Positionen mehr gesendet. Jetzt wird der Stream
+  // bei Fehler/Ende, solange getrackt werden soll, mit Backoff neu aufgesetzt.
+  //
+  // Als `late`-Closures deklariert, weil sie sich gegenseitig referenzieren
+  // (Stream → Recovery → Stream); die Auflösung erfolgt so erst zur Laufzeit.
+  late final Future<void> Function() startPositionStream;
+  late final void Function() scheduleStreamRecovery;
+
+  startPositionStream = () async {
     await sub?.cancel();
     sub = null;
+    streamRecovery?.cancel();
 
     if (!await _hasValidConfig()) return;
 
     final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
     sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-          (pos) async => _sendPositionIfOk(service, pos),
-      onError: (_) {},
+      (pos) async {
+        streamRestartAttempts = 0; // gesunder Stream → Backoff zurücksetzen
+        await _sendPositionIfOk(service, pos);
+      },
+      onError: (e, StackTrace st) {
+        AppLogger.w('LocationService', 'GPS-Stream-Fehler – Neuaufbau geplant', e);
+        scheduleStreamRecovery();
+      },
+      onDone: () {
+        // Stream durch Engine-Churn beendet → neu aufsetzen, falls noch aktiv.
+        if (trackingEnabled) scheduleStreamRecovery();
+      },
       cancelOnError: false,
     );
+  };
+
+  // Plant einen Stream-Neuaufbau mit exponentiellem Backoff (1…30 s).
+  scheduleStreamRecovery = () {
+    if (!trackingEnabled) return;
+    streamRestartAttempts =
+        streamRestartAttempts >= 6 ? 6 : streamRestartAttempts + 1;
+    final secs = 1 << (streamRestartAttempts - 1); // 1,2,4,8,16,32
+    final delay = Duration(seconds: secs > 30 ? 30 : secs);
+    streamRecovery?.cancel();
+    streamRecovery = Timer(delay, () async {
+      if (trackingEnabled) await startPositionStream();
+    });
+  };
+
+  /// Startet den GPS-Stream mit aktuellen Einstellungen neu (Mode-Wechsel).
+  Future<void> _restartStream() async {
+    await startPositionStream();
   }
 
   // Callback registrieren, damit _updateTrackingMode den Stream neu starten kann
@@ -605,19 +650,9 @@ Future<void> onStart(ServiceInstance service) async {
       _lastPendingCount = stats['pending'] ?? 0;
     } catch (_) {}
 
-    // Stream neu starten falls bereits aktiv (Mode-Wechsel)
-    if (trackingEnabled) {
-      await sub?.cancel();
-      sub = null;
-    }
     trackingEnabled = true;
-
-    final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
-    sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-          (pos) async => _sendPositionIfOk(service, pos),
-      onError: (_) {},
-      cancelOnError: false,
-    );
+    streamRestartAttempts = 0;
+    await startPositionStream();
 
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
@@ -630,19 +665,10 @@ Future<void> onStart(ServiceInstance service) async {
   Future<void> switchToPowerSaver() async {
     _trackingMode = TrackingMode.powerSaver;
     trackingEnabled = true;
+    streamRestartAttempts = 0;
 
-    // Stream mit neuen (sparsamen) Einstellungen neu starten
-    await sub?.cancel();
-    sub = null;
-
-    if (!await _hasValidConfig()) return;
-
-    final locationSettings = AdaptiveLocationSettings.buildSettings(TrackingMode.powerSaver);
-    sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
-          (pos) async => _sendPositionIfOk(service, pos),
-      onError: (_) {},
-      cancelOnError: false,
-    );
+    // Stream mit neuen (sparsamen) Einstellungen neu starten (selbstheilend)
+    await startPositionStream();
 
     // Timer sicherstellen (falls noch nicht gestartet)
     _scheduleNextHeartbeat(service);
@@ -661,6 +687,10 @@ Future<void> onStart(ServiceInstance service) async {
   Future<void> stopTracking() async {
     if (!trackingEnabled) return;
     trackingEnabled = false;
+
+    streamRecovery?.cancel();
+    streamRecovery = null;
+    streamRestartAttempts = 0;
 
     await sub?.cancel();
     sub = null;
