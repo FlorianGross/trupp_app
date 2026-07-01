@@ -98,7 +98,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         leiterController.text = cfg.leiter;
         proApiUrlController.text = cfg.proApiUrl;
       });
-    } catch (e, st) {
+    } catch (e) {
       AppLogger.w('ConfigScreen', 'Bestehende Config konnte nicht geladen werden', e);
     }
   }

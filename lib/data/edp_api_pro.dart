@@ -2,7 +2,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import 'edp_api.dart';
 import 'app_prefs.dart';
 

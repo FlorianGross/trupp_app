@@ -17,6 +17,7 @@ import 'keypad_widget.dart';
 import 'data/edp_api.dart';
 import 'data/gpx_exporter.dart';
 import 'data/location_sync_manager.dart';
+import 'data/status_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'map_screen.dart';
 import 'staerke_editor_screen.dart' show IssiHelper;
@@ -43,7 +44,7 @@ class StatusOverview extends StatefulWidget {
 class _StatusOverviewState extends State<StatusOverview> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   // Config
   String protocol = 'https', server = 'localhost', port = '443', token = '';
-  String trupp = 'Unbekannt', leiter = 'Unbekannt', issi = '0000';
+  String trupp = '', leiter = '', issi = '0000';
 
   static const _kBgPromptShownKey = 'bgPromptShown';
 
@@ -400,8 +401,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     final sp = prefs.getString(AppPrefsKeys.protocol) ?? protocol;
     final sv = prefs.getString(AppPrefsKeys.server) ?? server;
     final tk = prefs.getString(AppPrefsKeys.token) ?? token;
-    final tr = prefs.getString(AppPrefsKeys.trupp) ?? trupp;
-    final lt = prefs.getString(AppPrefsKeys.leiter) ?? leiter;
+    final tr = (prefs.getString(AppPrefsKeys.trupp) ?? trupp).trim();
+    final lt = (prefs.getString(AppPrefsKeys.leiter) ?? leiter).trim();
     final iss = prefs.getString(AppPrefsKeys.issi) ?? issi;
     String host = sv;
     String prt = '';
@@ -612,31 +613,34 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
 
     if (notify) {
+      // Persistiert den Status und sendet seriell — wirft nie. Bei Offline
+      // bleibt der Status pending und wird automatisch nachgesendet.
+      final sentOnline = await StatusSyncManager.instance.sendOrQueue(st);
+
       try {
-        await EdpApi.instance.sendStatus(st);
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 5),
+          ),
+        );
+        await LocationSyncManager.instance.sendOrQueue(
+          lat: position.latitude,
+          lon: position.longitude,
+          accuracy: position.accuracy,
+          status: st,
+          timestamp: position.timestamp,
+        );
+      } catch (gpsError) {
+        //print('GPS-Fehler bei Status-Änderung: $gpsError');
+      }
 
-        try {
-          final position = await Geolocator.getCurrentPosition(
-            locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.high,
-              timeLimit: Duration(seconds: 5),
-            ),
-          );
-          await LocationSyncManager.instance.sendOrQueue(
-            lat: position.latitude,
-            lon: position.longitude,
-            accuracy: position.accuracy,
-            status: st,
-            timestamp: position.timestamp ?? DateTime.now(),
-          );
-        } catch (gpsError) {
-          //print('GPS-Fehler bei Status-Änderung: $gpsError');
-        }
-
+      if (sentOnline) {
         await LocationSyncManager.instance.flushPendingNow();
         _showSnackbar('Status $st gesendet', success: true);
-      } catch (_) {
-        _showSnackbar('Status $st gespeichert (offline)', success: false);
+      } else {
+        _showSnackbar('Status $st gespeichert – wird automatisch nachgesendet',
+            success: false);
       }
     }
 
@@ -655,45 +659,48 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       }
     });
 
+    // Persistiert den Status und sendet seriell — wirft nie. Bei Offline
+    // bleibt der Status pending und wird automatisch nachgesendet.
+    final sentOnline = await StatusSyncManager.instance.sendOrQueue(st);
+
+    // WICHTIG: Auch bei Temp-Status IMMER GPS senden
     try {
-      // Status senden
-      await EdpApi.instance.sendStatus(st);
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5),
+        ),
+      );
+      await LocationSyncManager.instance.sendOrQueue(
+        lat: position.latitude,
+        lon: position.longitude,
+        accuracy: position.accuracy,
+        status: st,
+        timestamp: position.timestamp,
+      );
+    } catch (gpsError) {
+      //print('GPS-Fehler bei Temp-Status: $gpsError');
+    }
 
-      // WICHTIG: Auch bei Temp-Status IMMER GPS senden
+    // Automatische SDS bei Status 0 (DRINGEND) und Status 5 (Sprechwunsch)
+    if (st == 0 || st == 5) {
       try {
-        final position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.high,
-            timeLimit: Duration(seconds: 5),
-          ),
-        );
-        await LocationSyncManager.instance.sendOrQueue(
-          lat: position.latitude,
-          lon: position.longitude,
-          accuracy: position.accuracy,
-          status: st,
-          timestamp: position.timestamp ?? DateTime.now(),
-        );
-      } catch (gpsError) {
-        //print('GPS-Fehler bei Temp-Status: $gpsError');
+        final who = trupp.isNotEmpty ? trupp : 'ISSI $issi';
+        final sdsText = st == 0
+            ? 'DRINGEND! $who benötigt sofortige Unterstützung!'
+            : 'Sprechwunsch von $who - Bitte melden!';
+
+        await EdpApi.instance.sendSdsText(sdsText);
+      } catch (sdsError) {
+        // SDS-Fehler ist nicht kritisch, Status wurde trotzdem gesendet
       }
+    }
 
-      // Automatische SDS bei Status 0 (DRINGEND) und Status 5 (Sprechwunsch)
-      if (st == 0 || st == 5) {
-        try {
-          final sdsText = st == 0
-              ? 'DRINGEND! $trupp benötigt sofortige Unterstützung!'
-              : 'Sprechwunsch von $trupp - Bitte melden!';
-
-          await EdpApi.instance.sendSdsText(sdsText);
-        } catch (sdsError) {
-          // SDS-Fehler ist nicht kritisch, Status wurde trotzdem gesendet
-        }
-      }
-
+    if (sentOnline) {
       _showSnackbar('Status $st gesendet', success: true);
-    } catch (_) {
-      _showSnackbar('Status $st gespeichert (offline)', success: false);
+    } else {
+      _showSnackbar('Status $st gespeichert – wird automatisch nachgesendet',
+          success: false);
     }
   }
 
@@ -757,8 +764,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       _showSnackbar('Status $st nur im Vordergrund', success: false);
     }
 
+    await StatusSyncManager.instance.sendOrQueue(st);
     try {
-      await EdpApi.instance.sendStatus(st);
       await LocationSyncManager.instance.flushPendingNow();
       setState(() {});
     } catch (_) {}
@@ -926,7 +933,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     setState(() => _isSendingStaerke = true);
     try {
       // Fahrzeugbezeichnung aus eigener ISSI ableiten (wenn 5-stellig)
-      final decoded = IssiHelper.isValidIssi(issi) ? IssiHelper.decode(issi) : trupp;
+      final decoded = IssiHelper.isValidIssi(issi)
+          ? IssiHelper.decode(issi)
+          : (trupp.isNotEmpty ? trupp : 'ISSI $issi');
       final text = '$decoded Stärke: $_eigeneF/$_eigeneU/$_eigeneM';
       final res = await EdpApi.instance.sendSdsText(text);
       if (!mounted) return;
@@ -1032,7 +1041,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         lon: position.longitude,
         accuracy: position.accuracy,
         status: selectedStatus ?? 2,
-        timestamp: position.timestamp ?? DateTime.now(),
+        timestamp: position.timestamp,
       );
       await LocationSyncManager.instance.flushPendingNow();
       _showSnackbar('Position gesendet', success: true);
@@ -1451,20 +1460,21 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         ),
         child: Column(
           children: [
-            // Trupp & Leiter kompakt
+            // Trupp & Leiter kompakt — Fallback-Text wenn die optionalen
+            // Felder bei der Einrichtung (z.B. ohne Pro/QR-Code) leer blieben.
             Row(
               children: [
                 Expanded(
                   child: _buildCompactInfo(
                     icon: Icons.group,
-                    label: trupp,
+                    label: trupp.isNotEmpty ? trupp : 'Kein Trupp festgelegt',
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: _buildCompactInfo(
                     icon: Icons.person,
-                    label: leiter,
+                    label: leiter.isNotEmpty ? leiter : 'Kein Ansprechpartner',
                   ),
                 ),
               ],
@@ -1660,7 +1670,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                         () {
                           final decoded = IssiHelper.isValidIssi(issi)
                               ? IssiHelper.decode(issi)
-                              : trupp;
+                              : (trupp.isNotEmpty ? trupp : 'ISSI $issi');
                           return '$decoded Stärke: $_eigeneF/$_eigeneU/$_eigeneM';
                         }(),
                         style: const TextStyle(

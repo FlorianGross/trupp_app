@@ -198,7 +198,9 @@ class Keypad extends StatelessWidget {
     final isAvailable = _isStatusAvailable(number);
     final isDisabled = !isAvailable;
 
-    return Material(
+    return _PressableScale(
+      enabled: !isDisabled,
+      child: Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
@@ -236,6 +238,7 @@ class Keypad extends StatelessWidget {
                 : _buildNormalContent(config, isDisabled, isSmallScreen),
           ),
         ),
+      ),
       ),
     );
   }
@@ -340,6 +343,38 @@ class Keypad extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// Kurzes Scale-Feedback beim Antippen (0.95 → 1.0), damit der Nutzer
+/// sofort eine Reaktion sieht, bevor das Senden im Hintergrund läuft.
+class _PressableScale extends StatefulWidget {
+  final Widget child;
+  final bool enabled;
+
+  const _PressableScale({required this.child, this.enabled = true});
+
+  @override
+  State<_PressableScale> createState() => _PressableScaleState();
+}
+
+class _PressableScaleState extends State<_PressableScale> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.enabled) return widget.child;
+    return Listener(
+      onPointerDown: (_) => setState(() => _pressed = true),
+      onPointerUp: (_) => setState(() => _pressed = false),
+      onPointerCancel: (_) => setState(() => _pressed = false),
+      child: AnimatedScale(
+        scale: _pressed ? 0.95 : 1.0,
+        duration: const Duration(milliseconds: 90),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
     );
   }
 }

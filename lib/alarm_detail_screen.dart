@@ -5,8 +5,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'data/alarm_model.dart';
 import 'data/edp_api.dart';
+import 'data/status_sync_manager.dart';
 import 'alarm_notification.dart';
 import 'keypad_widget.dart';
+import 'utils/formatters.dart';
 
 class AlarmDetailScreen extends StatefulWidget {
   final AlarmData alarm;
@@ -77,7 +79,7 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
           if (alarm.mittel.isNotEmpty)
             _InfoCard(icon: Icons.local_fire_department, label: 'Einsatzmittel', value: alarm.mittel),
           if (alarm.ts.isNotEmpty)
-            _InfoCard(icon: Icons.schedule, label: 'Alarmzeit', value: _formatTs(alarm.ts)),
+            _InfoCard(icon: Icons.schedule, label: 'Alarmzeit', value: fmtAlarmTsLong(alarm.ts)),
         ],
       ),
     );
@@ -116,20 +118,14 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
   Future<void> _sendStatus(int code) async {
     setState(() { _sendingStatus = true; _lastSentStatus = code; });
     try {
-      final result = await EdpApi.instance.sendStatus(code);
+      final sentOnline = await StatusSyncManager.instance.sendOrQueue(code);
       if (!mounted) return;
       final cfg = statusConfigs[code]!;
-      final msg = result.ok
+      final msg = sentOnline
           ? 'Status ${code} – ${cfg.title} gesendet'
-          : 'Fehler (HTTP ${result.statusCode})';
+          : 'Status ${code} gespeichert – wird automatisch nachgesendet';
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2)));
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Kein EDP-Server konfiguriert.')),
-        );
-      }
     } finally {
       if (mounted) setState(() => _sendingStatus = false);
     }
@@ -308,15 +304,6 @@ class _AlarmDetailScreenState extends State<AlarmDetailScreen> {
     }
   }
 
-  String _formatTs(String ts) {
-    try {
-      final dt = DateTime.parse(ts).toLocal();
-      return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}  '
-          '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')} Uhr';
-    } catch (_) {
-      return ts;
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------

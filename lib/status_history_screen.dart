@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'keypad_widget.dart';
+import 'utils/formatters.dart';
 
 /// Ein einzelner Statusverlauf-Eintrag
 class StatusEntry {
@@ -84,19 +85,6 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
     if (mounted) setState(() => _entries = entries);
   }
 
-  String _formatTime(DateTime dt) {
-    final h = dt.hour.toString().padLeft(2, '0');
-    final m = dt.minute.toString().padLeft(2, '0');
-    final s = dt.second.toString().padLeft(2, '0');
-    return '$h:$m:$s';
-  }
-
-  String _formatDate(DateTime dt) {
-    final d = dt.day.toString().padLeft(2, '0');
-    final mo = dt.month.toString().padLeft(2, '0');
-    final y = dt.year;
-    return '$d.$mo.$y';
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -120,11 +108,11 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                 // Datumsgruppen-Header
                 Widget? header;
                 if (index == 0 ||
-                    _formatDate(_entries[index - 1].dateTime) != _formatDate(dt)) {
+                    fmtDate(_entries[index - 1].dateTime) != fmtDate(dt)) {
                   header = Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                     child: Text(
-                      _formatDate(dt),
+                      fmtDate(dt),
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
@@ -176,7 +164,7 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                       ),
                       // Uhrzeit
                       Text(
-                        _formatTime(dt),
+                        fmtTime(dt),
                         style: TextStyle(
                           fontSize: 14,
                           color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,

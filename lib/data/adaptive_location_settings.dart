@@ -75,9 +75,17 @@ class AdaptiveLocationSettings {
         defaultTargetPlatform == TargetPlatform.macOS) {
       return AppleSettings(
         accuracy: _iosAccuracyFor(mode),
-        activityType: ActivityType.otherNavigation,
+        // powerSaver = Bereitschaft → generischer Activity-Type, iOS darf
+        // sparsamer arbeiten. Navigation-Type nur wenn wirklich gefahren wird.
+        activityType: mode == TrackingMode.powerSaver
+            ? ActivityType.other
+            : ActivityType.otherNavigation,
         distanceFilter: _getDistanceFilter(mode),
-        pauseLocationUpdatesAutomatically: false,  // Nie automatisch pausieren
+        // iOS darf das GPS bei Stillstand schlafen legen — außer im Einsatz
+        // (highAccuracy), wo lückenloses Tracking wichtiger ist als Akku.
+        // Der Heartbeat (getCurrentPosition) weckt die Ortung ohnehin
+        // periodisch wieder auf.
+        pauseLocationUpdatesAutomatically: mode != TrackingMode.highAccuracy,
         showBackgroundLocationIndicator: true,      // Immer Indikator zeigen
         allowBackgroundLocationUpdates: true,       // Hintergrund-Updates erlauben
       );
