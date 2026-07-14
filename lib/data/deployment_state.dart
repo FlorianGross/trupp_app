@@ -4,9 +4,10 @@ import 'app_prefs.dart';
 
 /// Unterscheidet zwischen verschiedenen Einsatzmodi der App
 enum DeploymentMode {
-  standby,   // Bereit, aber kein aktiver Einsatz (GPS sparsam)
-  deployed,  // Aktiv im Einsatz (GPS präzise)
-  returning, // Rückweg (GPS ausgewogen)
+  standby,    // Bereit, aber kein aktiver Einsatz (GPS sparsam)
+  deployed,   // Aktiv im Einsatz (GPS präzise)
+  returning,  // Rückweg (GPS ausgewogen)
+  stationary, // UHS / fester Sanitäts-Standort (GPS fixiert, sehr sparsam)
 }
 
 /// Verwaltet den aktuellen Einsatzstatus und automatische Zeitsteuerung
@@ -33,7 +34,8 @@ class DeploymentState {
     final now = DateTime.now().millisecondsSinceEpoch;
     await prefs.setInt(_keyLastActivity, now);
 
-    if (mode == DeploymentMode.deployed) {
+    if (mode == DeploymentMode.deployed ||
+        mode == DeploymentMode.stationary) {
       await prefs.setInt(_keyStartTime, now);
     } else if (mode == DeploymentMode.standby) {
       await prefs.remove(_keyStartTime);

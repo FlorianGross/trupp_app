@@ -7,6 +7,7 @@ import 'data/app_prefs.dart';
 import 'data/auto_delete_config.dart';
 import 'data/gpx_exporter.dart';
 import 'data/profile_store.dart';
+import 'dienstanmeldung_screen.dart';
 import 'main.dart' show themeNotifier, toggleTheme;
 import 'utils/formatters.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -229,6 +230,16 @@ class _MoreScreenState extends State<MoreScreen> {
           return ListView(
             children: [
               _sectionHeader('Meldungen'),
+              _tile(
+                icon: Icons.how_to_reg,
+                title: 'Dienstanmeldung',
+                subtitle: 'Team, Qualifikationen & Stärke ans ELW melden',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const DienstanmeldungScreen()),
+                ),
+              ),
               _tile(
                 icon: Icons.assignment_ind,
                 title: 'Stärkemeldung',

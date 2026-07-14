@@ -275,14 +275,18 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Future<void> _loadDeploymentState() async {
     _deploymentMode = await DeploymentState.getMode();
 
-    // Einsatz-Timer laden
-    if (_deploymentMode == DeploymentMode.deployed) {
+    // Einsatz-/UHS-Timer laden (beide zählen als aktive Bereitstellung)
+    final active = _deploymentMode == DeploymentMode.deployed ||
+        _deploymentMode == DeploymentMode.stationary;
+    if (active) {
       final prefs = await SharedPreferences.getInstance();
       _deploymentStartMs = prefs.getInt(AppPrefsKeys.deploymentStartMs) ?? 0;
       _startDeploymentTimer();
-      // Display wachhalten nur wenn vom Nutzer erlaubt (Default an —
-      // typischer Fahrzeug-Use-Case am Halter).
-      final wakelock = prefs.getBool(AppPrefsKeys.wakelockInDeployment) ?? true;
+      // Display wachhalten nur im mobilen Einsatz (Fahrzeug am Halter). Am
+      // festen UHS-Standort ist das ein Akku-Killer über lange Dienste, daher
+      // dort nie.
+      final wakelock = _deploymentMode == DeploymentMode.deployed &&
+          (prefs.getBool(AppPrefsKeys.wakelockInDeployment) ?? true);
       if (wakelock) {
         WakelockPlus.enable();
       } else {
@@ -709,8 +713,108 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Future<void> _toggleDeploymentMode() async {
     if (_deploymentMode == DeploymentMode.deployed) {
       await _endDeploymentWithDialog();
+    } else if (_deploymentMode == DeploymentMode.stationary) {
+      await _endStationary();
     } else {
       await _startDeployment();
+    }
+  }
+
+  /// Aktiviert den UHS-/Standort-Modus (fester Sanitäts-Posten): GPS wird
+  /// fixiert und nur sehr sparsam übertragen (Energiesparmodus), damit das
+  /// Gerät auch über lange Dienste durchhält.
+  Future<void> _startStationary() async {
+    await DeploymentState.setMode(DeploymentMode.stationary);
+    _deploymentMode = DeploymentMode.stationary;
+
+    if (!_bgTrackingActive) {
+      final canTrack = await _hasBackgroundPermission();
+      if (canTrack) await _setBackgroundTracking(true);
+    }
+
+    final svc = FlutterBackgroundService();
+    if (await svc.isRunning()) {
+      svc.invoke(
+          'updateDeploymentMode', {'mode': DeploymentMode.stationary.name});
+    }
+    await _loadDeploymentState();
+    _showSnackbar('UHS-Standort aktiv – Energiesparmodus', success: true);
+  }
+
+  /// Beendet den UHS-Modus und kehrt in die Bereitschaft zurück.
+  Future<void> _endStationary() async {
+    await DeploymentState.setMode(DeploymentMode.standby);
+    _deploymentMode = DeploymentMode.standby;
+
+    final svc = FlutterBackgroundService();
+    if (await svc.isRunning()) {
+      svc.invoke('updateDeploymentMode', {'mode': DeploymentMode.standby.name});
+    }
+    await _loadDeploymentState();
+    _showSnackbar('UHS-Standort beendet', success: true);
+  }
+
+  /// Modus-Auswahl (langes Tippen auf die Statusleiste): Bereitschaft,
+  /// Einsatz oder UHS-Standort direkt wählen.
+  Future<void> _showModeMenu() async {
+    final selected = await showModalBottomSheet<DeploymentMode>(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (ctx) {
+        Widget option(DeploymentMode mode, IconData icon, String title,
+            String subtitle) {
+          final isCurrent = _deploymentMode == mode;
+          return ListTile(
+            leading: Icon(icon,
+                color: Theme.of(ctx).colorScheme.primary),
+            title: Text(title,
+                style: const TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+            trailing: isCurrent
+                ? Icon(Icons.check, color: Theme.of(ctx).colorScheme.primary)
+                : null,
+            onTap: () => Navigator.pop(ctx, mode),
+          );
+        }
+
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              option(DeploymentMode.standby, Icons.home, 'Bereitschaft',
+                  'Kein aktiver Einsatz, GPS sparsam'),
+              option(DeploymentMode.deployed, Icons.emergency, 'Einsatz',
+                  'Mobiler Einsatz, präzises Tracking'),
+              option(DeploymentMode.stationary, Icons.local_hospital,
+                  'UHS-Standort', 'Fester Sani-Posten, Akku sparen'),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (selected == null || selected == _deploymentMode) return;
+
+    switch (selected) {
+      case DeploymentMode.deployed:
+        await _startDeployment();
+        break;
+      case DeploymentMode.stationary:
+        await _startStationary();
+        break;
+      case DeploymentMode.standby:
+        if (_deploymentMode == DeploymentMode.deployed) {
+          await _endDeploymentWithDialog();
+        } else {
+          await _endStationary();
+        }
+        break;
+      case DeploymentMode.returning:
+        break;
     }
   }
 
@@ -740,7 +844,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   /// Startet den Einsatz automatisch beim ersten aktiven Status (1/3/7),
   /// sofern noch kein Einsatz läuft. Ersetzt das manuelle „Einsatz starten".
   Future<void> _maybeAutoStartDeployment(int st) async {
-    if (_deploymentMode == DeploymentMode.deployed) return;
+    // Nur aus der Bereitschaft heraus automatisch starten – ein laufender
+    // Einsatz oder UHS-Standort wird durch einen Statuswechsel nicht überschrieben.
+    if (_deploymentMode != DeploymentMode.standby) return;
     if (!DeploymentState.isActiveStatus(st)) return;
     await _startDeployment(auto: true);
   }
@@ -1188,16 +1294,33 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Kompakter Status-Bar (kombiniert Deployment + Tracking + Battery)
   Widget _buildCompactStatusBar() {
     final isDeployed = _deploymentMode == DeploymentMode.deployed;
+    final isStationary = _deploymentMode == DeploymentMode.stationary;
+    final isActive = isDeployed || isStationary;
     final brand = Theme.of(context).brand;
-    final baseColor = isDeployed ? brand.deployed : brand.ready;
+    final baseColor = isDeployed
+        ? brand.deployed
+        : (isStationary ? Colors.teal.shade700 : brand.ready);
     final tooltipMsg = isDeployed
-        ? 'Einsatz läuft – tippen zum Beenden'
-        : 'Bereitschaft – startet automatisch bei aktivem Status';
+        ? 'Einsatz läuft – tippen zum Beenden · lang tippen für Moduswahl'
+        : isStationary
+            ? 'UHS-Standort – tippen zum Beenden · lang tippen für Moduswahl'
+            : 'Bereitschaft – startet automatisch bei aktivem Status · lang tippen für Moduswahl';
+
+    final label = isDeployed ? 'EINSATZ' : (isStationary ? 'UHS' : 'BEREIT');
+    final subtitle = isDeployed
+        ? 'GPS aktiv'
+        : (isStationary
+            ? 'Fester Standort – Akku sparen'
+            : 'Standby – Autostart bei Status');
+    final icon = isDeployed
+        ? Icons.emergency
+        : (isStationary ? Icons.local_hospital : Icons.home);
 
     return Tooltip(
       message: tooltipMsg,
       child: InkWell(
         onTap: _toggleDeploymentMode,
+        onLongPress: _showModeMenu,
         child: Container(
           padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
           decoration: BoxDecoration(
@@ -1210,7 +1333,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
             children: [
               // Deployment Status
               Icon(
-                isDeployed ? Icons.emergency : Icons.home,
+                icon,
                 color: Colors.white,
                 size: 18,
               ),
@@ -1220,7 +1343,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isDeployed ? 'EINSATZ' : 'BEREIT',
+                    label,
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -1230,7 +1353,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     ),
                   ),
                   Text(
-                    isDeployed ? 'GPS aktiv' : 'Standby – Autostart bei Status',
+                    subtitle,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.85),
                       fontSize: 10,
@@ -1240,8 +1363,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 ],
               ),
 
-              // Einsatz-Timer
-              if (isDeployed && _deploymentStartMs > 0) ...[
+              // Einsatz-/UHS-Timer
+              if (isActive && _deploymentStartMs > 0) ...[
                 const SizedBox(width: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

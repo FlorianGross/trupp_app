@@ -217,7 +217,11 @@ Future<String> _getNotificationContentAsync({bool isWaiting = false}) async {
 String _getNotificationContent({bool isWaiting = false}) {
   final modeText = _deploymentMode == DeploymentMode.deployed
       ? 'Im Einsatz'
-      : (_deploymentMode == DeploymentMode.returning ? 'Rückweg' : 'Bereitschaft');
+      : _deploymentMode == DeploymentMode.stationary
+          ? 'UHS-Standort'
+          : (_deploymentMode == DeploymentMode.returning
+              ? 'Rückweg'
+              : 'Bereitschaft');
 
   final trackingText = AdaptiveLocationSettings.getModeDescription(_trackingMode);
   final pendingText = _lastPendingCount > 0 ? ' | $_lastPendingCount ausstehend' : '';
