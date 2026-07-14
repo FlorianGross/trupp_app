@@ -168,6 +168,7 @@ class _MoreScreenState extends State<MoreScreen> {
     if (choice == 0) {
       await AutoDeleteConfig.cancel();
       await _loadState();
+      if (!mounted) return;
       _showSnackbar('Automatisches Löschen deaktiviert', success: true);
       return;
     }
