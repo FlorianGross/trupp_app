@@ -192,6 +192,17 @@ class EdpApi {
     return url.replace(pathSegments: segs).toString();
   }
 
+  /// Vermerkt den Zeitpunkt der letzten erfolgreichen Serverantwort (HTTP 2xx).
+  /// Grundlage für die Silent-Failure-Warnung in der UI. Best-effort — ein
+  /// Fehler beim Schreiben darf den Request-Erfolg nicht beeinflussen.
+  Future<void> _stampContact() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(AppPrefsKeys.lastSuccessfulContactMs,
+          DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
   Future<EdpResult> _getWithRetry(Uri url) async {
     int attempt = 0;
     // [DIAG] Jeder Webhook-Zugriff wird mit maskierter URL geloggt.
@@ -202,6 +213,7 @@ class EdpApi {
         AppLogger.i('WEBHOOK',
             '→ HTTP ${r.statusCode} für ${_redactedUrl(url)}');
         if (r.statusCode >= 200 && r.statusCode < 300) {
+          await _stampContact();
           return EdpResult.ok(r.statusCode, body: r.body);
         }
         // Bei Server-Fehler (5xx) Retry, bei Client-Fehler (4xx) sofort abbrechen

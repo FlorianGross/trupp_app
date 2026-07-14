@@ -70,6 +70,11 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   _ConnectionState _connectionState = _ConnectionState.unknown;
   Timer? _connectionCheckTimer;
 
+  // Silent-Failure-Erkennung: keine bestätigte Übertragung (HTTP 2xx) mehr
+  // seit längerer Zeit, obwohl ein Einsatz/UHS-Standort aktiv ist.
+  int _lastContactMs = 0;
+  bool _silentFailure = false;
+
   // Einsatz-Timer
   Timer? _deploymentTickTimer;
   int _deploymentStartMs = 0;
@@ -173,6 +178,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       }
     }
 
+    // Silent-Failure-Status sofort nach Resume aktualisieren (nicht erst beim
+    // nächsten 30-s-Verbindungscheck).
+    await _evaluateSilentFailure();
+
     // Periodisches DB-Cleanup (einmal pro App-Resume, max alle 24h)
     await _maybeCleanupDatabase();
   }
@@ -257,6 +266,33 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     } catch (_) {
       if (!mounted) return;
       setState(() => _connectionState = _ConnectionState.disconnected);
+    }
+
+    await _evaluateSilentFailure();
+  }
+
+  /// Prüft, ob im aktiven Einsatz/UHS seit zu langer Zeit keine vom Server
+  /// bestätigte Übertragung (HTTP 2xx) mehr erfolgt ist. Falls ja, wird eine
+  /// deutliche Warnung eingeblendet („evtl. unsichtbar für die Leitstelle").
+  Future<void> _evaluateSilentFailure() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.reload();
+    _lastContactMs = prefs.getInt(AppPrefsKeys.lastSuccessfulContactMs) ?? 0;
+
+    final active = _deploymentMode == DeploymentMode.deployed ||
+        _deploymentMode == DeploymentMode.stationary;
+    // Am (bewusst sparsamen) UHS-Standort seltener senden → längere Toleranz
+    // als im mobilen Einsatz, um Fehlalarme zu vermeiden.
+    final threshold = _deploymentMode == DeploymentMode.stationary
+        ? const Duration(minutes: 15)
+        : const Duration(minutes: 6);
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final silent = active &&
+        _lastContactMs > 0 &&
+        (now - _lastContactMs) > threshold.inMilliseconds;
+
+    if (mounted && silent != _silentFailure) {
+      setState(() => _silentFailure = silent);
     }
   }
 
@@ -1247,6 +1283,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                   child: Column(
                     children: [
                       _buildCompactStatusBar(),
+                      if (_silentFailure) _buildSilentFailureBanner(),
                       const SizedBox(height: 8),
                       _buildEssentialInfo(),
                       const SizedBox(height: 8),
@@ -1283,6 +1320,58 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                         selectedStatus: selectedStatus,
                         gpsLoading: _gpsLoading,
                       ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Warnbanner: seit längerer Zeit keine bestätigte Übertragung im Einsatz.
+  Widget _buildSilentFailureBanner() {
+    final mins = _lastContactMs > 0
+        ? (DateTime.now().millisecondsSinceEpoch - _lastContactMs) ~/ 60000
+        : 0;
+    final sinceText = mins > 0 ? 'seit $mins Min' : 'seit einiger Zeit';
+    return Material(
+      color: Colors.red.shade700,
+      child: InkWell(
+        onTap: () async {
+          await _manualSendGps();
+          await _checkConnection();
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded,
+                  color: Colors.white, size: 22),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Keine bestätigte Übertragung',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      'Server $sinceText nicht bestätigt – evtl. unsichtbar für '
+                      'die Leitstelle. Tippen zum erneuten Senden.',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 11,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),

@@ -42,6 +42,10 @@ abstract final class AppPrefsKeys {
   static const lastFlushMs = 'lastFlushMs';
   static const lastDbCleanupMs = 'lastDbCleanupMs';
 
+  /// Zeitpunkt (Epoch-ms) der letzten erfolgreich vom Server bestätigten
+  /// Übertragung (HTTP 2xx). Grundlage für die Silent-Failure-Warnung.
+  static const lastSuccessfulContactMs = 'last_successful_contact_ms';
+
   // Display-Verhalten
   /// Display im Einsatz dauerhaft wachhalten (Wakelock).
   /// Default true — am Halter im Fahrzeug sinnvoll, in der Tasche aber
