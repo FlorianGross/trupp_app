@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:flutter_overlay_window/flutter_overlay_window.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -24,10 +23,6 @@ import 'staerke_editor_screen.dart' show IssiHelper;
 import 'status_history_screen.dart' show StatusHistory;
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'iot_car_helper.dart';
-import 'alarm_detail_screen.dart';
-import 'alarm_notification.dart';
-import 'alarm_overlay.dart' show kOverlayOpenDetail;
-import 'data/edp_api_alarm_service.dart';
 
 import 'data/unit_type_store.dart';
 import 'simplified_status_panel.dart';
@@ -141,21 +136,19 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   }
 
   /// Wird aufgerufen wenn die App in den Hintergrund geht.
-  /// Stellt sicher, dass der Background-Service für Alarm-Empfang läuft.
   /// GPS-Übertragung nur wenn der Nutzer sie explizit aktiviert hat.
   Future<void> _onAppPaused() async {
     final svc = FlutterBackgroundService();
-    final alarmConfigured = await EdpApiAlarmService.isConfigured();
 
-    // Service starten wenn nötig (für Alarmierung oder aktives Tracking)
-    if (!await svc.isRunning() && (alarmConfigured || _bgTrackingActive)) {
-      await svc.startService();
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    // GPS-Tracking nur wenn explizit aktiv
-    if (_bgTrackingActive && await svc.isRunning()) {
-      svc.invoke('setTracking', {'enabled': true});
+    // Service nur für aktives Tracking starten.
+    if (_bgTrackingActive) {
+      if (!await svc.isRunning()) {
+        await svc.startService();
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      if (await svc.isRunning()) {
+        svc.invoke('setTracking', {'enabled': true});
+      }
     }
   }
 
@@ -179,9 +172,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         await _setBackgroundTracking(true);
       }
     }
-
-    // Overlay-Detail-Flag: wenn aus dem Alarm-Overlay auf "Details" getippt wurde
-    await _checkOverlayDetailRequest();
 
     // Periodisches DB-Cleanup (einmal pro App-Resume, max alle 24h)
     await _maybeCleanupDatabase();
@@ -221,16 +211,10 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     // Batterie-Optimierung deaktivieren für dauerhaftes Hintergrund-Tracking
     await _requestDisableBatteryOptimization();
 
-    // Overlay-Permission anfordern (Android: "Über anderen Apps anzeigen")
-    // Nur relevant wenn Alarmierung konfiguriert ist
-    if (Platform.isAndroid && await EdpApiAlarmService.isConfigured()) {
-      await _requestOverlayPermission();
-    }
-
     final last = prefs.getInt(AppPrefsKeys.lastStatus) ?? 1;
 
     // GPS-Übertragungsstatus: main.dart hat transmissionEnabled auf false gesetzt,
-    // daher ist hier immer false (neu nach Neustart) – Service läuft evtl. für Alarmierung
+    // daher ist hier immer false (neu nach Neustart)
     if (mounted) setState(() {
       _bgTrackingActive = false;
     });
@@ -286,53 +270,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         }
       } catch (_) {}
     }
-  }
-
-  Future<void> _checkOverlayDetailRequest() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.reload();
-      if (prefs.getBool(kOverlayOpenDetail) != true) return;
-      await prefs.remove(kOverlayOpenDetail);
-
-      final alarm = await AlarmNotificationService.getPendingAlarm();
-      if (alarm == null || !mounted) return;
-
-      Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => AlarmDetailScreen(alarm: alarm)),
-      );
-    } catch (_) {}
-  }
-
-  Future<void> _requestOverlayPermission() async {
-    try {
-      if (await FlutterOverlayWindow.isPermissionGranted()) return;
-      if (!mounted) return;
-      final confirmed = await showDialog<bool>(
-        context: context,
-        builder: (_) => AlertDialog(
-          title: const Text('Popup-Erlaubnis'),
-          content: const Text(
-            'Damit Alarmierungen als Popup über anderen Apps angezeigt werden, '
-            'wird die Berechtigung „Über anderen Apps einblenden" benötigt.\n\n'
-            'Bitte die App in der folgenden Einstellung zulassen.',
-          ),
-          actions: [
-            TextButton(
-              child: const Text('Überspringen'),
-              onPressed: () => Navigator.of(context).pop(false),
-            ),
-            TextButton(
-              child: const Text('Einstellung öffnen'),
-              onPressed: () => Navigator.of(context).pop(true),
-            ),
-          ],
-        ),
-      );
-      if (confirmed == true) {
-        await FlutterOverlayWindow.requestPermission();
-      }
-    } catch (_) {}
   }
 
   Future<void> _loadDeploymentState() async {
@@ -577,11 +514,6 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
       } else {
         if (await svc.isRunning()) {
           svc.invoke('stopService', {});
-          // Kurz warten, dann Service für Alarm-Empfang neu starten falls konfiguriert
-          await Future.delayed(const Duration(milliseconds: 800));
-          if (await EdpApiAlarmService.isConfigured() && !await svc.isRunning()) {
-            await svc.startService();
-          }
         }
       }
     } catch (_) {}
@@ -728,6 +660,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     } else {
       await _onPersistentStatus(st);
     }
+
+    // Einsatz automatisch starten, sobald ein aktiver Status gedrückt wird.
+    await _maybeAutoStartDeployment(st);
   }
 
   Future<void> _offerBackgroundPermission(int st) async {
@@ -775,23 +710,39 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     if (_deploymentMode == DeploymentMode.deployed) {
       await _endDeploymentWithDialog();
     } else {
-      // Einsatz starten
-      await DeploymentState.setMode(DeploymentMode.deployed);
-      _deploymentMode = DeploymentMode.deployed;
-
-      // Übertragung automatisch aktivieren wenn noch nicht aktiv
-      if (!_bgTrackingActive) {
-        final canTrack = await _hasBackgroundPermission();
-        if (canTrack) await _setBackgroundTracking(true);
-      }
-
-      final svc = FlutterBackgroundService();
-      if (await svc.isRunning()) {
-        svc.invoke('updateDeploymentMode', {'mode': DeploymentMode.deployed.name});
-      }
-      await _loadDeploymentState();
-      _showSnackbar('Einsatz gestartet', success: true);
+      await _startDeployment();
     }
+  }
+
+  /// Startet den Einsatz: Modus auf „deployed", Übertragung aktivieren und den
+  /// Hintergrunddienst informieren. Wird sowohl automatisch (beim ersten
+  /// aktiven Status) als auch manuell (Tippen auf die Statusleiste) genutzt.
+  Future<void> _startDeployment({bool auto = false}) async {
+    await DeploymentState.setMode(DeploymentMode.deployed);
+    _deploymentMode = DeploymentMode.deployed;
+
+    // Übertragung automatisch aktivieren wenn noch nicht aktiv
+    if (!_bgTrackingActive) {
+      final canTrack = await _hasBackgroundPermission();
+      if (canTrack) await _setBackgroundTracking(true);
+    }
+
+    final svc = FlutterBackgroundService();
+    if (await svc.isRunning()) {
+      svc.invoke('updateDeploymentMode', {'mode': DeploymentMode.deployed.name});
+    }
+    await _loadDeploymentState();
+    _showSnackbar(
+        auto ? 'Einsatz automatisch gestartet' : 'Einsatz gestartet',
+        success: true);
+  }
+
+  /// Startet den Einsatz automatisch beim ersten aktiven Status (1/3/7),
+  /// sofern noch kein Einsatz läuft. Ersetzt das manuelle „Einsatz starten".
+  Future<void> _maybeAutoStartDeployment(int st) async {
+    if (_deploymentMode == DeploymentMode.deployed) return;
+    if (!DeploymentState.isActiveStatus(st)) return;
+    await _startDeployment(auto: true);
   }
 
   Future<void> _endDeploymentWithDialog() async {
@@ -1153,6 +1104,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   bool get _isDark => Theme.of(context).brightness == Brightness.dark;
 
+  // Einheitliche, theme-abhängige Flächen-/Rahmenfarben, damit Cards in Hell-
+  // und Dunkelmodus konsistent aussehen (statt hartkodierter Grautöne).
+  Color get _mutedSurface =>
+      _isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade100;
+  Color get _mutedBorder =>
+      _isDark ? Colors.white.withOpacity(0.12) : Colors.grey.shade200;
+
   @override
   Widget build(BuildContext context) {
     final scaffoldBg = _isDark
@@ -1234,7 +1192,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     final baseColor = isDeployed ? brand.deployed : brand.ready;
     final tooltipMsg = isDeployed
         ? 'Einsatz läuft – tippen zum Beenden'
-        : 'Bereitschaft – tippen zum Einsatz starten';
+        : 'Bereitschaft – startet automatisch bei aktivem Status';
 
     return Tooltip(
       message: tooltipMsg,
@@ -1272,7 +1230,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     ),
                   ),
                   Text(
-                    isDeployed ? 'GPS aktiv' : 'Standby – tippen für Einsatz',
+                    isDeployed ? 'GPS aktiv' : 'Standby – Autostart bei Status',
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.85),
                       fontSize: 10,
@@ -1490,7 +1448,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     decoration: BoxDecoration(
                       color: selectedStatus != null
                           ? Theme.of(context).colorScheme.primary.withOpacity(0.1)
-                          : Colors.grey.shade200,
+                          : _mutedSurface,
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -1517,7 +1475,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                 Builder(builder: (context) {
                   final hasPending = _stats['pending']! > 0;
                   final brand = Theme.of(context).brand;
-                  final bg = hasPending ? brand.queuePending : Colors.grey.shade100;
+                  final bg = hasPending ? brand.queuePending : _mutedSurface;
                   final fg = hasPending ? brand.warning : Colors.grey.shade600;
                   return Container(
                     padding: const EdgeInsets.symmetric(
@@ -1658,9 +1616,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 8),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
+                        color: _mutedSurface,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade200),
+                        border: Border.all(color: _mutedBorder),
                       ),
                       child: Text(
                         () {
@@ -1788,9 +1746,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         width: 26,
         height: 26,
         decoration: BoxDecoration(
-          color: (primary && onTap != null)
-              ? cs.primary
-              : Colors.grey.shade200,
+          color: (primary && onTap != null) ? cs.primary : _mutedBorder,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Icon(
@@ -1867,7 +1823,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                         decoration: InputDecoration(
                           hintText: 'Nachricht eingeben...',
                           filled: true,
-                          fillColor: Colors.grey.shade50,
+                          fillColor: _mutedSurface,
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                             borderSide: BorderSide.none,

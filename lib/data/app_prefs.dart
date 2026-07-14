@@ -19,10 +19,6 @@ abstract final class AppPrefsKeys {
   static const leiter = 'leiter';
   static const proApiUrl = 'pro_api_url';
 
-  // EDP-API-Alarmierung (Polling über den Pro-API-Server)
-  /// Höchste bereits empfangene Alarm-ID (Polling-Cursor).
-  static const edpAlarmLastId = 'edp_alarm_last_id';
-
   // Konfigurationsprofile
   /// Ablaufzeitpunkt (Epoch-ms) des aktiven temporären Einsatz-Profils.
   /// Nicht gesetzt = aktives Profil ist permanent.
@@ -52,8 +48,10 @@ abstract final class AppPrefsKeys {
   /// Akku-Killer, daher abschaltbar.
   static const wakelockInDeployment = 'wakelock_in_deployment';
 
-  // Alarm
-  static const alarmSeenCount = 'alarm_seen_count';
+  // AutoDelete
+  /// Zeitpunkt (Epoch-ms), zu dem die aktive Konfiguration automatisch
+  /// gelöscht wird. Nicht gesetzt = AutoDelete deaktiviert.
+  static const autoDeleteConfigAtMs = 'auto_delete_config_at_ms';
 }
 
 // ---------------------------------------------------------------------------

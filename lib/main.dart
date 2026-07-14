@@ -1,15 +1,12 @@
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_background_service/flutter_background_service.dart';
-import 'package:trupp_app/alarm_notification.dart';
-import 'package:trupp_app/alarm_detail_screen.dart';
-import 'package:trupp_app/alarm_overlay.dart';
+import 'package:trupp_app/foreground_notification.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
 import 'home_shell.dart';
 import 'onboarding_screen.dart';
-import 'data/alarm_model.dart';
+import 'data/auto_delete_config.dart';
 import 'data/profile_store.dart';
 import 'data/unit_type_store.dart';
 import 'theme/brand_colors.dart';
@@ -18,11 +15,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:trupp_app/data/edp_api.dart';
 import 'data/app_prefs.dart';
 import 'data/app_logger.dart';
-
-// Overlay-Entry-Point hier referenzieren, damit der Dart-Linker ihn nicht entfernt.
-// Die eigentliche Funktion liegt in alarm_overlay.dart.
-// ignore: unused_element
-final _overlayEntryPoint = overlayMain;
 
 // Globaler NavigatorKey
 final GlobalKey<NavigatorState> navigatorKey = GlobalKey<NavigatorState>();
@@ -52,18 +44,10 @@ Future<void> main() async {
   // isolate" beim FlutterBackgroundService()-Aufruf weiter unten).
   AppLogger.i('DIAG', 'main() start · isolate=${Isolate.current.debugName}');
 
-  // WICHTIG: Notification-Channels MÜSSEN vor initializeBackgroundService()
+  // WICHTIG: Notification-Channel MUSS vor initializeBackgroundService()
   // angelegt sein — das Plugin referenziert die FGS-Channel-ID, legt sie
   // aber nicht selbst an. Reihenfolge umgekehrt zur Intuition.
-  await AlarmNotificationService.initialize(
-    onTap: (alarm) {
-      navigatorKey.currentState?.push(
-        MaterialPageRoute(
-          builder: (_) => AlarmDetailScreen(alarm: alarm),
-        ),
-      );
-    },
-  );
+  await ForegroundNotificationService.initialize();
 
   try {
     await initializeBackgroundService();
@@ -84,6 +68,13 @@ Future<void> main() async {
         '${expiredProfile.fallback != null ? ' – "${expiredProfile.fallback!.name}" aktiviert' : ''}');
   }
 
+  // AutoDelete: Ist eine automatische Konfigurations-Löschung fällig (nach
+  // X Stunden oder zu einer festgelegten Uhrzeit)? Dann Konfiguration jetzt
+  // löschen, bevor hasConfig gelesen wird → App startet in der Einrichtung.
+  if (await AutoDeleteConfig.deleteIfDue()) {
+    AppLogger.i('main', 'Konfiguration durch AutoDelete gelöscht');
+  }
+
   final prefs = await SharedPreferences.getInstance();
   final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;
 
@@ -94,43 +85,23 @@ Future<void> main() async {
     // GPS-Übertragung nach jedem App-Start deaktiviert
     await prefs.setBool(AppPrefsKeys.transmissionEnabled, false);
 
-    // Hintergrund-Service starten, sobald eine (Webhook-)Konfiguration vorliegt.
-    // Der Service übernimmt zwei unabhängige Aufgaben:
-    //   • Standort-/Status-Übertragung über die Webhook-Schnittstelle
-    //   • Alarm-Polling über den EDP-API-Server (nur wenn proApiUrl gesetzt)
-    // Der Start wird bewusst NICHT an die EDP-API (proApiUrl) gekoppelt, damit
-    // die Standortübertragung unabhängig von der API funktioniert. Das
-    // Alarm-Polling schaltet sich in onStart intern nur bei gesetzter proApiUrl
-    // zu. GPS wird hier nicht gesendet: transmissionEnabled ist gerade auf false
-    // gesetzt, sodass der Service erst nach expliziter Status-Aktivierung sendet.
+    // Der Hintergrund-Service wird NICHT mehr beim App-Start gestartet: er
+    // dient ausschließlich der Standort-/Status-Übertragung und wird erst
+    // bei Bedarf gestartet (Übertragung aktivieren bzw. automatischer
+    // Einsatz-Start beim ersten aktiven Status).
     // [DIAG] Zeigt, ob die Standort-Voraussetzungen erfüllt sind.
     AppLogger.i(
         'DIAG',
         'Autostart · webhookValid=${await EdpApi.hasValidConfigInPrefs()}'
         ' · webhookHost=${(prefs.getString(AppPrefsKeys.server) ?? '').isNotEmpty}'
         ' · token=${(prefs.getString(AppPrefsKeys.token) ?? '').isNotEmpty}'
-        ' · issi=${(prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty}'
-        ' · proApiUrl=${(prefs.getString(AppPrefsKeys.proApiUrl) ?? '').isNotEmpty}');
-
-    try {
-      final svc = FlutterBackgroundService();
-      final running = await svc.isRunning();
-      AppLogger.i('DIAG', 'Autostart · service.isRunning=$running');
-      if (!running) {
-        await svc.startService();
-      }
-    } catch (e, st) {
-      AppLogger.e('main', 'Background-Service konnte nicht gestartet werden', e, st);
-    }
+        ' · issi=${(prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty}');
 
     unitType = await UnitTypeStore.load();
   }
 
-  final pendingAlarm = await AlarmNotificationService.getPendingAlarm();
-
   runApp(MyApp(
     hasConfig: hasConfig,
-    pendingAlarm: pendingAlarm,
     unitType: unitType,
   ));
 }
@@ -182,13 +153,11 @@ final _darkTheme = ThemeData(
 
 class MyApp extends StatefulWidget {
   final bool hasConfig;
-  final AlarmData? pendingAlarm;
   final UnitType? unitType;
 
   const MyApp({
     super.key,
     required this.hasConfig,
-    this.pendingAlarm,
     this.unitType,
   });
 
@@ -197,20 +166,6 @@ class MyApp extends StatefulWidget {
 }
 
 class _MyAppState extends State<MyApp> {
-  @override
-  void initState() {
-    super.initState();
-    if (widget.pendingAlarm != null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        navigatorKey.currentState?.push(
-          MaterialPageRoute(
-            builder: (_) => AlarmDetailScreen(alarm: widget.pendingAlarm!),
-          ),
-        );
-      });
-    }
-  }
-
   Widget _homeScreen() {
     if (!widget.hasConfig) return const OnboardingScreen();
     if (widget.unitType == null) {

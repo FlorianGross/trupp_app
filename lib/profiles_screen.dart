@@ -72,11 +72,12 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         svc.invoke('stopService', {});
         await Future.delayed(const Duration(milliseconds: 800));
       }
+      // Läuft eine Standortübertragung, den Service mit der neuen
+      // Konfiguration direkt wieder starten.
       final prefs = await SharedPreferences.getInstance();
-      final alarmConfigured =
-          (prefs.getString(AppPrefsKeys.proApiUrl) ?? '').isNotEmpty &&
-          (prefs.getString(AppPrefsKeys.issi) ?? '').isNotEmpty;
-      if (alarmConfigured && !await svc.isRunning()) {
+      final transmitting =
+          prefs.getBool(AppPrefsKeys.transmissionEnabled) ?? false;
+      if (transmitting && !await svc.isRunning()) {
         await svc.startService();
       }
     } catch (_) {}
@@ -681,7 +682,7 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
             const SizedBox(height: 12),
             TextFormField(controller: _leiterCtrl, decoration: _dec('Ansprechpartner')),
             const SizedBox(height: 20),
-            const _SectionHeader('EDP-Pro-API / Alarmierung (optional)'),
+            const _SectionHeader('EDP-Pro-API (optional)'),
             const SizedBox(height: 12),
             TextFormField(
               controller: _proApiUrlCtrl,
