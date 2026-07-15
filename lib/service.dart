@@ -668,7 +668,13 @@ Future<void> onStart(ServiceInstance service) async {
 
     trackingEnabled = true;
     streamRestartAttempts = 0;
-    await startPositionStream();
+    // Nur starten, wenn noch kein Stream läuft. Einen echten Mode-Wechsel hat
+    // _updateTrackingMode oben bereits behandelt (Stream neu gestartet); ein
+    // wiederholtes setTracking(true) darf den laufenden Stream NICHT abreißen —
+    // sonst entsteht ein Geolocator-Stop/Start-Karussell.
+    if (sub == null) {
+      await startPositionStream();
+    }
 
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);

@@ -1300,7 +1300,14 @@ class _PermissionPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
-      child: Column(
+      // Bei knapper Höhe (z. B. wenn im PageView die Tastatur aufgeht) scrollen,
+      // statt zu überlaufen; bei genügend Platz füllt der Spacer wie bisher.
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 24),
@@ -1445,6 +1452,10 @@ class _PermissionPage extends StatelessWidget {
             ],
           ),
         ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
