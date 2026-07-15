@@ -15,6 +15,7 @@
 // nachgesendet.
 import 'dart:async';
 
+import '../utils/formatters.dart';
 import 'edp_api.dart';
 import 'status_queue.dart';
 
@@ -29,6 +30,11 @@ class StatusSyncManager {
   /// nachgesendet — ein 6 h alter Status würde beim Server einen längst
   /// überholten Zustand setzen.
   static const _maxPendingAge = Duration(hours: 6);
+
+  /// Ist ein Status nach dieser Zeit noch nicht bestätigt (kein HTTP 200),
+  /// wird er zusätzlich einmalig per SDS nachgemeldet (mit exaktem Zeitpunkt).
+  /// Der reguläre Übertragungsversuch läuft davon unberührt weiter.
+  static const _sdsFallbackAfter = Duration(seconds: 60);
 
   /// Serialisierung: alle Sende-Vorgänge hängen an dieser Future-Kette.
   /// Damit ist garantiert, dass nie zwei sendStatus-Requests parallel laufen
@@ -73,6 +79,11 @@ class StatusSyncManager {
       if (batch.isEmpty) return true;
 
       for (final entry in batch) {
+        // SDS-Fallback: Hat dieser Status seit > _sdsFallbackAfter noch keine
+        // Bestätigung (HTTP 200) erhalten, wird er einmalig per SDS mit exaktem
+        // Zeitpunkt nachgemeldet. Der reguläre Sendeversuch folgt trotzdem.
+        await _maybeSendSdsFallback(api, entry);
+
         try {
           final res = await api.sendStatus(entry.status);
           if (!res.ok) return false; // bleibt pending, Reihenfolge bewahren
@@ -84,6 +95,29 @@ class StatusSyncManager {
           return false; // bleibt pending
         }
       }
+    }
+  }
+
+  /// Verschickt – falls überfällig und noch nicht geschehen – eine einmalige
+  /// SDS-Nachmeldung für einen verzögerten Status. Best-effort: schlägt der
+  /// SDS-Versand fehl, bleibt der Eintrag „unbenachrichtigt" und wird beim
+  /// nächsten Flush erneut versucht.
+  Future<void> _maybeSendSdsFallback(EdpApi api, QueuedStatus entry) async {
+    if (entry.id == null || entry.sdsNotified) return;
+    final ageMs = DateTime.now().millisecondsSinceEpoch - entry.tsMs;
+    if (ageMs <= _sdsFallbackAfter.inMilliseconds) return;
+
+    try {
+      final ts = DateTime.fromMillisecondsSinceEpoch(entry.tsMs).toLocal();
+      final text = 'Statusmeldung verzögert: Status ${entry.status} '
+          'um ${fmtDate(ts)} ${fmtTime(ts)} noch nicht bestätigt – '
+          'wird weiter übertragen.';
+      final res = await api.sendSdsText(text);
+      if (res.ok) {
+        await _queue.markSdsNotified(entry.id!);
+      }
+    } catch (_) {
+      // Fallback ist best-effort; der Status wird ohnehin weiter versucht.
     }
   }
 }

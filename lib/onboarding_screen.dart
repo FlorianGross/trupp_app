@@ -535,11 +535,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           icon: Icons.notifications_active_rounded,
           iconColor: Colors.orange.shade700,
           iconBg: Colors.orange.shade50,
-          title: 'Alarmbenachrichtigungen',
-          subtitle: 'Auch bei gesperrtem Bildschirm',
+          title: 'Benachrichtigungen',
+          subtitle: 'Für den Hintergrunddienst',
           description:
-              'Lass dich durch Push-Benachrichtigungen über eingehende Alarmierungen '
-              'informieren – auch wenn die App im Hintergrund läuft.',
+              'Die App zeigt eine dauerhafte Benachrichtigung, solange sie im '
+              'Hintergrund GPS-Positionen sendet. Dafür wird die '
+              'Benachrichtigungs-Berechtigung benötigt.',
           granted: _notifGranted,
           grantedLabel: 'Benachrichtigungen erteilt',
           buttonLabel: 'Benachrichtigungen erlauben',
@@ -1087,11 +1088,11 @@ class _ManualConfigForm extends StatelessWidget {
             decoration: _dec('Ansprechpartner'),
           ),
           const SizedBox(height: 20),
-          _SectionLabel('EDP-Pro-API / Alarmierung (optional)'),
+          _SectionLabel('EDP-Pro-API (optional)'),
           const SizedBox(height: 6),
           Text(
             'EDP-Pro-API-Server – für ISSI-Auswahl (Tetra-Endgeräte, '
-            'Fahrzeugabfrage) und Alarmierung.',
+            'Fahrzeugabfrage).',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
           ),
           const SizedBox(height: 12),

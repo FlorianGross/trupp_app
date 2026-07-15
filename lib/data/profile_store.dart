@@ -192,7 +192,7 @@ class ProfileStore {
     await prefs.setString(AppPrefsKeys.trupp, profile.trupp);
     await prefs.setString(AppPrefsKeys.leiter, profile.leiter);
     await prefs.setBool('hasConfig', true);
-    // EDP-API-URL (für Datenabruf + Alarmierung)
+    // EDP-API-URL (für Datenabruf)
     if (profile.proApiUrl.isNotEmpty) {
       await prefs.setString(AppPrefsKeys.proApiUrl, profile.proApiUrl);
     } else {

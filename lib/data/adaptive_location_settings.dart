@@ -34,6 +34,12 @@ class AdaptiveLocationSettings {
       return TrackingMode.powerSaver;
     }
 
+    // UHS / fester Sanitäts-Standort: Position ändert sich nicht → immer sehr
+    // sparsam tracken (lange Dienste, Akku schonen), unabhängig vom Status.
+    if (deployment == DeploymentMode.stationary) {
+      return TrackingMode.powerSaver;
+    }
+
     // Aktive Einsatz-Status (3 = Auftrag, 7 = Transport) → hohe Genauigkeit
     if ([3, 7].contains(currentStatus)) {
       return batteryLevel > 30 ? TrackingMode.highAccuracy : TrackingMode.balanced;

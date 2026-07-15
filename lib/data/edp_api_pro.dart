@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'edp_api.dart';
-import 'alarm_model.dart';
 import 'app_prefs.dart';
 import 'app_logger.dart';
 
@@ -555,65 +554,6 @@ class EdpApiPro {
           : <EdpEmTyp>[];
       items.sort((a, b) => (a.sortpos ?? 99).compareTo(b.sortpos ?? 99));
       return EdpProResult.success(items);
-    } catch (e) {
-      return EdpProResult.failure(-1, e.toString());
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Alarmierung
-  // ---------------------------------------------------------------------------
-
-  /// Pollt neue Alarme für die eigene ISSI.
-  ///
-  /// [sinceId] ist der Cursor – es werden nur Alarme mit einer höheren ID
-  /// geliefert (älteste zuerst). Die Antwort entspricht dem AlarmData-Modell.
-  Future<EdpProResult<List<AlarmData>>> pollAlarme({
-    required String issi,
-    int sinceId = 0,
-  }) async {
-    try {
-      final resp = await _get(_uri('alarmierung', {
-        'issi': issi,
-        'sinceId': sinceId.toString(),
-      }));
-      if (resp.statusCode != 200) {
-        return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
-      }
-      final body = jsonDecode(resp.body) as Map<String, dynamic>;
-      final raw = body['data'];
-      final items = raw is List
-          ? raw
-              .map((e) => AlarmData.fromJson(e as Map<String, dynamic>))
-              .toList()
-          : <AlarmData>[];
-      return EdpProResult.success(items);
-    } catch (e) {
-      return EdpProResult.failure(-1, e.toString());
-    }
-  }
-
-  /// Bestätigt den Empfang eines Alarms (Quittung) anhand seiner ID.
-  Future<EdpProResult<void>> quittiereAlarm(int id) async {
-    try {
-      await _ensureAuth();
-      AppLogger.i('API', 'POST ${_uri('alarmierung/$id/quittung')}');
-      var resp = await _client
-          .post(_uri('alarmierung/$id/quittung'), headers: _headers)
-          .timeout(const Duration(seconds: 12));
-      AppLogger.i('API',
-          '→ HTTP ${resp.statusCode} für POST alarmierung/$id/quittung');
-      if (resp.statusCode == 401) {
-        final recovered = await _tryRefresh() ||
-            await login(_kTruppAppUser, _kTruppAppPass);
-        if (recovered) {
-          resp = await _client
-              .post(_uri('alarmierung/$id/quittung'), headers: _headers)
-              .timeout(const Duration(seconds: 12));
-        }
-      }
-      if (resp.statusCode == 200) return const EdpProResult.success(null);
-      return EdpProResult.failure(resp.statusCode, 'HTTP ${resp.statusCode}');
     } catch (e) {
       return EdpProResult.failure(-1, e.toString());
     }

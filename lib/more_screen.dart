@@ -4,9 +4,12 @@ import 'package:share_plus/share_plus.dart';
 
 import 'ConfigScreen.dart';
 import 'data/app_prefs.dart';
+import 'data/auto_delete_config.dart';
 import 'data/gpx_exporter.dart';
 import 'data/profile_store.dart';
+import 'dienstanmeldung_screen.dart';
 import 'main.dart' show themeNotifier, toggleTheme;
+import 'utils/formatters.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'profiles_screen.dart';
 import 'pro/pro_dashboard_screen.dart';
@@ -27,6 +30,7 @@ class _MoreScreenState extends State<MoreScreen> {
   int _autoDeactivateMinutes = 0;
   String _activeProfileName = '';
   bool _wakelockInDeployment = true;
+  DateTime? _autoDeleteAt;
 
   @override
   void initState() {
@@ -37,12 +41,14 @@ class _MoreScreenState extends State<MoreScreen> {
   Future<void> _loadState() async {
     final prefs = await SharedPreferences.getInstance();
     final active = await ProfileStore.activeName() ?? '';
+    final autoDeleteAt = await AutoDeleteConfig.scheduledAt();
     if (!mounted) return;
     setState(() {
       _autoDeactivateMinutes = prefs.getInt('autoDeactivateMinutes') ?? 0;
       _activeProfileName = active;
       _wakelockInDeployment =
           prefs.getBool(AppPrefsKeys.wakelockInDeployment) ?? true;
+      _autoDeleteAt = autoDeleteAt;
     });
   }
 
@@ -123,6 +129,74 @@ class _MoreScreenState extends State<MoreScreen> {
     _showSnackbar(msg, success: true);
   }
 
+  String _autoDeleteSubtitle() {
+    if (_autoDeleteAt == null) return 'Aus';
+    return 'Löscht am ${fmtDateTime(_autoDeleteAt!)} Uhr';
+  }
+
+  /// Auswahl-Dialog für AutoDelete: Konfiguration nach X Stunden oder zu einer
+  /// festen Uhrzeit automatisch löschen (Gerät zurück auf Einrichtung).
+  Future<void> _showAutoDeleteDialog() async {
+    // Rückgabewerte: 0 = Aus, >0 = Stunden, -1 = Uhrzeit wählen.
+    const hourOptions = [1, 2, 4, 8, 12, 24];
+
+    final choice = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Konfiguration automatisch löschen'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 0),
+            child: const Text('Aus'),
+          ),
+          const Divider(),
+          for (final h in hourOptions)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, h),
+              child: Text('Nach $h ${h == 1 ? 'Stunde' : 'Stunden'}'),
+            ),
+          const Divider(),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, -1),
+            child: const Text('Zu bestimmter Uhrzeit…'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null || !mounted) return;
+
+    if (choice == 0) {
+      await AutoDeleteConfig.cancel();
+      await _loadState();
+      if (!mounted) return;
+      _showSnackbar('Automatisches Löschen deaktiviert', success: true);
+      return;
+    }
+
+    if (choice == -1) {
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.now(),
+        helpText: 'Löschzeitpunkt wählen',
+      );
+      if (time == null || !mounted) return;
+      await AutoDeleteConfig.scheduleAtTime(time.hour, time.minute);
+    } else {
+      await AutoDeleteConfig.scheduleAfterHours(choice);
+    }
+
+    await _loadState();
+    if (!mounted) return;
+    final at = _autoDeleteAt;
+    _showSnackbar(
+      at != null
+          ? 'Konfiguration wird am ${fmtDateTime(at)} Uhr gelöscht'
+          : 'Automatisches Löschen aktiviert',
+      success: true,
+    );
+  }
+
   Future<void> _changeUnitType() async {
     await Navigator.push(
       context,
@@ -156,6 +230,16 @@ class _MoreScreenState extends State<MoreScreen> {
           return ListView(
             children: [
               _sectionHeader('Meldungen'),
+              _tile(
+                icon: Icons.how_to_reg,
+                title: 'Dienstanmeldung',
+                subtitle: 'Team, Qualifikationen & Stärke ans ELW melden',
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) => const DienstanmeldungScreen()),
+                ),
+              ),
               _tile(
                 icon: Icons.assignment_ind,
                 title: 'Stärkemeldung',
@@ -204,6 +288,12 @@ class _MoreScreenState extends State<MoreScreen> {
                     ? 'Aus'
                     : 'Nach ${_autoDeactivateMinutes >= 60 ? '${_autoDeactivateMinutes ~/ 60}h' : '${_autoDeactivateMinutes}min'} Inaktivität',
                 onTap: _showAutoDeactivateDialog,
+              ),
+              _tile(
+                icon: Icons.auto_delete,
+                title: 'Konfiguration automatisch löschen',
+                subtitle: _autoDeleteSubtitle(),
+                onTap: _showAutoDeleteDialog,
               ),
               _tile(
                 icon: isDark ? Icons.light_mode : Icons.dark_mode,

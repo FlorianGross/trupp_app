@@ -78,6 +78,22 @@ void main() {
     expect(remaining.first.status, 1);
   });
 
+  test('markSdsNotified setzt das SDS-Flag, ohne den Status zu senden',
+      () async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    await StatusQueue.instance.insert(QueuedStatus(tsMs: now, status: 3));
+
+    var batch = await StatusQueue.instance.pendingBatch();
+    expect(batch.single.sdsNotified, false);
+
+    await StatusQueue.instance.markSdsNotified(batch.single.id!);
+
+    batch = await StatusQueue.instance.pendingBatch();
+    // Eintrag bleibt pending (nur die SDS-Nachmeldung ist markiert).
+    expect(batch.single.sdsNotified, true);
+    expect(batch.single.isSent, false);
+  });
+
   test('purgeOlderThan löscht nur gesendete Einträge', () async {
     final old = DateTime.now().millisecondsSinceEpoch -
         const Duration(days: 8).inMilliseconds;

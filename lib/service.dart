@@ -18,9 +18,9 @@ import 'data/location_sync_manager.dart';
 import 'data/status_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
+import 'data/auto_delete_config.dart';
 
-import 'data/edp_api_alarm_service.dart';
-import 'alarm_notification.dart';
+import 'foreground_notification.dart';
 
 // Globale Variablen für Service-Isolate
 int _currentStatus = 0;
@@ -217,7 +217,11 @@ Future<String> _getNotificationContentAsync({bool isWaiting = false}) async {
 String _getNotificationContent({bool isWaiting = false}) {
   final modeText = _deploymentMode == DeploymentMode.deployed
       ? 'Im Einsatz'
-      : (_deploymentMode == DeploymentMode.returning ? 'Rückweg' : 'Bereitschaft');
+      : _deploymentMode == DeploymentMode.stationary
+          ? 'UHS-Standort'
+          : (_deploymentMode == DeploymentMode.returning
+              ? 'Rückweg'
+              : 'Bereitschaft');
 
   final trackingText = AdaptiveLocationSettings.getModeDescription(_trackingMode);
   final pendingText = _lastPendingCount > 0 ? ' | $_lastPendingCount ausstehend' : '';
@@ -350,10 +354,26 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
         _flushTimer?.cancel();
         _connectivitySub?.cancel();
         _connectivityFlushDebounce?.cancel();
-        await EdpApiAlarmService.stop();
         await service.stopSelf();
         return;
       }
+    }
+
+    // AutoDelete: Konfiguration automatisch löschen (nach X Stunden oder zu
+    // einer festgelegten Uhrzeit). Danach ist keine gültige Konfiguration mehr
+    // vorhanden → Service stoppen.
+    if (await AutoDeleteConfig.deleteIfDue()) {
+      AppLogger.i('LocationService', 'Konfiguration durch AutoDelete gelöscht');
+      _hbTimer?.cancel();
+      _flushTimer?.cancel();
+      _connectivitySub?.cancel();
+      _connectivityFlushDebounce?.cancel();
+      for (final s in _serviceEventSubs) {
+        s.cancel();
+      }
+      _serviceEventSubs.clear();
+      await service.stopSelf();
+      return;
     }
 
     await _updateTrackingMode(service);
@@ -374,7 +394,6 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
         s.cancel();
       }
       _serviceEventSubs.clear();
-      await EdpApiAlarmService.stop();
       await service.stopSelf();
       return;
     }
@@ -490,20 +509,8 @@ Future<void> onStart(ServiceInstance service) async {
 
   await EdpApi.ensureInitialized();
 
-  // Benachrichtigungs-Plugin und EDP-API-Alarm-Polling initialisieren
-  await AlarmNotificationService.initialize();
-  final prefs = await SharedPreferences.getInstance();
-  final ownIssi = prefs.getString(AppPrefsKeys.issi) ?? '';
-
-  // Alarmierung über den EDP-API-Server (Polling).
-  final proApiUrl = prefs.getString(AppPrefsKeys.proApiUrl) ?? '';
-  if (proApiUrl.isNotEmpty && ownIssi.isNotEmpty) {
-    await EdpApiAlarmService.start(
-      issi: ownIssi,
-      // Neuen Alarm an den Haupt-Isolate weiterleiten (Badge + Realtime-Liste)
-      onNew: (alarm) => service.invoke('newAlarm', alarm.toJson()),
-    );
-  }
+  // Benachrichtigungs-Plugin initialisieren (Foreground-Service-Channel)
+  await ForegroundNotificationService.initialize();
 
   // Alte Event-Subscriptions aufräumen, falls onStart im selben Isolate
   // erneut läuft — verhindert doppelte Handler.
@@ -713,8 +720,6 @@ Future<void> onStart(ServiceInstance service) async {
     _flushTimer?.cancel();
     _flushTimer = null;
 
-    await EdpApiAlarmService.stop();
-
     _connectivitySub?.cancel();
     _connectivitySub = null;
     _connectivityFlushDebounce?.cancel();
@@ -751,7 +756,7 @@ Future<void> onStart(ServiceInstance service) async {
   }));
 
   // Tracking nur starten wenn vom Nutzer explizit aktiviert
-  // (verhindert Auto-Start nach Neustart – Alarm-Subscription läuft bereits)
+  // (verhindert Auto-Start nach Neustart)
   if (await _hasValidConfig()) {
     final prefs = await SharedPreferences.getInstance();
     if (prefs.getBool(AppPrefsKeys.transmissionEnabled) ?? false) {
@@ -819,14 +824,6 @@ Future<bool> onIosBackground(ServiceInstance service) async {
       await LocationSyncManager.instance.flushPendingNow(batchSize: 300);
       await _markFlushedNow();
     }
-
-    // 4) EDP-API-Poll: neue Alarme holen (iOS kann keine Dauerverbindung halten)
-    final iosPrefs = await SharedPreferences.getInstance();
-    final ownIssi = iosPrefs.getString(AppPrefsKeys.issi) ?? '';
-    final proApiUrl = iosPrefs.getString(AppPrefsKeys.proApiUrl) ?? '';
-    if (proApiUrl.isNotEmpty && ownIssi.isNotEmpty) {
-      await EdpApiAlarmService.pollOnce(issi: ownIssi);
-    }
   } catch (e, st) {
     AppLogger.e('iOSBackground', 'iOS-Hintergrundhandler fehlgeschlagen', e, st);
   }
@@ -841,9 +838,9 @@ Future<void> initializeBackgroundService() async {
       autoStart: false,
       isForegroundMode: true,
       foregroundServiceNotificationId: 880,
-      // Eigener Low-Importance-Channel (in AlarmNotificationService.initialize
-      // angelegt) — stumm, keine Lockscreen-Pops, klar erkennbarer Name in
-      // Android-Einstellungen statt generisch "Background Service".
+      // Eigener Low-Importance-Channel (in ForegroundNotificationService
+      // .initialize angelegt) — stumm, keine Lockscreen-Pops, klar erkennbarer
+      // Name in Android-Einstellungen statt generisch "Background Service".
       notificationChannelId: kForegroundChannelId,
       initialNotificationTitle: 'Trupp App',
       initialNotificationContent: 'Bereitschaft',

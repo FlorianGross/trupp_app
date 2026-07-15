@@ -849,8 +849,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
-            'EDP-Pro-API-Server – für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage) '
-            'und Alarmierung.',
+            'EDP-Pro-API-Server – für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage).',
             style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
           ),
         ),
