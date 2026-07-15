@@ -114,7 +114,7 @@ class _DienstanmeldungScreenState extends State<DienstanmeldungScreen> {
       if (!mounted) return;
       if (res.ok) {
         _showSnackbar('Dienstanmeldung an ELW gesendet', success: true);
-        Navigator.of(context).pop();
+        Navigator.of(context).pop(true);
       } else {
         _showSnackbar('Fehler: ${res.statusCode}', success: false);
       }

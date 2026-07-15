@@ -9,13 +9,16 @@ import 'package:permission_handler/permission_handler.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 
 import 'data/app_logger.dart';
+import 'data/duty_end_config.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
 import 'data/profile_store.dart';
 import 'data/unit_type_store.dart';
+import 'dienstanmeldung_screen.dart';
 import 'issi_picker_screen.dart';
 import 'home_shell.dart';
 import 'theme/brand_colors.dart';
+import 'utils/formatters.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({super.key});
@@ -68,6 +71,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       _PageKey.notifications,
       if (!kIsWeb && Platform.isAndroid) _PageKey.battery,
       _PageKey.unitType,
+      _PageKey.dienst,
       _PageKey.done,
     ];
     _checkPermissions();
@@ -576,6 +580,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           onNext: _nextPage,
         );
 
+      case _PageKey.dienst:
+        return _DutyRegistrationPage(onNext: _nextPage);
+
       case _PageKey.done:
         return _DonePage(
           host: _hostCtrl.text.trim().isNotEmpty
@@ -600,6 +607,7 @@ enum _PageKey {
   notifications,
   battery,
   unitType,
+  dienst,
   done,
 }
 
@@ -1810,6 +1818,221 @@ class _UnitTypeCard extends StatelessWidget {
 // ---------------------------------------------------------------------------
 // Done page
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Dienstanmeldung + Dienstende (Ende der Onboarding-Experience)
+// ---------------------------------------------------------------------------
+
+class _DutyRegistrationPage extends StatefulWidget {
+  final VoidCallback onNext;
+  const _DutyRegistrationPage({required this.onNext});
+
+  @override
+  State<_DutyRegistrationPage> createState() => _DutyRegistrationPageState();
+}
+
+class _DutyRegistrationPageState extends State<_DutyRegistrationPage> {
+  DateTime? _dutyEndAt;
+  bool _registered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadDutyEnd();
+  }
+
+  Future<void> _loadDutyEnd() async {
+    final at = await DutyEndConfig.scheduledAt();
+    if (mounted) setState(() => _dutyEndAt = at);
+  }
+
+  Future<void> _openDienstanmeldung() async {
+    final sent = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(builder: (_) => const DienstanmeldungScreen()),
+    );
+    if (mounted && sent == true) setState(() => _registered = true);
+  }
+
+  Future<void> _showDutyEndDialog() async {
+    const hourOptions = [4, 6, 8, 10, 12];
+    final choice = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Dienstende festlegen'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 0),
+            child: const Text('Aus'),
+          ),
+          const Divider(),
+          for (final h in hourOptions)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, h),
+              child: Text('Nach $h Stunden'),
+            ),
+          const Divider(),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, -1),
+            child: const Text('Zu bestimmter Uhrzeit…'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 0) {
+      await DutyEndConfig.cancel();
+    } else if (choice == -1) {
+      final t = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.now(),
+        helpText: 'Dienstende wählen',
+      );
+      if (t == null || !mounted) return;
+      await DutyEndConfig.scheduleAtTime(t.hour, t.minute);
+    } else {
+      await DutyEndConfig.scheduleAfterHours(choice);
+    }
+    await _loadDutyEnd();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final dutyEndSubtitle = _dutyEndAt == null
+        ? 'Aus – keine automatische Abmeldung'
+        : 'Abmeldung am ${fmtDateTime(_dutyEndAt!)} Uhr';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 8),
+            Center(
+              child: Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(24),
+                ),
+                child: Icon(Icons.how_to_reg, size: 50, color: cs.primary),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Text(
+              'Dienstanmeldung',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Colors.grey.shade900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Optional: Team & Stärke ans ELW melden und ein automatisches '
+              'Dienstende festlegen.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  fontSize: 14, color: Colors.grey.shade500, height: 1.5),
+            ),
+            const SizedBox(height: 24),
+            _actionCard(
+              icon: Icons.assignment_ind,
+              title: _registered
+                  ? 'Dienstanmeldung gesendet'
+                  : 'Dienstanmeldung ausfüllen',
+              subtitle: 'Team, Qualifikationen & Stärke ans ELW',
+              onTap: _openDienstanmeldung,
+              done: _registered,
+            ),
+            const SizedBox(height: 12),
+            _actionCard(
+              icon: Icons.timer_outlined,
+              title: 'Dienstende',
+              subtitle: dutyEndSubtitle,
+              onTap: _showDutyEndDialog,
+              done: _dutyEndAt != null,
+            ),
+            const SizedBox(height: 32),
+            ElevatedButton(
+              onPressed: widget.onNext,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red.shade800,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(54),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text(
+                'Weiter',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _actionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+    required bool done,
+  }) {
+    final cs = Theme.of(context).colorScheme;
+    final accent = done ? Colors.green.shade600 : cs.primary;
+    return Material(
+      color: Colors.grey.shade50,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(done ? Icons.check_circle_rounded : icon,
+                    color: accent, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: TextStyle(
+                            fontSize: 12, color: Colors.grey.shade600)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: Colors.grey),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _DonePage extends StatelessWidget {
   final String? host;

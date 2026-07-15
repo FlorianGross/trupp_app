@@ -5,6 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import 'ConfigScreen.dart';
 import 'data/app_prefs.dart';
 import 'data/auto_delete_config.dart';
+import 'data/duty_end_config.dart';
 import 'data/gpx_exporter.dart';
 import 'data/profile_store.dart';
 import 'dienstanmeldung_screen.dart';
@@ -31,6 +32,7 @@ class _MoreScreenState extends State<MoreScreen> {
   String _activeProfileName = '';
   bool _wakelockInDeployment = true;
   DateTime? _autoDeleteAt;
+  DateTime? _dutyEndAt;
 
   @override
   void initState() {
@@ -42,6 +44,7 @@ class _MoreScreenState extends State<MoreScreen> {
     final prefs = await SharedPreferences.getInstance();
     final active = await ProfileStore.activeName() ?? '';
     final autoDeleteAt = await AutoDeleteConfig.scheduledAt();
+    final dutyEndAt = await DutyEndConfig.scheduledAt();
     if (!mounted) return;
     setState(() {
       _autoDeactivateMinutes = prefs.getInt('autoDeactivateMinutes') ?? 0;
@@ -49,6 +52,7 @@ class _MoreScreenState extends State<MoreScreen> {
       _wakelockInDeployment =
           prefs.getBool(AppPrefsKeys.wakelockInDeployment) ?? true;
       _autoDeleteAt = autoDeleteAt;
+      _dutyEndAt = dutyEndAt;
     });
   }
 
@@ -132,6 +136,72 @@ class _MoreScreenState extends State<MoreScreen> {
   String _autoDeleteSubtitle() {
     if (_autoDeleteAt == null) return 'Aus';
     return 'Löscht am ${fmtDateTime(_autoDeleteAt!)} Uhr';
+  }
+
+  String _dutyEndSubtitle() {
+    if (_dutyEndAt == null) return 'Aus';
+    return 'Abmeldung am ${fmtDateTime(_dutyEndAt!)} Uhr';
+  }
+
+  /// Dienstende festlegen: automatische Abmeldung (Übertragung stoppen, Einsatz
+  /// beenden) nach X Stunden oder zu einer festen Uhrzeit.
+  Future<void> _showDutyEndDialog() async {
+    const hourOptions = [4, 6, 8, 10, 12];
+    final choice = await showDialog<int>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('Dienstende (automatische Abmeldung)'),
+        children: [
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, 0),
+            child: const Text('Aus'),
+          ),
+          const Divider(),
+          for (final h in hourOptions)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, h),
+              child: Text('Nach $h Stunden'),
+            ),
+          const Divider(),
+          SimpleDialogOption(
+            onPressed: () => Navigator.pop(ctx, -1),
+            child: const Text('Zu bestimmter Uhrzeit…'),
+          ),
+        ],
+      ),
+    );
+
+    if (choice == null || !mounted) return;
+
+    if (choice == 0) {
+      await DutyEndConfig.cancel();
+      await _loadState();
+      if (!mounted) return;
+      _showSnackbar('Automatische Abmeldung deaktiviert', success: true);
+      return;
+    }
+
+    if (choice == -1) {
+      final time = await showTimePicker(
+        context: context,
+        initialTime: TimeOfDay.now(),
+        helpText: 'Dienstende wählen',
+      );
+      if (time == null || !mounted) return;
+      await DutyEndConfig.scheduleAtTime(time.hour, time.minute);
+    } else {
+      await DutyEndConfig.scheduleAfterHours(choice);
+    }
+
+    await _loadState();
+    if (!mounted) return;
+    final at = _dutyEndAt;
+    _showSnackbar(
+      at != null
+          ? 'Dienstende: automatische Abmeldung am ${fmtDateTime(at)} Uhr'
+          : 'Dienstende aktiviert',
+      success: true,
+    );
   }
 
   /// Auswahl-Dialog für AutoDelete: Konfiguration nach X Stunden oder zu einer
@@ -288,6 +358,12 @@ class _MoreScreenState extends State<MoreScreen> {
                     ? 'Aus'
                     : 'Nach ${_autoDeactivateMinutes >= 60 ? '${_autoDeactivateMinutes ~/ 60}h' : '${_autoDeactivateMinutes}min'} Inaktivität',
                 onTap: _showAutoDeactivateDialog,
+              ),
+              _tile(
+                icon: Icons.event_busy,
+                title: 'Dienstende',
+                subtitle: _dutyEndSubtitle(),
+                onTap: _showDutyEndDialog,
               ),
               _tile(
                 icon: Icons.auto_delete,

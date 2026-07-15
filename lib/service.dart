@@ -19,6 +19,7 @@ import 'data/status_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
 import 'data/auto_delete_config.dart';
+import 'data/duty_end_config.dart';
 
 import 'foreground_notification.dart';
 
@@ -364,6 +365,23 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
     // vorhanden → Service stoppen.
     if (await AutoDeleteConfig.deleteIfDue()) {
       AppLogger.i('LocationService', 'Konfiguration durch AutoDelete gelöscht');
+      _hbTimer?.cancel();
+      _flushTimer?.cancel();
+      _connectivitySub?.cancel();
+      _connectivityFlushDebounce?.cancel();
+      for (final s in _serviceEventSubs) {
+        s.cancel();
+      }
+      _serviceEventSubs.clear();
+      await service.stopSelf();
+      return;
+    }
+
+    // Dienstende: automatische Abmeldung zur festgelegten Zeit (Übertragung
+    // stoppen, Einsatz/UHS beenden). Danach Service stoppen.
+    if (await DutyEndConfig.signOffIfDue()) {
+      AppLogger.i('LocationService', 'Dienstende erreicht – automatisch abgemeldet');
+      _deploymentMode = DeploymentMode.standby;
       _hbTimer?.cancel();
       _flushTimer?.cancel();
       _connectivitySub?.cancel();
