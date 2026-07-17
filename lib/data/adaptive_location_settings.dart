@@ -15,9 +15,25 @@ enum TrackingMode {
 class AdaptiveLocationSettings {
   static final _battery = Battery();
 
+  /// Aktive Einsatz-Status: 1 = Einsatzbereit (auf Funk/Wache), 3 = Auftrag
+  /// angenommen, 7 = Transport. Diese werden IMMER mit hoher Frequenz
+  /// getrackt (Akku-Tradeoff bewusst akzeptiert).
+  static const activeStatuses = [1, 3, 7];
+
+  /// Aus den App-Einstellungen gesetzt (Isolate-lokal vom Service befüllt).
+  ///
+  /// [highFrequency] (Standard true): kürzere Update-Intervalle und kleinere
+  /// Distanzfilter → häufigere Positionen, mehr Akkuverbrauch. Kann in den
+  /// Einstellungen zugunsten der Akkulaufzeit abgeschaltet werden.
+  static bool highFrequency = true;
+
   /// Bestimmt den optimalen Tracking-Modus.
-  /// Aktive Status (1, 3, 7) bekommen IMMER mindestens balanced,
-  /// unabhängig vom Deployment-Modus.
+  ///
+  /// Aktive Status (1, 3, 7) bekommen IMMER `highAccuracy` — unabhängig vom
+  /// Deployment-Modus und (oberhalb des kritischen Akkustands) auch unabhängig
+  /// vom Akku. Nur bei kritischem Akku wird auf `balanced` zurückgeschaltet,
+  /// statt das Gerät komplett leerzusaugen — sonst gäbe es am Ende gar kein
+  /// Tracking mehr.
   static Future<TrackingMode> determineMode({
     required DeploymentMode deployment,
     required int currentStatus,
@@ -29,25 +45,24 @@ class AdaptiveLocationSettings {
       batteryLevel = 100; // Fallback (z.B. Simulator)
     }
 
-    // Kritischer Akku → immer Power Saver
-    if (batteryLevel < 15) {
-      return TrackingMode.powerSaver;
-    }
-
     // UHS / fester Sanitäts-Standort: Position ändert sich nicht → immer sehr
     // sparsam tracken (lange Dienste, Akku schonen), unabhängig vom Status.
     if (deployment == DeploymentMode.stationary) {
       return TrackingMode.powerSaver;
     }
 
-    // Aktive Einsatz-Status (3 = Auftrag, 7 = Transport) → hohe Genauigkeit
-    if ([3, 7].contains(currentStatus)) {
-      return batteryLevel > 30 ? TrackingMode.highAccuracy : TrackingMode.balanced;
+    final isActive = activeStatuses.contains(currentStatus);
+
+    // Aktive Status (1, 3, 7) → höchste Frequenz. Bei kritischem Akku (<10 %)
+    // nur bis balanced zurück, damit weiterhin lückenlos getrackt wird.
+    if (isActive) {
+      return batteryLevel < 10 ? TrackingMode.balanced : TrackingMode.highAccuracy;
     }
 
-    // Einsatzbereit (Status 1) → ausgewogen (immer GPS, nicht nur Funk)
-    if (currentStatus == 1) {
-      return TrackingMode.balanced;
+    // Ab hier nur noch inaktive Status.
+    // Kritischer Akku → Power Saver.
+    if (batteryLevel < 15) {
+      return TrackingMode.powerSaver;
     }
 
     // Rückweg
@@ -87,11 +102,17 @@ class AdaptiveLocationSettings {
             ? ActivityType.other
             : ActivityType.otherNavigation,
         distanceFilter: _getDistanceFilter(mode),
-        // iOS darf das GPS bei Stillstand schlafen legen — außer im Einsatz
-        // (highAccuracy), wo lückenloses Tracking wichtiger ist als Akku.
-        // Der Heartbeat (getCurrentPosition) weckt die Ortung ohnehin
-        // periodisch wieder auf.
-        pauseLocationUpdatesAutomatically: mode != TrackingMode.highAccuracy,
+        // WICHTIG: NIEMALS automatisch pausieren.
+        //
+        // Wenn iOS die Standort-Updates pausiert (bei vermutetem Stillstand),
+        // wird der App-Prozess suspendiert und der Positions-Stream liefert im
+        // Hintergrund NICHTS mehr — es bleibt nur der seltene, von iOS nach
+        // Gutdünken vergebene Background-Fetch (`onIosBackground`). Genau das
+        // führte dazu, dass im Hintergrund oft gar keine Position mehr ankam.
+        // Bewusste Entscheidung: lieber Akku als kein Standort. Zusammen mit
+        // `allowBackgroundLocationUpdates` + UIBackgroundModes `location`
+        // bleibt der Stream so im Hintergrund durchgehend aktiv.
+        pauseLocationUpdatesAutomatically: false,
         showBackgroundLocationIndicator: true,      // Immer Indikator zeigen
         allowBackgroundLocationUpdates: true,       // Hintergrund-Updates erlauben
       );
@@ -139,43 +160,109 @@ class AdaptiveLocationSettings {
     }
   }
 
-  /// Distanzfilter je nach Modus
+  /// Distanzfilter je nach Modus. Im [highFrequency]-Modus (Standard) enger,
+  /// damit auch bei langsamer Bewegung häufig Positionen kommen.
   static int _getDistanceFilter(TrackingMode mode) {
+    if (highFrequency) {
+      switch (mode) {
+        case TrackingMode.highAccuracy:
+          return 8;   // 8m - Einsatz, dichte Spur
+        case TrackingMode.balanced:
+          return 10;  // 10m - ausgewogen (vorher 25m)
+        case TrackingMode.powerSaver:
+          return 75;  // 75m - sparsam
+      }
+    }
+    // Akkusparende Werte (Einstellung „Hohe Frequenz" aus).
     switch (mode) {
       case TrackingMode.highAccuracy:
-        return 10; // 10m - hohe Genauigkeit
+        return 15;
       case TrackingMode.balanced:
-        return 25; // 25m - ausgewogen
+        return 30;
       case TrackingMode.powerSaver:
-        return 100; // 100m - sehr sparsam
+        return 120;
     }
   }
 
-  /// Update-Intervall je nach Modus
+  /// Update-Intervall je nach Modus.
   static Duration _getInterval(TrackingMode mode) {
+    if (highFrequency) {
+      switch (mode) {
+        case TrackingMode.highAccuracy:
+          return const Duration(seconds: 4);
+        case TrackingMode.balanced:
+          return const Duration(seconds: 10);
+        case TrackingMode.powerSaver:
+          return const Duration(seconds: 45);
+      }
+    }
     switch (mode) {
       case TrackingMode.highAccuracy:
-        return const Duration(seconds: 5);
+        return const Duration(seconds: 8);
       case TrackingMode.balanced:
-        return const Duration(seconds: 15);
+        return const Duration(seconds: 20);
       case TrackingMode.powerSaver:
-        return const Duration(seconds: 60);
+        return const Duration(seconds: 90);
     }
   }
 
-  /// Heartbeat-Intervall je nach Modus
+  /// Heartbeat-Intervall je nach Modus. Der Heartbeat sorgt für Positionen
+  /// auch bei Stillstand (Stream liefert dann nichts). Bei [highFrequency]
+  /// deutlich kürzer, damit aktive Status (1/3/7) häufig senden.
   static Duration getHeartbeatInterval(TrackingMode mode, bool isStationary) {
     if (isStationary && mode == TrackingMode.powerSaver) {
       return const Duration(minutes: 5); // Bei Stillstand sehr selten
     }
 
+    if (highFrequency) {
+      switch (mode) {
+        case TrackingMode.highAccuracy:
+          return const Duration(seconds: 15);
+        case TrackingMode.balanced:
+          return const Duration(seconds: 30);
+        case TrackingMode.powerSaver:
+          return const Duration(minutes: 2);
+      }
+    }
     switch (mode) {
       case TrackingMode.highAccuracy:
-        return const Duration(seconds: 30);
+        return const Duration(seconds: 45);
       case TrackingMode.balanced:
-        return const Duration(seconds: 60);
+        return const Duration(seconds: 90);
       case TrackingMode.powerSaver:
-        return const Duration(minutes: 2);
+        return const Duration(minutes: 3);
+    }
+  }
+
+  /// Wenn true (Standard), werden ungenaue Fixes (typisch WLAN-/Funkzellen-
+  /// Ortung, ~30–100 m Streuung) verworfen — es wird nur ein „sicherer",
+  /// GPS-genauer Standort gesendet. In den Einstellungen abschaltbar, falls
+  /// ein grober Standort besser ist als gar keiner.
+  static bool preciseLocationOnly = true;
+
+  /// Maximal akzeptierte Ungenauigkeit (Meter) je nach Modus. Fixes mit
+  /// schlechterer Accuracy werden vom Quality-Filter verworfen. Bei
+  /// [preciseLocationOnly] eng genug, um reine WLAN-/Funkzellen-Ortung
+  /// auszuschließen; sonst großzügig (grober Standort besser als keiner).
+  static double getMaxAccuracy(TrackingMode mode) {
+    if (!preciseLocationOnly) {
+      switch (mode) {
+        case TrackingMode.highAccuracy:
+          return 50.0;
+        case TrackingMode.balanced:
+          return 65.0;
+        case TrackingMode.powerSaver:
+          return 100.0;
+      }
+    }
+    // Nur „sichere" GPS-Fixes zulassen — WLAN-Ortung meldet meist ≥30–50 m.
+    switch (mode) {
+      case TrackingMode.highAccuracy:
+        return 25.0;
+      case TrackingMode.balanced:
+        return 40.0;
+      case TrackingMode.powerSaver:
+        return 65.0;
     }
   }
 

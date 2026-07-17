@@ -294,10 +294,28 @@ double _minDistanceForMode(TrackingMode mode) {
     case TrackingMode.highAccuracy:
       return 5.0;
     case TrackingMode.balanced:
-      return 12.0;
+      return 8.0;
     case TrackingMode.powerSaver:
-      return 50.0;
+      return 40.0;
   }
+}
+
+/// Setzt Distanz- und Genauigkeits-Schwellen des Quality-Filters passend zum
+/// aktuellen TrackingMode und den App-Einstellungen (u.a. „nur präziser
+/// Standort").
+void _applyQualityThresholds(TrackingMode mode) {
+  _quality.setMinDistance(_minDistanceForMode(mode));
+  _quality.setMaxAccuracy(AdaptiveLocationSettings.getMaxAccuracy(mode));
+}
+
+/// Lädt die konfigurierbaren Tracking-Einstellungen in die (Isolate-lokalen)
+/// statischen Felder von [AdaptiveLocationSettings].
+Future<void> _loadTrackingPrefs() async {
+  final prefs = await SharedPreferences.getInstance();
+  AdaptiveLocationSettings.highFrequency =
+      prefs.getBool(AppPrefsKeys.highFrequencyTracking) ?? true;
+  AdaptiveLocationSettings.preciseLocationOnly =
+      prefs.getBool(AppPrefsKeys.preciseLocationOnly) ?? true;
 }
 
 Future<void> _updateTrackingMode(ServiceInstance service) async {
@@ -308,7 +326,7 @@ Future<void> _updateTrackingMode(ServiceInstance service) async {
 
   if (newMode != _trackingMode) {
     _trackingMode = newMode;
-    _quality.setMinDistance(_minDistanceForMode(newMode));
+    _applyQualityThresholds(newMode);
 
     // GPS-Stream mit neuen Einstellungen neu starten
     if (_restartStreamCallback != null) {
@@ -537,13 +555,14 @@ Future<void> onStart(ServiceInstance service) async {
   }
   _serviceEventSubs.clear();
 
+  await _loadTrackingPrefs();
   _currentStatus = await _readStatusFromPrefs();
   _deploymentMode = await DeploymentState.getMode();
   _trackingMode = await AdaptiveLocationSettings.determineMode(
     deployment: _deploymentMode,
     currentStatus: _currentStatus,
   );
-  _quality.setMinDistance(_minDistanceForMode(_trackingMode));
+  _applyQualityThresholds(_trackingMode);
 
   if (service is AndroidServiceInstance) {
     await service.setAsForegroundService();
@@ -757,6 +776,25 @@ Future<void> onStart(ServiceInstance service) async {
     );
   }
 
+  // Tracking-Einstellungen (Frequenz / nur präziser Standort) wurden in den
+  // App-Einstellungen geändert → neu laden und sofort anwenden.
+  _serviceEventSubs.add(service.on('updateTrackingPrefs').listen((_) async {
+    await _loadTrackingPrefs();
+    _applyQualityThresholds(_trackingMode);
+    // Stream mit neuen Intervallen/Distanzfiltern neu aufsetzen und
+    // Heartbeat-Takt aktualisieren.
+    if (_restartStreamCallback != null) {
+      await _restartStreamCallback!();
+    }
+    _scheduleNextHeartbeat(service);
+    await _updateNotificationIfDue(
+      service,
+      title: 'Trupp App',
+      content: _getNotificationContent(),
+      force: true,
+    );
+  }));
+
   _serviceEventSubs.add(service.on('setTracking').listen((event) async {
     final enabled = event?['enabled'] == true;
     if (enabled) {
@@ -812,12 +850,14 @@ Future<bool> onIosBackground(ServiceInstance service) async {
 
     if (!await _hasValidConfig()) return true;
 
+    await _loadTrackingPrefs();
     _deploymentMode = await DeploymentState.getMode();
     _currentStatus = await _readStatusFromPrefs();
     _trackingMode = await AdaptiveLocationSettings.determineMode(
       deployment: _deploymentMode,
       currentStatus: _currentStatus,
     );
+    _applyQualityThresholds(_trackingMode);
 
     // 1) aktuellen Fix holen — iOS BG-Fetch hat ~30 s Budget, daher hartes
     // Timeout, sonst killt iOS den Task und wir verlieren auch den Flush.
