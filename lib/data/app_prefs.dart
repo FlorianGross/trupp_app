@@ -56,6 +56,11 @@ abstract final class AppPrefsKeys {
   /// Zeitpunkt (Epoch-ms), zu dem die aktive Konfiguration automatisch
   /// gelöscht wird. Nicht gesetzt = AutoDelete deaktiviert.
   static const autoDeleteConfigAtMs = 'auto_delete_config_at_ms';
+
+  // Dienstende / automatische Abmeldung
+  /// Zeitpunkt (Epoch-ms), zu dem sich die App automatisch abmeldet
+  /// (Übertragung stoppen, Einsatz/UHS beenden). Nicht gesetzt = deaktiviert.
+  static const dutyEndAtMs = 'duty_end_at_ms';
 }
 
 // ---------------------------------------------------------------------------

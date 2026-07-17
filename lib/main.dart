@@ -7,6 +7,7 @@ import 'package:trupp_app/service.dart';
 import 'home_shell.dart';
 import 'onboarding_screen.dart';
 import 'data/auto_delete_config.dart';
+import 'data/duty_end_config.dart';
 import 'data/profile_store.dart';
 import 'data/unit_type_store.dart';
 import 'theme/brand_colors.dart';
@@ -73,6 +74,12 @@ Future<void> main() async {
   // löschen, bevor hasConfig gelesen wird → App startet in der Einrichtung.
   if (await AutoDeleteConfig.deleteIfDue()) {
     AppLogger.i('main', 'Konfiguration durch AutoDelete gelöscht');
+  }
+
+  // Dienstende: war die App zum Dienstende-Zeitpunkt geschlossen, jetzt
+  // automatisch abmelden (Übertragung bleibt aus, Einsatz beendet).
+  if (await DutyEndConfig.signOffIfDue()) {
+    AppLogger.i('main', 'Dienstende erreicht – automatisch abgemeldet');
   }
 
   final prefs = await SharedPreferences.getInstance();
