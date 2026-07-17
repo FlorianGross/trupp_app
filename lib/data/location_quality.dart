@@ -68,6 +68,22 @@ class LocationQualityFilter {
     return true;
   }
 
+  /// Notnagel-Prüfung: akzeptiert auch einen ungenaueren Fix (bis
+  /// [fallbackMaxAccuracyM]), wenn sonst eine komplette Standort-Lücke
+  /// entstünde. Nur das Mindest-Intervall wird beibehalten (kein Spam);
+  /// Distanz- und Sprungfilter werden bewusst gelockert, weil ein grober
+  /// Standort besser ist als gar keiner.
+  bool isAcceptableFallback(Position p,
+      {DateTime? now, required double fallbackMaxAccuracyM}) {
+    final tNow = now ?? DateTime.now();
+    final acc = p.accuracy.isFinite ? p.accuracy : double.infinity;
+    if (acc > fallbackMaxAccuracyM) return false;
+    if (_lastSentAt != null && tNow.difference(_lastSentAt!) < minInterval) {
+      return false;
+    }
+    return true;
+  }
+
   bool heartbeatDue({DateTime? now}) {
     if (_lastSentAt == null) return true;
     final tNow = now ?? DateTime.now();

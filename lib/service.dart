@@ -73,6 +73,27 @@ const _minAccuracyMeters = 50.0;
 const _minSendInterval = Duration(seconds: 5);
 const _minDistanceMeters = 5.0;
 
+/// Notnagel gegen Standort-Lücken: Wenn länger als [_coarseFallbackAfter] kein
+/// (präziser) Fix akzeptiert wurde, wird einmalig auch ein ungenauerer Fix (bis
+/// [_coarseFallbackMaxAccuracyM]) gesendet — „lieber grob als kein Standort".
+/// Greift vor allem beim Cold-Start (erst WLAN-, dann GPS-Fix) und in langen
+/// Funk-/GPS-Löchern (Tunnel, Tiefgarage).
+const _coarseFallbackAfter = Duration(seconds: 45);
+const _coarseFallbackMaxAccuracyM = 150.0;
+
+/// Ab dieser Dauer ohne serverseitig bestätigte Übertragung wird in der
+/// Foreground-Notification deutlich gewarnt (Trupp soll sofort merken, dass
+/// keine Position mehr ankommt).
+const _staleContactWarnAfter = Duration(minutes: 3);
+
+/// Zeitpunkt, seit dem aktiv getrackt wird (für Starvation-/Stale-Erkennung
+/// bevor überhaupt der erste Fix bzw. der erste erfolgreiche Upload vorliegt).
+DateTime? _trackingSince;
+
+/// Zuletzt vom Server bestätigte Übertragung (Epoch-ms), aus den Prefs
+/// gespiegelt (`EdpApi` schreibt sie bei HTTP 2xx). 0 = noch nie.
+int _lastSuccessfulContactMs = 0;
+
 final _quality = LocationQualityFilter(
   maxAccuracyM: _minAccuracyMeters,
   minDistanceM: _minDistanceMeters,
@@ -164,11 +185,31 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
     {bool forceByHeartbeat = false}) async {
   final now = DateTime.now();
 
+  // Übertragungs-Gesundheit für die Notification-Warnung aktualisieren.
+  await _refreshTransmissionHealth();
+
   // Bewegungsstatus aktualisieren
   SmartHeartbeat.updateMovementState(pos);
 
   // Qualität / Drosselung
-  if (!_quality.isGood(pos, now: now, forceByHeartbeat: forceByHeartbeat)) {
+  var accepted = _quality.isGood(pos, now: now, forceByHeartbeat: forceByHeartbeat);
+  var coarseFallback = false;
+
+  if (!accepted) {
+    // Notnagel: Wurde lange nichts akzeptiert (Cold-Start, Tunnel …), auch
+    // einen ungenaueren Fix durchlassen, statt eine komplette Lücke zu
+    // riskieren. Referenz ist der letzte gesendete Fix bzw. der Trackingstart.
+    final ref = _quality.lastSentAt ?? _trackingSince;
+    final starving = ref != null && now.difference(ref) >= _coarseFallbackAfter;
+    if (starving &&
+        _quality.isAcceptableFallback(pos,
+            now: now, fallbackMaxAccuracyM: _coarseFallbackMaxAccuracyM)) {
+      accepted = true;
+      coarseFallback = true;
+    }
+  }
+
+  if (!accepted) {
     await _updateNotificationIfDue(
       service,
       title: 'Trupp App',
@@ -190,6 +231,10 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
       status: _currentStatus,
       timestamp: pos.timestamp,
     );
+    if (coarseFallback) {
+      AppLogger.w('LocationService',
+          'Notnagel-Fix gesendet (ungenau ±${pos.accuracy.toStringAsFixed(0)} m) – kein präziser Standort verfügbar');
+    }
     AppLogger.i('DIAG',
         'Position an Webhook übergeben (lat=${pos.latitude.toStringAsFixed(5)}, status=$_currentStatus)');
 
@@ -207,11 +252,40 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
 
 int _lastPendingCount = 0;
 
+/// Spiegelt den Zeitpunkt der letzten serverseitig bestätigten Übertragung aus
+/// den Prefs in [_lastSuccessfulContactMs] (von `EdpApi` bei HTTP 2xx gesetzt).
+Future<void> _refreshTransmissionHealth() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    _lastSuccessfulContactMs =
+        prefs.getInt(AppPrefsKeys.lastSuccessfulContactMs) ?? 0;
+  } catch (_) {}
+}
+
+/// true, wenn (bei aktivem Tracking) seit [_staleContactWarnAfter] keine
+/// Übertragung mehr vom Server bestätigt wurde — bzw. seit Trackingstart noch
+/// gar keine erfolgreiche Übertragung stattfand.
+bool _isTransmissionStale() {
+  // Nur warnen, wenn schon lange genug getrackt wird — sonst würde beim Start
+  // ein alter Kontakt-Zeitstempel (letzte Session) sofort fälschlich warnen.
+  if (_trackingSince == null ||
+      DateTime.now().difference(_trackingSince!) <= _staleContactWarnAfter) {
+    return false;
+  }
+  final nowMs = DateTime.now().millisecondsSinceEpoch;
+  if (_lastSuccessfulContactMs > 0) {
+    return nowMs - _lastSuccessfulContactMs > _staleContactWarnAfter.inMilliseconds;
+  }
+  // Seit Trackingstart (bereits > Schwelle) noch nie erfolgreich gesendet.
+  return true;
+}
+
 Future<String> _getNotificationContentAsync({bool isWaiting = false}) async {
   try {
     _lastPendingCount = await LocationSyncManager.instance.getStats()
         .then((s) => s['pending'] ?? 0);
   } catch (_) {}
+  await _refreshTransmissionHealth();
   return _getNotificationContent(isWaiting: isWaiting);
 }
 
@@ -227,15 +301,19 @@ String _getNotificationContent({bool isWaiting = false}) {
   final trackingText = AdaptiveLocationSettings.getModeDescription(_trackingMode);
   final pendingText = _lastPendingCount > 0 ? ' | $_lastPendingCount ausstehend' : '';
 
+  // Silent-Failure-Warnung: keine bestätigte Übertragung mehr → deutlich
+  // sichtbar voranstellen, damit der Trupp es sofort bemerkt.
+  final warn = _isTransmissionStale() ? '⚠ Keine Übertragung! ' : '';
+
   if (isWaiting) {
-    return '$modeText (Status $_currentStatus) - Warte auf GPS…$pendingText';
+    return '$warn$modeText (Status $_currentStatus) - Warte auf GPS…$pendingText';
   }
 
   if (SmartHeartbeat.isStationary) {
-    return '$modeText (Status $_currentStatus) - Stillstand - $trackingText$pendingText';
+    return '$warn$modeText (Status $_currentStatus) - Stillstand - $trackingText$pendingText';
   }
 
-  return '$modeText (Status $_currentStatus) - $trackingText$pendingText';
+  return '$warn$modeText (Status $_currentStatus) - $trackingText$pendingText';
 }
 
 Future<void> _heartbeatTick(ServiceInstance service) async {
@@ -704,6 +782,7 @@ Future<void> onStart(ServiceInstance service) async {
     } catch (_) {}
 
     trackingEnabled = true;
+    _trackingSince ??= DateTime.now();
     streamRestartAttempts = 0;
     // Nur starten, wenn noch kein Stream läuft. Einen echten Mode-Wechsel hat
     // _updateTrackingMode oben bereits behandelt (Stream neu gestartet); ein
@@ -724,6 +803,7 @@ Future<void> onStart(ServiceInstance service) async {
   Future<void> switchToPowerSaver() async {
     _trackingMode = TrackingMode.powerSaver;
     trackingEnabled = true;
+    _trackingSince ??= DateTime.now();
     streamRestartAttempts = 0;
 
     // Stream mit neuen (sparsamen) Einstellungen neu starten (selbstheilend)
@@ -746,6 +826,7 @@ Future<void> onStart(ServiceInstance service) async {
   Future<void> stopTracking() async {
     if (!trackingEnabled) return;
     trackingEnabled = false;
+    _trackingSince = null;
 
     streamRecovery?.cancel();
     streamRecovery = null;
