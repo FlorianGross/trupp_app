@@ -1,6 +1,7 @@
 import 'dart:isolate';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:trupp_app/foreground_notification.dart';
 import 'package:trupp_app/deep_link_handler.dart';
 import 'package:trupp_app/service.dart';
@@ -38,6 +39,19 @@ Future<void> toggleTheme() async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Randlose Anzeige (edge-to-edge) für Android 15+ (targetSdk 36 erzwingt sie
+  // ohnehin): Die App zeichnet hinter Status- und Navigationsleiste, beide
+  // Leisten werden transparent gehalten. Ersetzt das von Android 15 abgelehnte
+  // Setzen fester, opaker Leistenfarben — die einzelnen AppBars steuern die
+  // Icon-Helligkeit weiterhin pro Screen selbst.
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    systemNavigationBarColor: Colors.transparent,
+    systemNavigationBarDividerColor: Colors.transparent,
+    systemNavigationBarContrastEnforced: false,
+  ));
 
   // [DIAG] Erwartung: main() läuft NUR im Root-/UI-Isolate ("main"). Taucht hier
   // ein anderer Isolate-Name auf, wird main() fälschlich in einem Hintergrund-
