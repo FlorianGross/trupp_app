@@ -7,8 +7,10 @@ import 'package:geolocator/geolocator.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/app_logger.dart';
+import 'data/app_prefs.dart';
 import 'data/duty_end_config.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
@@ -57,25 +59,55 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   bool _notifGranted = false;
   bool _batteryOptDisabled = false;
 
-  // Pages determined at runtime (Android-only battery page)
-  late final List<_PageKey> _pages;
+  // Seiten werden nach den Startprüfungen dynamisch gebaut: bereits erteilte
+  // Berechtigungen und ein schon gewählter Einheitstyp werden übersprungen —
+  // relevant nach Konfig-Löschung oder Absturz, wenn das Onboarding erneut
+  // läuft, aber Berechtigungen/Einheitstyp noch gesetzt sind.
+  List<_PageKey> _pages = [];
+  bool _ready = false;
 
   @override
   void initState() {
     super.initState();
-    _pages = [
+    _bootstrap();
+  }
+
+  /// Prüft Berechtigungen und vorhandene Auswahl, baut daraus die Seitenliste
+  /// (überspringt bereits Erledigtes) und gibt die UI frei.
+  Future<void> _bootstrap() async {
+    await _loadExistingSelections();
+    await _checkPermissions();
+    _checkProApi();
+    if (!mounted) return;
+    setState(() {
+      _pages = _buildPages();
+      _ready = true;
+    });
+  }
+
+  /// Lädt bereits getroffene Auswahlen, die einen Onboarding-Schritt
+  /// überflüssig machen (aktuell: der Einheitstyp).
+  Future<void> _loadExistingSelections() async {
+    try {
+      _selectedUnitType = await UnitTypeStore.load();
+    } catch (_) {}
+  }
+
+  /// Baut die Seitenliste. Schritte, deren Voraussetzung bereits erfüllt ist
+  /// (Berechtigung erteilt bzw. Einheitstyp gewählt), werden weggelassen.
+  List<_PageKey> _buildPages() {
+    final isAndroid = !kIsWeb && Platform.isAndroid;
+    return [
       _PageKey.welcome,
       _PageKey.issi,
-      _PageKey.location,
-      _PageKey.bgLocation,
-      _PageKey.notifications,
-      if (!kIsWeb && Platform.isAndroid) _PageKey.battery,
-      _PageKey.unitType,
+      if (!_locationGranted) _PageKey.location,
+      if (!_bgLocationGranted) _PageKey.bgLocation,
+      if (!_notifGranted) _PageKey.notifications,
+      if (isAndroid && !_batteryOptDisabled) _PageKey.battery,
+      if (_selectedUnitType == null) _PageKey.unitType,
       _PageKey.dienst,
       _PageKey.done,
     ];
-    _checkPermissions();
-    _checkProApi();
   }
 
   @override
@@ -386,6 +418,10 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     if (_selectedUnitType != null) {
       await UnitTypeStore.save(_selectedUnitType!);
     }
+    // Onboarding gilt als abgeschlossen → der (identische) First-Run-
+    // Berechtigungs-Flow im StatusOverview darf danach NICHT erneut laufen.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AppPrefsKeys.onboarded, true);
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
       MaterialPageRoute(builder: (_) => const HomeShell()),
@@ -395,6 +431,15 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Bis die Startprüfungen (Berechtigungen/Einheitstyp) durch sind und die
+    // Seitenliste steht, kurz einen Ladeindikator zeigen — sonst würde man
+    // eine zu überspringende Seite kurz aufblitzen sehen.
+    if (!_ready) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(

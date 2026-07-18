@@ -65,6 +65,12 @@ class AutoDeleteConfig {
     return true;
   }
 
+  /// Löscht die Konfiguration sofort und manuell (z. B. über den
+  /// „Einsatz beenden"-Knopf). Wie die automatische Löschung, nur direkt
+  /// ausgelöst: Konfiguration/Zugangsdaten weg, Einsatz beendet, App zurück
+  /// im Einrichtungs-Zustand.
+  static Future<void> wipeNow() => _wipeConfiguration();
+
   /// Löscht die aktive Konfiguration vollständig und setzt die App auf den
   /// Einrichtungs-Zustand zurück.
   static Future<void> _wipeConfiguration() async {
