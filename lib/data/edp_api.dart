@@ -181,8 +181,10 @@ class EdpApi {
   }
 
   String _fmt(double v) {
-    // Server erwartet Komma als Dezimaltrennzeichen (wie im bestehenden Code)
-    return v.toString().replaceAll('.', ',');
+    // Auf 6 Nachkommastellen runden (~11 cm) — mehr braucht die Einsatzortung
+    // nicht, und es vermeidet Float-Rauschen sowie unnötig lange Payloads.
+    // Server erwartet Komma als Dezimaltrennzeichen (wie im bestehenden Code).
+    return v.toStringAsFixed(6).replaceAll('.', ',');
   }
 
   /// URL fürs Logging mit maskiertem Token (Token ist erstes Pfadsegment).

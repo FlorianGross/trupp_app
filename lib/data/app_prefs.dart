@@ -37,6 +37,13 @@ abstract final class AppPrefsKeys {
   static const transmissionEnabled = 'transmissionEnabled';
   static const lastStatus = 'lastStatus';
 
+  /// Ob gerade eine Tracking-Session aktiv ist (Voll- oder Energiesparmodus).
+  /// Wird vom Hintergrunddienst gesetzt und dient dazu, nach einem Neustart/
+  /// Absturz (Boot-Autostart) zu entscheiden, ob das Tracking fortzusetzen ist
+  /// oder der Dienst sich beenden soll. Nicht mit [transmissionEnabled] (=
+  /// Nutzer-Absicht „senden") zu verwechseln.
+  static const serviceActive = 'service_active';
+
   // Standort-Tracking-Verhalten (konfigurierbar in „Einstellungen")
   /// Hohe Standort-Frequenz: kürzere Intervalle & kleinere Distanzfilter →
   /// häufigere Positionen, mehr Akkuverbrauch. Default true.

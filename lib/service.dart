@@ -94,6 +94,44 @@ DateTime? _trackingSince;
 /// gespiegelt (`EdpApi` schreibt sie bei HTTP 2xx). 0 = noch nie.
 int _lastSuccessfulContactMs = 0;
 
+/// Sende-Fenster fürs Radio-Coalescing: statt jeden Fix einzeln sofort zu
+/// senden, werden Positionen innerhalb dieses Fensters gesammelt und dann in
+/// einem Burst geflusht. Das Mobilfunk-Radio wacht so nur einmal pro Fenster
+/// (statt bei jedem Fix ~alle 4 s) → deutlich weniger Akkuverbrauch bei der
+/// Dauerübertragung. Statuswechsel und Netz-Wiederkehr flushen sofort.
+Duration _coalesceWindow(TrackingMode mode) {
+  switch (mode) {
+    case TrackingMode.highAccuracy:
+      return const Duration(seconds: 12);
+    case TrackingMode.balanced:
+      return const Duration(seconds: 25);
+    case TrackingMode.powerSaver:
+      return const Duration(seconds: 60);
+  }
+}
+
+/// true, wenn eine Netzverbindung besteht. Bei Unsicherheit true (dann lieber
+/// senden). Wird vor dem Coalescing-Flush geprüft: offline gar nicht erst das
+/// Radio wecken — die Punkte bleiben in der Queue und werden bei Netz-
+/// Wiederkehr vom Connectivity-Listener geflusht.
+Future<bool> _hasNetwork() async {
+  try {
+    final results = await Connectivity().checkConnectivity();
+    return results.any((r) => r != ConnectivityResult.none);
+  } catch (_) {
+    return true;
+  }
+}
+
+/// Persistiert, ob gerade eine Tracking-Session läuft — Grundlage für die
+/// Boot-/Absturz-Wiederaufnahme in [onStart].
+Future<void> _setServiceActive(bool active) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AppPrefsKeys.serviceActive, active);
+  } catch (_) {}
+}
+
 final _quality = LocationQualityFilter(
   maxAccuracyM: _minAccuracyMeters,
   minDistanceM: _minDistanceMeters,
@@ -224,7 +262,10 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
   }
 
   try {
-    await LocationSyncManager.instance.sendOrQueue(
+    // Radio-Coalescing: Fix nur in die Queue schreiben. Der eigentliche
+    // Sende-Burst erfolgt gebündelt über den Coalescing-Timer
+    // (_schedulePeriodicFlush) bzw. sofort bei Statuswechsel/Netz-Wiederkehr.
+    await LocationSyncManager.instance.queueOnly(
       lat: pos.latitude,
       lon: pos.longitude,
       accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
@@ -233,10 +274,10 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
     );
     if (coarseFallback) {
       AppLogger.w('LocationService',
-          'Notnagel-Fix gesendet (ungenau ±${pos.accuracy.toStringAsFixed(0)} m) – kein präziser Standort verfügbar');
+          'Notnagel-Fix gequeued (ungenau ±${pos.accuracy.toStringAsFixed(0)} m) – kein präziser Standort verfügbar');
     }
     AppLogger.i('DIAG',
-        'Position an Webhook übergeben (lat=${pos.latitude.toStringAsFixed(5)}, status=$_currentStatus)');
+        'Position gequeued (lat=${pos.latitude.toStringAsFixed(5)}, status=$_currentStatus)');
 
     _quality.markSent(pos, now: now);
 
@@ -411,6 +452,10 @@ Future<void> _updateTrackingMode(ServiceInstance service) async {
       await _restartStreamCallback!();
     }
 
+    // Coalescing-Fenster an den neuen Modus anpassen (highAccuracy sendet
+    // häufiger als powerSaver).
+    _schedulePeriodicFlush(service);
+
     // Modus-Wechsel ist eine sichtbare Zustandsänderung → force=true,
     // damit der Nutzer sofort sieht "Energiesparmodus" statt nach 30 s.
     await _updateNotificationIfDue(
@@ -461,6 +506,7 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
     // vorhanden → Service stoppen.
     if (await AutoDeleteConfig.deleteIfDue()) {
       AppLogger.i('LocationService', 'Konfiguration durch AutoDelete gelöscht');
+      await _setServiceActive(false);
       _hbTimer?.cancel();
       _flushTimer?.cancel();
       _connectivitySub?.cancel();
@@ -478,6 +524,7 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
     if (await DutyEndConfig.signOffIfDue()) {
       AppLogger.i('LocationService', 'Dienstende erreicht – automatisch abgemeldet');
       _deploymentMode = DeploymentMode.standby;
+      await _setServiceActive(false);
       _hbTimer?.cancel();
       _flushTimer?.cancel();
       _connectivitySub?.cancel();
@@ -499,6 +546,7 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
       await DeploymentState.setMode(DeploymentMode.standby);
       _deploymentMode = DeploymentMode.standby;
       await prefs.setBool(AppPrefsKeys.transmissionEnabled, false);
+      await _setServiceActive(false);
       // Timers und Subscriptions kündigen bevor Service stoppt
       _hbTimer?.cancel();
       _flushTimer?.cancel();
@@ -521,24 +569,17 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
   });
 }
 
-/// Periodischer Flush: alle 3 Minuten ausstehende Positionen an den Server senden.
-/// Skippt komplett wenn die Queue leer ist (kein HTTP, keine Notification).
+/// Coalescing-Flush: sammelt gequeuete Positionen und sendet sie mode-abhängig
+/// als Burst (Sende-Fenster), statt jeden Fix einzeln. Vor dem Senden wird die
+/// Netzverbindung geprüft (offline → gar nicht erst das Radio wecken). Skippt
+/// komplett wenn die Queue leer ist (kein HTTP, keine Notification).
 void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer?.cancel();
-  _flushTimer = Timer.periodic(const Duration(minutes: 3), (_) async {
-    // Ausstehende Statusmeldungen haben Priorität vor GPS-Punkten.
-    try {
-      if (await StatusSyncManager.instance.pendingCount() > 0) {
-        await StatusSyncManager.instance.flushPendingNow();
-      }
-    } catch (e, st) {
-      AppLogger.e('LocationService', 'Status-Flush fehlgeschlagen', e, st);
-    }
-
-    // Tägliches DB-Housekeeping auch ohne UI: das Cleanup hing bisher nur
-    // am App-Resume — läuft die App wochenlang im Hintergrund, wuchs die
-    // GPS-Datenbank unbegrenzt. Gleicher Pref-Key wie der UI-Pfad, damit
-    // nicht doppelt aufgeräumt wird.
+  _flushTimer = Timer.periodic(_coalesceWindow(_trackingMode), (_) async {
+    // Tägliches DB-Housekeeping auch ohne UI (kein Netz nötig): das Cleanup
+    // hing bisher nur am App-Resume — läuft die App wochenlang im Hintergrund,
+    // wuchs die GPS-Datenbank unbegrenzt. Gleicher Pref-Key wie der UI-Pfad,
+    // damit nicht doppelt aufgeräumt wird.
     try {
       final prefs = await SharedPreferences.getInstance();
       final lastCleanup = prefs.getInt(AppPrefsKeys.lastDbCleanupMs) ?? 0;
@@ -551,6 +592,19 @@ void _schedulePeriodicFlush(ServiceInstance service) {
       AppLogger.e('LocationService', 'DB-Cleanup fehlgeschlagen', e, st);
     }
 
+    // Adaptiv nach Netz: offline nicht senden (Radio schonen). Die Punkte
+    // bleiben in der Queue und werden bei Netz-Wiederkehr geflusht.
+    if (!await _hasNetwork()) return;
+
+    // Ausstehende Statusmeldungen haben Priorität vor GPS-Punkten.
+    try {
+      if (await StatusSyncManager.instance.pendingCount() > 0) {
+        await StatusSyncManager.instance.flushPendingNow();
+      }
+    } catch (e, st) {
+      AppLogger.e('LocationService', 'Status-Flush fehlgeschlagen', e, st);
+    }
+
     // Guard: nichts zu flushen → kein Wake, keine Notification.
     final stats = await LocationSyncManager.instance.getStats();
     final pending = stats['pending'] ?? 0;
@@ -559,7 +613,7 @@ void _schedulePeriodicFlush(ServiceInstance service) {
     try {
       await _runFlushGuarded(batchSize: 100);
     } catch (e, st) {
-      AppLogger.e('LocationService', 'Periodischer Flush fehlgeschlagen', e, st);
+      AppLogger.e('LocationService', 'Coalescing-Flush fehlgeschlagen', e, st);
     }
     // Notification aktualisieren mit aktuellem Pending-Count
     await _updateNotificationIfDue(
@@ -659,6 +713,14 @@ Future<void> onStart(ServiceInstance service) async {
       _currentStatus = s;
       await DeploymentState.updateActivity();
       await _updateTrackingMode(service);
+
+      // Statuswechsel ist zeitkritisch → gepufferte Positionen sofort senden
+      // (nicht aufs Coalescing-Fenster warten), sofern online.
+      if (await _hasNetwork()) {
+        try {
+          await _runFlushGuarded(batchSize: 50);
+        } catch (_) {}
+      }
 
       // Status-Wechsel ist sichtbare User-Aktion → force.
       await _updateNotificationIfDue(
@@ -783,6 +845,7 @@ Future<void> onStart(ServiceInstance service) async {
 
     trackingEnabled = true;
     _trackingSince ??= DateTime.now();
+    await _setServiceActive(true);
     streamRestartAttempts = 0;
     // Nur starten, wenn noch kein Stream läuft. Einen echten Mode-Wechsel hat
     // _updateTrackingMode oben bereits behandelt (Stream neu gestartet); ein
@@ -804,6 +867,7 @@ Future<void> onStart(ServiceInstance service) async {
     _trackingMode = TrackingMode.powerSaver;
     trackingEnabled = true;
     _trackingSince ??= DateTime.now();
+    await _setServiceActive(true);
     streamRestartAttempts = 0;
 
     // Stream mit neuen (sparsamen) Einstellungen neu starten (selbstheilend)
@@ -827,6 +891,7 @@ Future<void> onStart(ServiceInstance service) async {
     if (!trackingEnabled) return;
     trackingEnabled = false;
     _trackingSince = null;
+    await _setServiceActive(false);
 
     streamRecovery?.cancel();
     streamRecovery = null;
@@ -898,11 +963,31 @@ Future<void> onStart(ServiceInstance service) async {
     await service.stopSelf();
   }));
 
-  // Tracking nur starten wenn vom Nutzer explizit aktiviert
-  // (verhindert Auto-Start nach Neustart)
-  if (await _hasValidConfig()) {
-    final prefs = await SharedPreferences.getInstance();
-    if (prefs.getBool(AppPrefsKeys.transmissionEnabled) ?? false) {
+  // Nach (Neu-)Start entscheiden, ob getrackt werden soll:
+  final prefs = await SharedPreferences.getInstance();
+  final hasConfig = await _hasValidConfig();
+  final transmit = prefs.getBool(AppPrefsKeys.transmissionEnabled) ?? false;
+
+  if (service is AndroidServiceInstance) {
+    // Android: nach Boot-Autostart / OS-Neustart / Absturz die vorige Session
+    // wiederaufnehmen, statt eine Tracking-Lücke zu lassen.
+    final wasActive = prefs.getBool(AppPrefsKeys.serviceActive) ?? false;
+    if (hasConfig && transmit) {
+      await startTracking();            // Übertragung war aktiv → volles Tracking
+    } else if (hasConfig && wasActive) {
+      await switchToPowerSaver();        // Session lief (z. B. Energiesparmodus)
+    } else {
+      // Boot-Autostart ohne aktive Session (oder ohne Config) → keinen
+      // Leerlauf-Dienst mit Dauerbenachrichtigung halten, sondern beenden.
+      for (final s in _serviceEventSubs) {
+        s.cancel();
+      }
+      _serviceEventSubs.clear();
+      await service.stopSelf();
+    }
+  } else {
+    // iOS/übrige: unverändert — nur bei aktiver Übertragung starten.
+    if (hasConfig && transmit) {
       await startTracking();
     }
   }
@@ -981,6 +1066,11 @@ Future<void> initializeBackgroundService() async {
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
       autoStart: false,
+      // Nach einem Geräte-Neustart den Dienst automatisch wieder starten. Ob
+      // dann tatsächlich getrackt wird, entscheidet onStart anhand der zuletzt
+      // aktiven Session (serviceActive) bzw. der Übertragungs-Absicht — ohne
+      // aktive Session beendet sich der Dienst dort sofort wieder.
+      autoStartOnBoot: true,
       isForegroundMode: true,
       foregroundServiceNotificationId: 880,
       // Eigener Low-Importance-Channel (in ForegroundNotificationService
