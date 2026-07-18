@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -31,6 +32,8 @@ class _MoreScreenState extends State<MoreScreen> {
   int _autoDeactivateMinutes = 0;
   String _activeProfileName = '';
   bool _wakelockInDeployment = true;
+  bool _highFrequencyTracking = true;
+  bool _preciseLocationOnly = true;
   DateTime? _autoDeleteAt;
   DateTime? _dutyEndAt;
 
@@ -51,9 +54,38 @@ class _MoreScreenState extends State<MoreScreen> {
       _activeProfileName = active;
       _wakelockInDeployment =
           prefs.getBool(AppPrefsKeys.wakelockInDeployment) ?? true;
+      _highFrequencyTracking =
+          prefs.getBool(AppPrefsKeys.highFrequencyTracking) ?? true;
+      _preciseLocationOnly =
+          prefs.getBool(AppPrefsKeys.preciseLocationOnly) ?? true;
       _autoDeleteAt = autoDeleteAt;
       _dutyEndAt = dutyEndAt;
     });
+  }
+
+  /// Weist den laufenden Hintergrunddienst an, geänderte Tracking-
+  /// Einstellungen sofort zu übernehmen (Stream + Filter neu aufsetzen).
+  Future<void> _notifyServiceTrackingPrefsChanged() async {
+    final service = FlutterBackgroundService();
+    if (await service.isRunning()) {
+      service.invoke('updateTrackingPrefs');
+    }
+  }
+
+  Future<void> _setHighFrequencyTracking(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AppPrefsKeys.highFrequencyTracking, value);
+    if (!mounted) return;
+    setState(() => _highFrequencyTracking = value);
+    await _notifyServiceTrackingPrefsChanged();
+  }
+
+  Future<void> _setPreciseLocationOnly(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(AppPrefsKeys.preciseLocationOnly, value);
+    if (!mounted) return;
+    setState(() => _preciseLocationOnly = value);
+    await _notifyServiceTrackingPrefsChanged();
   }
 
   Future<void> _setWakelockInDeployment(bool value) async {
@@ -391,6 +423,38 @@ class _MoreScreenState extends State<MoreScreen> {
                 ),
                 value: _wakelockInDeployment,
                 onChanged: _setWakelockInDeployment,
+              ),
+              SwitchListTile(
+                secondary: Icon(Icons.speed,
+                    color: Theme.of(context).colorScheme.primary),
+                title: const Text(
+                  'Hohe Standort-Frequenz',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                subtitle: const Text(
+                  'Häufigere Positionsübertragung (kürzere Intervalle, '
+                  'engere Distanz). Genauer, aber mehr Akkuverbrauch. '
+                  'Aktive Status (1/3/7) werden ohnehin dicht getrackt.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _highFrequencyTracking,
+                onChanged: _setHighFrequencyTracking,
+              ),
+              SwitchListTile(
+                secondary: Icon(Icons.gps_fixed,
+                    color: Theme.of(context).colorScheme.primary),
+                title: const Text(
+                  'Nur präziser Standort',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                subtitle: const Text(
+                  'Ungenaue WLAN-/Funkzellen-Ortung verwerfen und nur '
+                  'GPS-genaue Standorte senden. Ausschalten, wenn ein grober '
+                  'Standort besser ist als gar keiner.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                value: _preciseLocationOnly,
+                onChanged: _setPreciseLocationOnly,
               ),
 
               _sectionHeader('Diagnose'),

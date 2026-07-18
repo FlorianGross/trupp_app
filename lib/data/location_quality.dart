@@ -5,7 +5,7 @@ class LocationQualityFilter {
   // Schwellwerte – einige sind veränderbar damit der Service sie zur
   // Laufzeit an den aktuellen TrackingMode anpassen kann (highAccuracy
   // braucht andere Distanz-Schwelle als powerSaver).
-  final double maxAccuracyM;      // z.B. 50 m
+  double maxAccuracyM;            // wird vom Service mode-abhängig gesetzt
   double minDistanceM;            // wird vom Service mode-abhängig gesetzt
   final Duration minInterval;     // z.B. 5 s (gegen Spam)
   final double maxJumpSpeedMs;    // z.B. 20 m/s (~72 km/h) – unrealistische Sprünge filtern
@@ -29,6 +29,13 @@ class LocationQualityFilter {
   /// (z.B. Stream gibt nur Updates >100 m → Filter muss nicht bei 5 m greifen).
   void setMinDistance(double meters) {
     minDistanceM = meters;
+  }
+
+  /// Setzt die maximal akzeptierte Ungenauigkeit zur Laufzeit. Vom Service
+  /// mode-abhängig gesetzt, um ungenaue WLAN-/Funkzellen-Fixes auszuschließen
+  /// (siehe `AdaptiveLocationSettings.getMaxAccuracy`).
+  void setMaxAccuracy(double meters) {
+    maxAccuracyM = meters;
   }
 
   bool isGood(Position p, {DateTime? now, bool forceByHeartbeat = false}) {
@@ -57,6 +64,22 @@ class LocationQualityFilter {
         final v = d / dt;
         if (v > maxJumpSpeedMs) return false;
       }
+    }
+    return true;
+  }
+
+  /// Notnagel-Prüfung: akzeptiert auch einen ungenaueren Fix (bis
+  /// [fallbackMaxAccuracyM]), wenn sonst eine komplette Standort-Lücke
+  /// entstünde. Nur das Mindest-Intervall wird beibehalten (kein Spam);
+  /// Distanz- und Sprungfilter werden bewusst gelockert, weil ein grober
+  /// Standort besser ist als gar keiner.
+  bool isAcceptableFallback(Position p,
+      {DateTime? now, required double fallbackMaxAccuracyM}) {
+    final tNow = now ?? DateTime.now();
+    final acc = p.accuracy.isFinite ? p.accuracy : double.infinity;
+    if (acc > fallbackMaxAccuracyM) return false;
+    if (_lastSentAt != null && tNow.difference(_lastSentAt!) < minInterval) {
+      return false;
     }
     return true;
   }

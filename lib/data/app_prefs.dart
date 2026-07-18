@@ -37,6 +37,15 @@ abstract final class AppPrefsKeys {
   static const transmissionEnabled = 'transmissionEnabled';
   static const lastStatus = 'lastStatus';
 
+  // Standort-Tracking-Verhalten (konfigurierbar in „Einstellungen")
+  /// Hohe Standort-Frequenz: kürzere Intervalle & kleinere Distanzfilter →
+  /// häufigere Positionen, mehr Akkuverbrauch. Default true.
+  static const highFrequencyTracking = 'high_frequency_tracking';
+
+  /// Nur präzise (GPS-)Standorte senden, ungenaue WLAN-/Funkzellen-Fixes
+  /// verwerfen. Default true.
+  static const preciseLocationOnly = 'precise_location_only';
+
   // Hintergrundservice / Timing
   static const lastActivityMs = 'last_activity_ms';
   static const lastFlushMs = 'lastFlushMs';
