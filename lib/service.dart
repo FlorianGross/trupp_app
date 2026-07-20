@@ -73,13 +73,13 @@ const _minAccuracyMeters = 50.0;
 const _minSendInterval = Duration(seconds: 5);
 const _minDistanceMeters = 5.0;
 
-/// Notnagel gegen Standort-Lücken: Wenn länger als [_coarseFallbackAfter] kein
-/// (präziser) Fix akzeptiert wurde, wird einmalig auch ein ungenauerer Fix (bis
-/// [_coarseFallbackMaxAccuracyM]) gesendet — „lieber grob als kein Standort".
-/// Greift vor allem beim Cold-Start (erst WLAN-, dann GPS-Fix) und in langen
-/// Funk-/GPS-Löchern (Tunnel, Tiefgarage).
-const _coarseFallbackAfter = Duration(seconds: 45);
-const _coarseFallbackMaxAccuracyM = 150.0;
+/// Resync gegen „klemmende" Referenz: Wenn länger als [_resyncAfter] kein Fix
+/// akzeptiert wurde (echte GPS-Lücke ODER ein früherer Fehl-Fix blockiert als
+/// Referenz alle folgenden als „Sprung"), wird der Plausibilitäts-/Distanz-
+/// filter EINMALIG übersprungen, um wieder aufzusetzen. Genauigkeit und
+/// Intervall gelten weiter — es wird also nur ein ausreichend genauer Fix
+/// akzeptiert, kein grober WLAN-Fix (das war zuvor die Sprung-Ursache).
+const _resyncAfter = Duration(seconds: 90);
 
 /// Ab dieser Dauer ohne serverseitig bestätigte Übertragung wird in der
 /// Foreground-Notification deutlich gewarnt (Trupp soll sofort merken, dass
@@ -231,19 +231,20 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
 
   // Qualität / Drosselung
   var accepted = _quality.isGood(pos, now: now, forceByHeartbeat: forceByHeartbeat);
-  var coarseFallback = false;
+  var resync = false;
 
   if (!accepted) {
-    // Notnagel: Wurde lange nichts akzeptiert (Cold-Start, Tunnel …), auch
-    // einen ungenaueren Fix durchlassen, statt eine komplette Lücke zu
-    // riskieren. Referenz ist der letzte gesendete Fix bzw. der Trackingstart.
+    // Resync: Wurde lange nichts akzeptiert (echte GPS-Lücke ODER ein früherer
+    // Fehl-Fix „klemmt" als Referenz), Plausibilitäts-/Distanzfilter einmalig
+    // überspringen — aber weiterhin nur einen genauen Fix akzeptieren (kein
+    // grober WLAN-Fix). Referenz ist der letzte gesendete Fix bzw. Trackingstart.
     final ref = _quality.lastSentAt ?? _trackingSince;
-    final starving = ref != null && now.difference(ref) >= _coarseFallbackAfter;
+    final starving = ref != null && now.difference(ref) >= _resyncAfter;
     if (starving &&
-        _quality.isAcceptableFallback(pos,
-            now: now, fallbackMaxAccuracyM: _coarseFallbackMaxAccuracyM)) {
+        _quality.isGood(pos,
+            now: now, forceByHeartbeat: forceByHeartbeat, allowResync: true)) {
       accepted = true;
-      coarseFallback = true;
+      resync = true;
     }
   }
 
@@ -272,9 +273,9 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
       status: _currentStatus,
       timestamp: pos.timestamp,
     );
-    if (coarseFallback) {
+    if (resync) {
       AppLogger.w('LocationService',
-          'Notnagel-Fix gequeued (ungenau ±${pos.accuracy.toStringAsFixed(0)} m) – kein präziser Standort verfügbar');
+          'Resync-Fix gequeued (Filter zurückgesetzt, ±${pos.accuracy.toStringAsFixed(0)} m) – vorherige Referenz verworfen');
     }
     AppLogger.i('DIAG',
         'Position gequeued (lat=${pos.latitude.toStringAsFixed(5)}, status=$_currentStatus)');

@@ -38,49 +38,46 @@ class LocationQualityFilter {
     maxAccuracyM = meters;
   }
 
-  bool isGood(Position p, {DateTime? now, bool forceByHeartbeat = false}) {
+  /// Prüft, ob ein Fix gesendet werden soll.
+  ///
+  /// - [forceByHeartbeat]: überspringt nur die Mindestdistanz (der Heartbeat
+  ///   soll auch bei Stillstand „lebendig" senden), NICHT die Plausibilität.
+  /// - [allowResync]: überspringt Plausibilität UND Mindestdistanz, um nach
+  ///   einer längeren Lücke (oder wenn ein früherer Fehl-Fix als Referenz
+  ///   „klemmt") wieder aufzusetzen. Genauigkeit und Intervall gelten weiter —
+  ///   der Resync akzeptiert also nur einen ausreichend genauen Fix.
+  bool isGood(Position p,
+      {DateTime? now, bool forceByHeartbeat = false, bool allowResync = false}) {
     final tNow = now ?? DateTime.now();
 
-    // 1) Genauigkeit
+    // 1) Genauigkeit — verwirft ungenaue WLAN-/Funkzellen-Fixes.
     final acc = p.accuracy.isFinite ? p.accuracy : double.infinity;
     if (acc > maxAccuracyM) return false;
 
-    // 2) Intervall
+    // 2) Mindest-Intervall (Spam-Schutz).
     if (_lastSentAt != null && tNow.difference(_lastSentAt!) < minInterval) {
       return false;
     }
-    //print("LocationQualityFilter: Passed accuracy and interval checks.");
-    if (!forceByHeartbeat && _lastAccepted != null) {
+
+    if (_lastAccepted != null && !allowResync) {
       final d = Geolocator.distanceBetween(
         _lastAccepted!.latitude, _lastAccepted!.longitude,
         p.latitude, p.longitude,
       );
-      if (d < minDistanceM) return false;
 
-      final fromT = _lastAccepted!.timestamp;
-      final toT   = p.timestamp;
-      final dt = toT.difference(fromT).inMilliseconds / 1000.0;
-      if (dt > 0) {
-        final v = d / dt;
-        if (v > maxJumpSpeedMs) return false;
-      }
-    }
-    return true;
-  }
+      // 3) Plausibilität: physikalisch unmögliche Sprünge IMMER verwerfen —
+      //    auch beim Heartbeat. Ein Teleport ist unabhängig von der Quelle
+      //    falsch (genau das verursacht „Standort springt, wo ich nicht bin").
+      final dt =
+          p.timestamp.difference(_lastAccepted!.timestamp).inMilliseconds /
+              1000.0;
+      if (dt > 0 && d / dt > maxJumpSpeedMs) return false;
 
-  /// Notnagel-Prüfung: akzeptiert auch einen ungenaueren Fix (bis
-  /// [fallbackMaxAccuracyM]), wenn sonst eine komplette Standort-Lücke
-  /// entstünde. Nur das Mindest-Intervall wird beibehalten (kein Spam);
-  /// Distanz- und Sprungfilter werden bewusst gelockert, weil ein grober
-  /// Standort besser ist als gar keiner.
-  bool isAcceptableFallback(Position p,
-      {DateTime? now, required double fallbackMaxAccuracyM}) {
-    final tNow = now ?? DateTime.now();
-    final acc = p.accuracy.isFinite ? p.accuracy : double.infinity;
-    if (acc > fallbackMaxAccuracyM) return false;
-    if (_lastSentAt != null && tNow.difference(_lastSentAt!) < minInterval) {
-      return false;
+      // 4) Mindestdistanz nur für Stream-Fixes (Heartbeat darf bei Stillstand
+      //    senden).
+      if (!forceByHeartbeat && d < minDistanceM) return false;
     }
+
     return true;
   }
 
