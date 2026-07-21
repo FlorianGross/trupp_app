@@ -1,4 +1,5 @@
 // lib/data/location_quality.dart
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 
 class LocationQualityFilter {
@@ -49,6 +50,10 @@ class LocationQualityFilter {
   bool isGood(Position p,
       {DateTime? now, bool forceByHeartbeat = false, bool allowResync = false}) {
     final tNow = now ?? DateTime.now();
+
+    // 0) Manipulierte (gefälschte) Positionen verwerfen — aber nur im Release,
+    //    damit Emulator/Debug (dort sind Fixes „mocked") weiter funktionieren.
+    if (kReleaseMode && p.isMocked) return false;
 
     // 1) Genauigkeit — verwirft ungenaue WLAN-/Funkzellen-Fixes.
     final acc = p.accuracy.isFinite ? p.accuracy : double.infinity;

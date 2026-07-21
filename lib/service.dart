@@ -13,6 +13,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 
 import 'data/edp_api.dart';
 import 'data/location_quality.dart';
+import 'data/location_smoother.dart';
 import 'data/profile_store.dart';
 import 'data/location_sync_manager.dart';
 import 'data/status_sync_manager.dart';
@@ -140,6 +141,11 @@ final _quality = LocationQualityFilter(
   heartbeatInterval: const Duration(seconds: 30),
 );
 
+/// Accuracy-gewichteter Glätter: reduziert Jitter (v. a. im Stand) und leicht
+/// verrauschte Fixes, bevor die Position gequeued wird. Wird bei einem Resync
+/// (Referenz-Reset) und beim Stoppen zurückgesetzt.
+final _smoother = LocationSmoother();
+
 Timer? _hbTimer;
 Timer? _modeCheckTimer;
 Timer? _flushTimer;
@@ -263,13 +269,28 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
   }
 
   try {
+    // Referenz für die Sprung-Erkennung ist die ROHE Position (markSent unten).
+    // Nach einem Resync darf der Glätter nicht über die Korrektur hinweg
+    // mitteln → zurücksetzen.
+    if (resync) _smoother.reset();
+
+    // Accuracy-gewichtete Glättung: reduziert Jitter/Verrauschen, ohne bei
+    // Bewegung nachzulaufen (Prozessrauschen aus der Geschwindigkeit).
+    final sm = _smoother.process(
+      lat: pos.latitude,
+      lon: pos.longitude,
+      accuracyM: pos.accuracy.isFinite ? pos.accuracy : 50.0,
+      tsMs: pos.timestamp.millisecondsSinceEpoch,
+      speedMs: pos.speed.isFinite ? pos.speed : -1,
+    );
+
     // Radio-Coalescing: Fix nur in die Queue schreiben. Der eigentliche
     // Sende-Burst erfolgt gebündelt über den Coalescing-Timer
     // (_schedulePeriodicFlush) bzw. sofort bei Statuswechsel/Netz-Wiederkehr.
     await LocationSyncManager.instance.queueOnly(
-      lat: pos.latitude,
-      lon: pos.longitude,
-      accuracy: pos.accuracy.isFinite ? pos.accuracy : null,
+      lat: sm.lat,
+      lon: sm.lon,
+      accuracy: sm.accuracy,
       status: _currentStatus,
       timestamp: pos.timestamp,
     );
@@ -278,7 +299,7 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
           'Resync-Fix gequeued (Filter zurückgesetzt, ±${pos.accuracy.toStringAsFixed(0)} m) – vorherige Referenz verworfen');
     }
     AppLogger.i('DIAG',
-        'Position gequeued (lat=${pos.latitude.toStringAsFixed(5)}, status=$_currentStatus)');
+        'Position gequeued (lat=${sm.lat.toStringAsFixed(5)}, status=$_currentStatus)');
 
     _quality.markSent(pos, now: now);
 
@@ -892,6 +913,7 @@ Future<void> onStart(ServiceInstance service) async {
     if (!trackingEnabled) return;
     trackingEnabled = false;
     _trackingSince = null;
+    _smoother.reset();
     await _setServiceActive(false);
 
     streamRecovery?.cancel();
