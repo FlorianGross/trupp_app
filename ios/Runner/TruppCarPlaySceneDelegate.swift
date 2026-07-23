@@ -130,7 +130,10 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
 
     // MARK: - HTTP
 
-    private func sendStatusToServer(_ status: Int) {
+    private let maxRetries = 1
+    private let retryDelay: TimeInterval = 1.5
+
+    private func sendStatusToServer(_ status: Int, attempt: Int = 0) {
         let defaults = UserDefaults.standard
         let proto  = defaults.string(forKey: "flutter.protocol") ?? "https"
         let server = defaults.string(forKey: "flutter.server")   ?? ""
@@ -149,6 +152,17 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
             guard let self else { return }
             let code = (response as? HTTPURLResponse)?.statusCode ?? 0
             let ok = (200..<300).contains(code)
+
+            // Netzwerkfehler oder Server-Fehler (5xx) einmal mit kurzem Backoff
+            // wiederholen; Client-Fehler (4xx) sofort als Fehler zeigen.
+            let retriable = (error != nil) || code == 0 || code >= 500
+            if !ok && retriable && attempt < self.maxRetries {
+                DispatchQueue.main.asyncAfter(deadline: .now() + self.retryDelay) { [weak self] in
+                    self?.sendStatusToServer(status, attempt: attempt + 1)
+                }
+                return
+            }
+
             DispatchQueue.main.async {
                 self.connectionOk = ok
                 if ok {
