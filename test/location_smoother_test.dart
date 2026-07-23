@@ -10,33 +10,14 @@ void main() {
     expect(r.accuracy, 10);
   });
 
-  test('wiederholt identischer Fix im Stand → Position stabil, Genauigkeit '
+  test('Stillstand: Anker friert die Position ein (kein Drift), Genauigkeit '
       'verbessert sich', () {
     final s = LocationSmoother();
-    var acc = 10.0;
-    for (var i = 0; i < 8; i++) {
-      final r = s.process(
-        lat: 52.0,
-        lon: 13.0,
-        accuracyM: 10,
-        tsMs: i * 1000,
-        speedMs: 0,
-      );
-      expect(r.lat, closeTo(52.0, 1e-9));
-      expect(r.lon, closeTo(13.0, 1e-9));
-      acc = r.accuracy;
-    }
-    // Nach mehreren Messungen ist die geschätzte Ungenauigkeit kleiner als die
-    // Einzel-Messung (Mehrwert der Glättung).
-    expect(acc, lessThan(10.0));
-  });
-
-  test('verrauschte Fixes im Stand bleiben nahe der Mitte', () {
-    final s = LocationSmoother(minProcessNoiseMs: 3.0);
-    // ~0.00015° ≈ 16 m Streuung um das Zentrum, abwechselnd.
     const center = 52.0;
-    var last = center;
+    var lastLat = center;
+    var lastAcc = 15.0;
     for (var i = 0; i < 20; i++) {
+      // ~16 m Jitter, abwechselnd; Geschwindigkeit ~ 0 (steht).
       final noisy = center + (i.isEven ? 0.00015 : -0.00015);
       final r = s.process(
         lat: noisy,
@@ -45,28 +26,53 @@ void main() {
         tsMs: i * 1000,
         speedMs: 0,
       );
-      last = r.lat;
+      lastLat = r.lat;
+      lastAcc = r.accuracy;
     }
-    // Geglättete Position liegt deutlich näher an der Mitte als die Rohstreuung.
-    expect((last - center).abs(), lessThan(0.00008));
+    expect((lastLat - center).abs(), lessThan(0.00003)); // < ~3 m Drift
+    expect(lastAcc, lessThan(15.0)); // Mittelung verbessert die Genauigkeit
   });
 
-  test('bei hoher Geschwindigkeit folgt der Filter der Bewegung', () {
+  test('Bewegung mit konstanter Geschwindigkeit wird verfolgt (kein Nachlauf)',
+      () {
     final s = LocationSmoother();
-    double lon = 13.0;
-    var r = s.process(lat: 52.0, lon: lon, accuracyM: 5, tsMs: 0, speedMs: 60);
-    for (var i = 1; i <= 8; i++) {
-      lon += 0.0009; // ~60 m/s nach Osten
-      r = s.process(
+    const lon0 = 13.0;
+    const step = 0.0009; // ~60 m/s nach Osten
+    var r = s.process(lat: 52.0, lon: lon0, accuracyM: 5, tsMs: 0, speedMs: 60);
+    var lon = lon0;
+    for (var i = 1; i <= 20; i++) {
+      lon = lon0 + i * step;
+      r = s.process(lat: 52.0, lon: lon, accuracyM: 5, tsMs: i * 1000, speedMs: 60);
+    }
+    // Nach Konvergenz folgt der CV-Filter praktisch verzögerungsfrei.
+    expect((r.lon - lon).abs(), lessThan(0.0003)); // < ~20 m
+  });
+
+  test('einzelner Ausreißer (Spike) wird verworfen', () {
+    final s = LocationSmoother();
+    const lon0 = 13.0;
+    const step = 0.0009;
+    // Erst Geschwindigkeit einschwingen lassen.
+    for (var i = 0; i <= 8; i++) {
+      s.process(
         lat: 52.0,
-        lon: lon,
+        lon: lon0 + i * step,
         accuracyM: 5,
         tsMs: i * 1000,
         speedMs: 60,
       );
     }
-    // Der Filter darf bei schneller Fahrt kaum nachlaufen.
-    expect((r.lon - lon).abs(), lessThan(0.0003)); // < ~20 m
+    // Nächster Schritt: grober Spike (~700 m daneben) statt der Rampe.
+    final expectedLon = lon0 + 9 * step;
+    final r = s.process(
+      lat: 52.0,
+      lon: expectedLon + 0.01, // Spike
+      accuracyM: 5,
+      tsMs: 9 * 1000,
+      speedMs: 60,
+    );
+    // Ausgabe bleibt nahe der erwarteten Rampe, NICHT beim Spike.
+    expect((r.lon - expectedLon).abs(), lessThan(0.0003)); // < ~20 m
   });
 
   test('reset() verwirft den Schätzwert', () {
@@ -75,7 +81,6 @@ void main() {
     expect(s.hasEstimate, isTrue);
     s.reset();
     expect(s.hasEstimate, isFalse);
-    // Nach reset zählt der nächste Fix wieder als erster.
     final r = s.process(lat: 48.0, lon: 11.0, accuracyM: 8, tsMs: 5000);
     expect(r.lat, 48.0);
     expect(r.lon, 11.0);
