@@ -21,6 +21,7 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
 
     private var currentStatus: Int = 1
     private var connectionOk: Bool? = nil   // nil=unbekannt, true=OK, false=Fehler
+    private var currentTitle: String = ""   // zuletzt gesetzter Grid-Titel
 
     // MARK: - CPTemplateApplicationSceneDelegate
 
@@ -57,6 +58,7 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
     private func makeGridTemplate() -> CPGridTemplate {
         let buttons = buildButtons()
         let title = templateTitle()
+        currentTitle = title
         let template = CPGridTemplate(title: title, gridButtons: buttons)
         return template
     }
@@ -85,22 +87,21 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
     }
 
     private func refreshTemplate() {
-        guard let grid = gridTemplate else { return }
         let buttons = buildButtons()
         let title = templateTitle()
-        if #available(iOS 15.0, *) {
-            // In-place update — kein Flash durch Template-Austausch
+
+        // Button-Zustand (aktiver Status) lässt sich auf iOS 15+ ohne Template-
+        // Austausch aktualisieren → kein Flackern. Nur wenn sich der Titel ändert
+        // (Verbindungsanzeige), muss das Root-Template ersetzt werden — das ist
+        // selten (nur bei Verbindungs-Zustandswechsel).
+        if #available(iOS 15.0, *), title == currentTitle, let grid = gridTemplate {
             grid.updateGridButtons(buttons)
-            // Titel lässt sich bei CPGridTemplate nicht direkt updaten,
-            // daher nur bei Änderung neu setzen
-            let newGrid = CPGridTemplate(title: title, gridButtons: buttons)
-            gridTemplate = newGrid
-            interfaceController?.setRootTemplate(newGrid, animated: false, completion: nil)
-        } else {
-            let newGrid = CPGridTemplate(title: title, gridButtons: buttons)
-            gridTemplate = newGrid
-            interfaceController?.setRootTemplate(newGrid, animated: false, completion: nil)
+            return
         }
+        currentTitle = title
+        let newGrid = CPGridTemplate(title: title, gridButtons: buttons)
+        gridTemplate = newGrid
+        interfaceController?.setRootTemplate(newGrid, animated: false, completion: nil)
     }
 
     // MARK: - Status Handling
@@ -146,7 +147,8 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
 
         URLSession.shared.dataTask(with: url) { [weak self] _, response, error in
             guard let self else { return }
-            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+            let ok = (200..<300).contains(code)
             DispatchQueue.main.async {
                 self.connectionOk = ok
                 if ok {
