@@ -17,8 +17,11 @@ void main() {
     var lastLat = center;
     var lastAcc = 15.0;
     for (var i = 0; i < 20; i++) {
-      // ~16 m Jitter, abwechselnd; Geschwindigkeit ~ 0 (steht).
-      final noisy = center + (i.isEven ? 0.00015 : -0.00015);
+      // ~5,5 m Jitter, abwechselnd; Geschwindigkeit ~ 0 (steht). Bewusst
+      // INNERHALB des Anker-Freigaberadius (20 m) — sonst würde der Anker
+      // auslösen und der Kalman übernehmen (dann testet dieser Fall nicht den
+      // Anker). ±0.00005° ≈ 5,5 m, Sample-zu-Sample also ~11 m (< 20 m).
+      final noisy = center + (i.isEven ? 0.00005 : -0.00005);
       final r = s.process(
         lat: noisy,
         lon: 13.0,
