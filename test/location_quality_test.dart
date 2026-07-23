@@ -75,4 +75,45 @@ void main() {
     // Mit Resync: ungenauer Fix bleibt verworfen (kein grober WLAN-Fix).
     expect(f.isGood(jumpInaccurate, now: t10, allowResync: true), isFalse);
   });
+
+  test('Warm-up: in den ersten Sekunden strengere Genauigkeit', () {
+    final f = LocationQualityFilter(
+      maxAccuracyM: 40,
+      minDistanceM: 8,
+      minInterval: const Duration(seconds: 5),
+      maxJumpSpeedMs: 55,
+      warmupDuration: const Duration(seconds: 6),
+      warmupMaxAccuracyM: 15,
+    );
+    f.startWarmup(now: t0);
+    // 25 m < maxAccuracy(40), aber > 15 m Warm-up-Grenze → verworfen.
+    final p = _pos(lat: 52.0, lon: 13.0, accuracy: 25, ts: t0);
+    expect(f.isGood(p, now: t0), isFalse);
+    // Nach Ablauf des Warm-ups akzeptiert.
+    final later = t0.add(const Duration(seconds: 7));
+    final p2 = _pos(lat: 52.0, lon: 13.0, accuracy: 25, ts: later);
+    expect(f.isGood(p2, now: later), isTrue);
+  });
+
+  test('Adaptive Schwelle: Fix weit über dem Genauigkeits-Trend verworfen', () {
+    final f = LocationQualityFilter(
+      maxAccuracyM: 60,
+      minDistanceM: 8,
+      minInterval: Duration.zero,
+      maxJumpSpeedMs: 55,
+      adaptiveFactor: 2.5,
+      adaptiveFloorM: 20,
+    );
+    // Guten Trend (acc ~5 m) etablieren.
+    for (var i = 0; i < 5; i++) {
+      final ts = t0.add(Duration(seconds: i));
+      final p = _pos(lat: 52.0 + i * 0.0001, lon: 13.0, accuracy: 5, ts: ts);
+      expect(f.isGood(p, now: ts), isTrue);
+      f.markSent(p, now: ts);
+    }
+    // 30 m: < maxAccuracy(60), aber > 5·2.5 und > 20 → adaptiv verworfen.
+    final tsBad = t0.add(const Duration(seconds: 5));
+    final bad = _pos(lat: 52.0006, lon: 13.0, accuracy: 30, ts: tsBad);
+    expect(f.isGood(bad, now: tsBad), isFalse);
+  });
 }

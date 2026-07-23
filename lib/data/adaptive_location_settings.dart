@@ -170,7 +170,9 @@ class AdaptiveLocationSettings {
     if (highFrequency) {
       switch (mode) {
         case TrackingMode.highAccuracy:
-          return 8;   // 8m - Einsatz, dichte Spur
+          // 5 m: bewusst eng, damit der Glätter (Kalman) mehr Rohfixes bekommt
+          // → bessere Schätzung. Stillstands-Drift fängt der Anker ab.
+          return 5;
         case TrackingMode.balanced:
           return 10;  // 10m - ausgewogen (vorher 25m)
         case TrackingMode.powerSaver:

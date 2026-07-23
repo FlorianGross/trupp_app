@@ -866,6 +866,11 @@ Future<void> _onStartGuarded(ServiceInstance service) async {
     // Baseline für den Watchdog: ein frisch gestarteter Stream bekommt eine
     // Kulanzzeit, bevor er als „eingefroren" gilt.
     _lastStreamFixAt = DateTime.now();
+    // Cold-Start-Warm-up: die instabilen Erst-Fixes nach GPS-Erfassung
+    // strenger filtern.
+    _quality.startWarmup();
+    // Glätter neu aufsetzen (frischer Stream → keine Kontinuität annehmen).
+    _smoother.reset();
 
     final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
     sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
