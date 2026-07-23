@@ -7,6 +7,8 @@ import okhttp3.*
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import java.io.IOException
 
 /**
@@ -20,6 +22,7 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
         Context.MODE_PRIVATE
     )
     private val client = OkHttpClient()
+    private val mainHandler = Handler(Looper.getMainLooper())
 
     // Statusliste in BOS-Reihenfolge (ohne Status 0 / Notruftaste)
     private val statusList = listOf(
@@ -101,21 +104,25 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                connectionOk = false
-                invalidate()
+                // UI-Änderungen (invalidate) müssen auf den Main-Thread.
+                mainHandler.post {
+                    connectionOk = false
+                    invalidate()
+                }
             }
 
             override fun onResponse(call: Call, response: Response) {
-                response.use {
-                    connectionOk = it.isSuccessful
-                    if (it.isSuccessful) {
-                        currentStatus = status
-                        saveCurrentStatus(status)
-                        // Broadcast an Flutter-App senden
-                        val intent = Intent("dev.floriang.trupp_app.STATUS_CHANGED")
-                        intent.putExtra("status", status)
-                        carContext.sendBroadcast(intent)
-                    }
+                val success = response.use { it.isSuccessful }
+                if (success) {
+                    saveCurrentStatus(status)
+                    // Broadcast an Flutter-App senden (Thread-unkritisch)
+                    val intent = Intent("dev.floriang.trupp_app.STATUS_CHANGED")
+                    intent.putExtra("status", status)
+                    carContext.sendBroadcast(intent)
+                }
+                mainHandler.post {
+                    connectionOk = success
+                    if (success) currentStatus = status
                     invalidate()
                 }
             }
