@@ -149,7 +149,15 @@ final _smoother = LocationSmoother();
 Timer? _hbTimer;
 Timer? _modeCheckTimer;
 Timer? _flushTimer;
+Timer? _watchdogTimer;
 StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
+/// Zeitpunkt des zuletzt vom GPS-*Stream* gelieferten Fix (nicht Heartbeat).
+/// Grundlage für den Stall-Watchdog und die Feld-Diagnose.
+DateTime? _lastStreamFixAt;
+
+/// Zähler der Stream-Neuaufbauten (Backoff-Recovery + Watchdog) — Diagnose.
+int _streamRestartCount = 0;
 
 /// Alle service.on(...)-Subscriptions, damit sie beim Stoppen sauber
 /// gecancelt werden — sonst akkumulieren sich Handler über Service-Neustarts
@@ -598,6 +606,9 @@ void _schedulePeriodicModeCheck(ServiceInstance service) {
 void _schedulePeriodicFlush(ServiceInstance service) {
   _flushTimer?.cancel();
   _flushTimer = Timer.periodic(_coalesceWindow(_trackingMode), (_) async {
+    // Diagnose-Werte für die Systemprüfung spiegeln (kein Netz nötig).
+    await _persistDiagnostics();
+
     // Tägliches DB-Housekeeping auch ohne UI (kein Netz nötig): das Cleanup
     // hing bisher nur am App-Resume — läuft die App wochenlang im Hintergrund,
     // wuchs die GPS-Datenbank unbegrenzt. Gleicher Pref-Key wie der UI-Pfad,
@@ -608,6 +619,8 @@ void _schedulePeriodicFlush(ServiceInstance service) {
       final now = DateTime.now().millisecondsSinceEpoch;
       if (now - lastCleanup >= const Duration(hours: 24).inMilliseconds) {
         await LocationSyncManager.instance.cleanupOldEntries(maxAgeDays: 30);
+        // Harte Obergrenze gegen DB-Bloat (Backstop über der Alters-Bereinigung).
+        await LocationSyncManager.instance.capQueue(maxRows: 500000);
         await prefs.setInt(AppPrefsKeys.lastDbCleanupMs, now);
       }
     } catch (e, st) {
@@ -644,6 +657,41 @@ void _schedulePeriodicFlush(ServiceInstance service) {
       content: await _getNotificationContentAsync(),
     );
   });
+}
+
+/// Watchdog gegen still stehende GPS-Streams: Ein Stream, der weder `onError`
+/// noch `onDone` liefert, aber auch keine Fixes mehr sendet, wird von der
+/// Backoff-Recovery NICHT erkannt. Dieser Timer erkennt genau das — aber nur
+/// bei BEWEGUNG (bei Stillstand liefert der Stream wegen distanceFilter legitim
+/// nichts) — und setzt den Stream dann zwangsweise neu auf.
+void _scheduleWatchdog(ServiceInstance service) {
+  _watchdogTimer?.cancel();
+  _watchdogTimer = Timer.periodic(const Duration(seconds: 60), (_) async {
+    if (_trackingSince == null) return; // nicht aktiv
+    if (SmartHeartbeat.isStationary) return; // Stillstand → kein Update erwartet
+    final last = _lastStreamFixAt;
+    if (last == null) return;
+    if (DateTime.now().difference(last) >= const Duration(seconds: 120)) {
+      AppLogger.w('LocationService',
+          'GPS-Stream eingefroren (>120 s ohne Fix trotz Bewegung) – Neuaufbau');
+      _streamRestartCount++;
+      _lastStreamFixAt = DateTime.now(); // Reset gegen Dauerschleife
+      if (_restartStreamCallback != null) {
+        await _restartStreamCallback!();
+      }
+    }
+  });
+}
+
+/// Spiegelt Diagnose-Werte in die Prefs, damit die Systemprüfung sie anzeigen
+/// kann (der Dienst läuft in einem eigenen Isolate).
+Future<void> _persistDiagnostics() async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(AppPrefsKeys.lastStreamFixMs,
+        _lastStreamFixAt?.millisecondsSinceEpoch ?? 0);
+    await prefs.setInt(AppPrefsKeys.streamRestartCount, _streamRestartCount);
+  } catch (_) {}
 }
 
 /// Reentrancy-geschützter Flush: läuft schon einer, sofort raus.
@@ -690,6 +738,20 @@ void _startConnectivityListener() {
 
 @pragma('vm:entry-point')
 Future<void> onStart(ServiceInstance service) async {
+  // Crash-Schutz: unbehandelte (async) Fehler dürfen das Tracking-Isolate NICHT
+  // still beenden. Die im Guard erzeugten Timer/Stream-Listener melden ihre
+  // Fehler an diesen Zonen-Handler → wird geloggt, der Dienst läuft weiter.
+  FlutterError.onError = (details) {
+    AppLogger.e('LocationService', 'FlutterError im Service-Isolate',
+        details.exception, details.stack);
+  };
+  await runZonedGuarded(() => _onStartGuarded(service), (error, stack) {
+    AppLogger.e(
+        'LocationService', 'Unbehandelter Fehler im Service-Isolate', error, stack);
+  });
+}
+
+Future<void> _onStartGuarded(ServiceInstance service) async {
   DartPluginRegistrant.ensureInitialized();
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -801,10 +863,15 @@ Future<void> onStart(ServiceInstance service) async {
 
     if (!await _hasValidConfig()) return;
 
+    // Baseline für den Watchdog: ein frisch gestarteter Stream bekommt eine
+    // Kulanzzeit, bevor er als „eingefroren" gilt.
+    _lastStreamFixAt = DateTime.now();
+
     final locationSettings = AdaptiveLocationSettings.buildSettings(_trackingMode);
     sub = Geolocator.getPositionStream(locationSettings: locationSettings).listen(
       (pos) async {
         streamRestartAttempts = 0; // gesunder Stream → Backoff zurücksetzen
+        _lastStreamFixAt = DateTime.now();
         await _sendPositionIfOk(service, pos);
       },
       onError: (e, StackTrace st) {
@@ -822,6 +889,7 @@ Future<void> onStart(ServiceInstance service) async {
   // Plant einen Stream-Neuaufbau mit exponentiellem Backoff (1…30 s).
   scheduleStreamRecovery = () {
     if (!trackingEnabled) return;
+    _streamRestartCount++;
     streamRestartAttempts =
         streamRestartAttempts >= 6 ? 6 : streamRestartAttempts + 1;
     final secs = 1 << (streamRestartAttempts - 1); // 1,2,4,8,16,32
@@ -880,6 +948,7 @@ Future<void> onStart(ServiceInstance service) async {
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
     _schedulePeriodicFlush(service);
+    _scheduleWatchdog(service);
     _startConnectivityListener();
   }
 
@@ -899,6 +968,7 @@ Future<void> onStart(ServiceInstance service) async {
     _scheduleNextHeartbeat(service);
     _schedulePeriodicModeCheck(service);
     _schedulePeriodicFlush(service);
+    _scheduleWatchdog(service);
     _startConnectivityListener();
 
     await _updateNotificationIfDue(
@@ -931,6 +1001,9 @@ Future<void> onStart(ServiceInstance service) async {
 
     _flushTimer?.cancel();
     _flushTimer = null;
+
+    _watchdogTimer?.cancel();
+    _watchdogTimer = null;
 
     _connectivitySub?.cancel();
     _connectivitySub = null;

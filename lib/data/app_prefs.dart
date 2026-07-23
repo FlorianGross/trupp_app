@@ -58,6 +58,13 @@ abstract final class AppPrefsKeys {
   static const lastFlushMs = 'lastFlushMs';
   static const lastDbCleanupMs = 'lastDbCleanupMs';
 
+  // Feld-Diagnose (vom Hintergrunddienst gespiegelt, in der Systemprüfung
+  // angezeigt).
+  /// Zeitpunkt (Epoch-ms) des zuletzt vom GPS-Stream gelieferten Fix.
+  static const lastStreamFixMs = 'last_stream_fix_ms';
+  /// Anzahl der Stream-Neuaufbauten seit Dienststart (Recovery + Watchdog).
+  static const streamRestartCount = 'stream_restart_count';
+
   /// Zeitpunkt (Epoch-ms) der letzten erfolgreich vom Server bestätigten
   /// Übertragung (HTTP 2xx). Grundlage für die Silent-Failure-Warnung.
   static const lastSuccessfulContactMs = 'last_successful_contact_ms';

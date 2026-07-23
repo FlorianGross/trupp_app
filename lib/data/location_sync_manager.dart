@@ -194,4 +194,11 @@ class LocationSyncManager {
   Future<int> cleanupOldEntries({int maxAgeDays = 30}) async {
     return await _queue.purgeOlderThan(Duration(days: maxAgeDays));
   }
+
+  /// Harte Obergrenze gegen DB-Bloat bei langem Server-Ausfall: überzählige
+  /// Zeilen löschen (gesendete zuerst, dann die ältesten). Reiner Sicherheits-
+  /// backstop oberhalb der Alters-Bereinigung.
+  Future<int> capQueue({int maxRows = 500000}) async {
+    return await _queue.capRows(maxTotal: maxRows);
+  }
 }
