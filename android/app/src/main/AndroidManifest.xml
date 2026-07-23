@@ -29,14 +29,19 @@
             android:foregroundServiceType="location"
             />
 
-        <!-- IOT Car App Service (für eingebautes Auto-System) -->
+        <!-- Car App Service (Kategorie IOT).
+             IOT ist seit 2023 für Produktion auf BEIDEN Plattformen freigegeben:
+             Android Auto (Handy-Projektion) UND Android Automotive OS (eingebaut).
+             Es ist die passende Kategorie für eine Status-/Steuerungs-App.
+             (Play verlangt für IOT zusätzlich die Car-App-Quality Tier 2 und eine
+             manuelle Car-Review.) -->
         <service
             android:name=".TruppIotCarService"
             android:exported="true"
-            android:label="Trupp Status">   <!-- ← Wird in Android Auto angezeigt -->
+            android:label="Trupp Status">   <!-- im Auto-Launcher angezeigter Name -->
             <intent-filter>
                 <action android:name="androidx.car.app.CarAppService" />
-                <category android:name="androidx.car.app.category.IOT" />  <!-- ← WICHTIG! -->
+                <category android:name="androidx.car.app.category.IOT" />
             </intent-filter>
         </service>
 

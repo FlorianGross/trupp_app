@@ -23,6 +23,8 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
     )
     private val client = OkHttpClient()
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val _maxRetries = 1        // 1 Wiederholung bei Netz-/5xx-Fehler
+    private val _retryDelayMs = 1500L
 
     // Statusliste in BOS-Reihenfolge (ohne Status 0 / Notruftaste)
     private val statusList = listOf(
@@ -87,7 +89,7 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
         }
     }
 
-    private fun sendStatus(status: Int) {
+    private fun sendStatus(status: Int, attempt: Int = 0) {
         val protocol = prefs.getString("flutter.protocol", null) ?: "https"
         val server   = prefs.getString("flutter.server", null) ?: ""
         val token    = prefs.getString("flutter.token", null) ?: ""
@@ -104,15 +106,28 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
 
         client.newCall(request).enqueue(object : Callback {
             override fun onFailure(call: Call, e: IOException) {
-                // UI-Änderungen (invalidate) müssen auf den Main-Thread.
-                mainHandler.post {
-                    connectionOk = false
-                    invalidate()
+                // Netzwerkfehler → einmal mit kurzem Backoff wiederholen, dann
+                // erst als Fehler anzeigen (Fahrer soll sich nicht auf einen
+                // flüchtigen Aussetzer verlassen müssen).
+                if (attempt < _maxRetries) {
+                    mainHandler.postDelayed({ sendStatus(status, attempt + 1) }, _retryDelayMs)
+                } else {
+                    mainHandler.post {
+                        connectionOk = false
+                        invalidate()
+                    }
                 }
             }
 
             override fun onResponse(call: Call, response: Response) {
-                val success = response.use { it.isSuccessful }
+                val code = response.use { it.code }
+                val success = code in 200..299
+                // Server-Fehler (5xx) wie einen Netzwerkfehler behandeln und
+                // wiederholen; Client-Fehler (4xx) sofort als Fehler zeigen.
+                if (!success && code >= 500 && attempt < _maxRetries) {
+                    mainHandler.postDelayed({ sendStatus(status, attempt + 1) }, _retryDelayMs)
+                    return
+                }
                 if (success) {
                     saveCurrentStatus(status)
                     // Broadcast an Flutter-App senden (Thread-unkritisch)

@@ -6,7 +6,13 @@
 	<array>
 		<string>truppapp:*</string>
 	</array>
-	<key>com.apple.developer.carplay-driving-task</key>
+	<!-- CarPlay-Kategorie „Public Safety": inhaltlich korrekt für BOS/Einsatz
+	     (Feuerwehr, Polizei, Rettungsdienst — Dispatch/Status), erlaubt tiefere
+	     Navigation (5 statt 2 Templates) und ein volleres Template-Set.
+	     WICHTIG: Dieses Entitlement muss von Apple gesondert freigegeben werden
+	     (Antrag unter developer.apple.com/carplay, BOS-Nachweis nötig). Erst nach
+	     Freigabe + passendem Provisioning-Profil lädt die App in CarPlay. -->
+	<key>com.apple.developer.carplay-public-safety</key>
 	<true/>
 </dict>
 </plist>
