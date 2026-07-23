@@ -127,50 +127,158 @@ Future<void> main() async {
   ));
 }
 
-// Gemeinsame Komponenten-Defaults für beide Themes: Eckenradius 12 und
-// Mindesthöhe 48 als Design-Token, statt sie pro Screen zu wiederholen.
-// Explizite styleFrom()/shape-Angaben in einzelnen Screens überschreiben
-// diese Defaults weiterhin.
-final _cardTheme = CardThemeData(
-  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-);
+// ── Farbschema ──────────────────────────────────────────────────────────────
+// Rote BOS-Marke auf ruhigen, leicht warmen Neutraltönen. Der Dunkelmodus nutzt
+// bewusst gestaffelte, warm-neutrale Flächen (Hintergrund → Karte → Container)
+// statt der aus dem roten Seed abgeleiteten, ins Violette laufenden Standard-
+// Surfaces. Ein gemeinsamer Builder hält beide Modi konsistent.
 
-final _elevatedButtonTheme = ElevatedButtonThemeData(
-  style: ElevatedButton.styleFrom(
-    minimumSize: const Size(64, 48),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-  ),
-);
+const _brandSeed = Color(0xFFC62828); // BOS-Rot (red 800)
 
-final _lightTheme = ThemeData(
+final ColorScheme _lightScheme = ColorScheme.fromSeed(
+  seedColor: _brandSeed,
   brightness: Brightness.light,
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: Colors.red.shade800,
-    brightness: Brightness.light,
-  ),
-  appBarTheme: AppBarTheme(
-    backgroundColor: Colors.red.shade800,
-    foregroundColor: Colors.white,
-  ),
-  cardTheme: _cardTheme,
-  elevatedButtonTheme: _elevatedButtonTheme,
-  extensions: const <ThemeExtension<dynamic>>[BrandColors.light],
+).copyWith(
+  surface: const Color(0xFFFAF8F7),
+  onSurface: const Color(0xFF1A1514),
+  surfaceContainerLowest: const Color(0xFFFFFFFF),
+  surfaceContainerLow: const Color(0xFFF7F2F0),
+  surfaceContainer: const Color(0xFFF2ECEA),
+  surfaceContainerHigh: const Color(0xFFECE4E2),
+  surfaceContainerHighest: const Color(0xFFE7DEDB),
+  onSurfaceVariant: const Color(0xFF6E615D),
+  outline: const Color(0xFFAAA09C),
+  outlineVariant: const Color(0xFFE0D7D4),
 );
 
-final _darkTheme = ThemeData(
+final ColorScheme _darkScheme = ColorScheme.fromSeed(
+  seedColor: _brandSeed,
   brightness: Brightness.dark,
-  colorScheme: ColorScheme.fromSeed(
-    seedColor: Colors.red.shade800,
-    brightness: Brightness.dark,
-  ),
-  appBarTheme: AppBarTheme(
-    backgroundColor: Colors.red.shade900,
-    foregroundColor: Colors.white,
-  ),
-  cardTheme: _cardTheme,
-  elevatedButtonTheme: _elevatedButtonTheme,
-  extensions: const <ThemeExtension<dynamic>>[BrandColors.dark],
+).copyWith(
+  surface: const Color(0xFF141110),
+  onSurface: const Color(0xFFF4EEEB),
+  surfaceContainerLowest: const Color(0xFF0E0B0A),
+  surfaceContainerLow: const Color(0xFF1B1615),
+  surfaceContainer: const Color(0xFF201B19),
+  surfaceContainerHigh: const Color(0xFF2A2422),
+  surfaceContainerHighest: const Color(0xFF352E2B),
+  onSurfaceVariant: const Color(0xFFB0A49F),
+  outline: const Color(0xFF6E625E),
+  outlineVariant: const Color(0xFF3A322F),
 );
+
+ThemeData _buildTheme(ColorScheme scheme, BrandColors brand) {
+  final isDark = scheme.brightness == Brightness.dark;
+  // Marken-AppBar: hell = kräftiges Rot; dunkel = tiefes, entsättigtes Rot
+  // (nachts weniger blendend, Marke bleibt erkennbar).
+  final appBarBg = isDark ? const Color(0xFF7C1A16) : _brandSeed;
+  final radius = BorderRadius.circular(12);
+
+  return ThemeData(
+    useMaterial3: true,
+    colorScheme: scheme,
+    scaffoldBackgroundColor: scheme.surface,
+    extensions: <ThemeExtension<dynamic>>[brand],
+    appBarTheme: AppBarTheme(
+      backgroundColor: appBarBg,
+      foregroundColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 2,
+      centerTitle: false,
+      titleTextStyle: const TextStyle(
+          fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
+    ),
+    cardTheme: CardThemeData(
+      color: scheme.surface,
+      elevation: 0,
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+    ),
+    listTileTheme: ListTileThemeData(
+      iconColor: scheme.primary,
+      shape: RoundedRectangleBorder(borderRadius: radius),
+    ),
+    dividerTheme: DividerThemeData(
+        color: scheme.outlineVariant, thickness: 1, space: 1),
+    switchTheme: SwitchThemeData(
+      thumbColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected) ? Colors.white : scheme.outline),
+      trackColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected)
+              ? scheme.primary
+              : scheme.surfaceContainerHighest),
+      trackOutlineColor: WidgetStateProperty.resolveWith((s) =>
+          s.contains(WidgetState.selected)
+              ? Colors.transparent
+              : scheme.outline),
+    ),
+    inputDecorationTheme: InputDecorationTheme(
+      filled: true,
+      fillColor: scheme.surfaceContainerHigh,
+      border: OutlineInputBorder(
+          borderRadius: radius, borderSide: BorderSide.none),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: radius,
+          borderSide: BorderSide(color: scheme.outlineVariant)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: radius,
+          borderSide: BorderSide(color: scheme.primary, width: 2)),
+    ),
+    dialogTheme: DialogThemeData(
+      backgroundColor: scheme.surfaceContainerHigh,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+    ),
+    chipTheme: ChipThemeData(
+      backgroundColor: scheme.surfaceContainerHigh,
+      side: BorderSide(color: scheme.outlineVariant),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+    ),
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: radius),
+    ),
+    filledButtonTheme: FilledButtonThemeData(
+      style: FilledButton.styleFrom(
+          minimumSize: const Size(64, 48),
+          shape: RoundedRectangleBorder(borderRadius: radius)),
+    ),
+    elevatedButtonTheme: ElevatedButtonThemeData(
+      style: ElevatedButton.styleFrom(
+          minimumSize: const Size(64, 48),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: radius)),
+    ),
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+          minimumSize: const Size(64, 48),
+          side: BorderSide(color: scheme.outline),
+          shape: RoundedRectangleBorder(borderRadius: radius)),
+    ),
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+          shape: RoundedRectangleBorder(borderRadius: radius)),
+    ),
+    bottomNavigationBarTheme: BottomNavigationBarThemeData(
+      backgroundColor: scheme.surfaceContainer,
+      selectedItemColor: scheme.primary,
+      unselectedItemColor: scheme.onSurfaceVariant,
+      type: BottomNavigationBarType.fixed,
+      elevation: 0,
+    ),
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: scheme.surfaceContainer,
+      indicatorColor: scheme.primaryContainer,
+      elevation: 0,
+    ),
+  );
+}
+
+final _lightTheme = _buildTheme(_lightScheme, BrandColors.light);
+final _darkTheme = _buildTheme(_darkScheme, BrandColors.dark);
 
 class MyApp extends StatefulWidget {
   final bool hasConfig;
