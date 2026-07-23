@@ -37,6 +37,13 @@ abstract final class AppPrefsKeys {
   static const transmissionEnabled = 'transmissionEnabled';
   static const lastStatus = 'lastStatus';
 
+  /// Ob gerade eine Tracking-Session aktiv ist (Voll- oder Energiesparmodus).
+  /// Wird vom Hintergrunddienst gesetzt und dient dazu, nach einem Neustart/
+  /// Absturz (Boot-Autostart) zu entscheiden, ob das Tracking fortzusetzen ist
+  /// oder der Dienst sich beenden soll. Nicht mit [transmissionEnabled] (=
+  /// Nutzer-Absicht „senden") zu verwechseln.
+  static const serviceActive = 'service_active';
+
   // Standort-Tracking-Verhalten (konfigurierbar in „Einstellungen")
   /// Hohe Standort-Frequenz: kürzere Intervalle & kleinere Distanzfilter →
   /// häufigere Positionen, mehr Akkuverbrauch. Default true.
@@ -50,6 +57,13 @@ abstract final class AppPrefsKeys {
   static const lastActivityMs = 'last_activity_ms';
   static const lastFlushMs = 'lastFlushMs';
   static const lastDbCleanupMs = 'lastDbCleanupMs';
+
+  // Feld-Diagnose (vom Hintergrunddienst gespiegelt, in der Systemprüfung
+  // angezeigt).
+  /// Zeitpunkt (Epoch-ms) des zuletzt vom GPS-Stream gelieferten Fix.
+  static const lastStreamFixMs = 'last_stream_fix_ms';
+  /// Anzahl der Stream-Neuaufbauten seit Dienststart (Recovery + Watchdog).
+  static const streamRestartCount = 'stream_restart_count';
 
   /// Zeitpunkt (Epoch-ms) der letzten erfolgreich vom Server bestätigten
   /// Übertragung (HTTP 2xx). Grundlage für die Silent-Failure-Warnung.

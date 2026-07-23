@@ -131,7 +131,11 @@ class AdaptiveLocationSettings {
       case TrackingMode.balanced:
         return LocationAccuracy.medium;
       case TrackingMode.powerSaver:
-        return LocationAccuracy.low;
+        // NICHT `low`: das entspricht PRIORITY_LOW_POWER (reine Funkzellen-/
+        // WLAN-Ortung, grob und sprunganfällig). `medium` (PRIORITY_BALANCED)
+        // bezieht GPS mit ein → deutlich stabilere Position, kaum Mehrverbrauch
+        // dank großem Distanzfilter im Energiesparmodus.
+        return LocationAccuracy.medium;
     }
   }
 
@@ -271,11 +275,16 @@ class AdaptiveLocationSettings {
   /// im powerSaver-Modus nicht denselben Stromverbrauch wie ein Einsatz-Fix
   /// hat.
   static LocationAccuracy getOneShotAccuracy(TrackingMode mode) {
+    // Heartbeat-One-Shots sind selten und sollen ZUVERLÄSSIG sein: immer
+    // GPS-Genauigkeit, nie WLAN-/Funkzellen-Ortung. Genau diese groben
+    // Heartbeat-Fixes waren eine Hauptursache für „Standort springt, wo ich
+    // nicht bin". Der längere Timeout (getOneShotTimeout) fängt den GPS-Cold-
+    // Start ab.
     if (defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS) {
-      return _iosAccuracyFor(mode);
+      return LocationAccuracy.best;
     }
-    return _androidAccuracyFor(mode);
+    return LocationAccuracy.high;
   }
 
   /// Timeout für einmalige Heartbeat-GPS-Abfragen — bei `powerSaver` darf

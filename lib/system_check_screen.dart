@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:battery_plus/battery_plus.dart';
 import 'package:disable_battery_optimization/disable_battery_optimization.dart';
 import 'data/app_prefs.dart';
+import 'data/location_sync_manager.dart';
 import 'data/unit_type_store.dart';
 import 'theme/brand_colors.dart';
 import 'unit_type_picker_screen.dart';
@@ -97,6 +98,10 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
         title: 'Einheitstyp',
         description: 'Betriebsmodus konfiguriert',
       ),
+      SystemCheckItem(
+        title: 'Standort-Diagnose',
+        description: 'Letzter Fix/Upload, Queue, Stream-Neustarts',
+      ),
     ]);
   }
 
@@ -114,10 +119,58 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
       _checkConfiguration(),
       _checkBatteryLevel(),
       _checkUnitType(),
+      _checkTrackingDiagnostics(),
     ]);
 
     _updateCounts();
     setState(() => _isChecking = false);
+  }
+
+  /// Informativ: spiegelt die vom Hintergrunddienst persistierten Diagnose-
+  /// Werte (letzter Stream-Fix, letzter bestätigter Upload, ausstehende Punkte,
+  /// Stream-Neustarts). Hilft im Einsatz, „warum kommt nichts an" zu erkennen.
+  Future<void> _checkTrackingDiagnostics() async {
+    final check = _checks.firstWhere((c) => c.title == 'Standort-Diagnose');
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final lastFix = prefs.getInt(AppPrefsKeys.lastStreamFixMs) ?? 0;
+      final lastUp = prefs.getInt(AppPrefsKeys.lastSuccessfulContactMs) ?? 0;
+      final restarts = prefs.getInt(AppPrefsKeys.streamRestartCount) ?? 0;
+      final transmit = prefs.getBool(AppPrefsKeys.transmissionEnabled) ?? false;
+
+      int pending = 0;
+      try {
+        final stats = await LocationSyncManager.instance.getStats();
+        pending = stats['pending'] ?? 0;
+      } catch (_) {}
+
+      String ago(int ms) => ms <= 0 ? '—' : _fmtAgo(nowMs - ms);
+
+      check.details = 'Letzter GPS-Fix: ${ago(lastFix)}\n'
+          'Letzter Upload: ${ago(lastUp)}\n'
+          'Ausstehend: $pending · Stream-Neustarts: $restarts';
+
+      // Warnung, wenn Übertragung aktiv ist, aber seit >5 min kein bestätigter
+      // Upload mehr kam.
+      final staleUpload = transmit &&
+          lastUp > 0 &&
+          nowMs - lastUp > const Duration(minutes: 5).inMilliseconds;
+      check.status = staleUpload ? CheckStatus.warning : CheckStatus.ok;
+    } catch (e) {
+      check.status = CheckStatus.warning;
+      check.details = 'Diagnose nicht verfügbar: $e';
+    }
+    if (mounted) setState(() {});
+  }
+
+  String _fmtAgo(int ms) {
+    final s = ms ~/ 1000;
+    if (s < 60) return 'vor $s s';
+    final m = s ~/ 60;
+    if (m < 60) return 'vor $m min';
+    final h = m ~/ 60;
+    return 'vor $h h';
   }
 
   void _updateCounts() {

@@ -10,6 +10,8 @@ import 'data/duty_end_config.dart';
 import 'data/gpx_exporter.dart';
 import 'data/profile_store.dart';
 import 'dienstanmeldung_screen.dart';
+import 'onboarding_screen.dart';
+import 'service.dart' show stopBackgroundServiceCompletely;
 import 'main.dart' show themeNotifier, toggleTheme;
 import 'utils/formatters.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
@@ -86,6 +88,60 @@ class _MoreScreenState extends State<MoreScreen> {
     if (!mounted) return;
     setState(() => _preciseLocationOnly = value);
     await _notifyServiceTrackingPrefsChanged();
+  }
+
+  /// „Einsatz beenden": stoppt die Übertragung und löscht Konfiguration,
+  /// Zugangsdaten und Einstellungen — die App startet danach wieder in der
+  /// Einrichtung. Bewusst destruktiv, daher mit Rückfrage.
+  Future<void> _endDeploymentAndWipe() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Einsatz beenden?'),
+        content: const Text(
+          'Die Standortübertragung wird gestoppt und ALLE Einstellungen sowie '
+          'die Konfiguration (Server, Token, ISSI, Zugangsdaten, Profile) '
+          'werden gelöscht.\n\nDas lässt sich nicht rückgängig machen — die App '
+          'startet danach in der Einrichtung.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Beenden & löschen'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    // 1) Laufenden Hintergrunddienst stoppen (Tracking aus, Service beenden),
+    //    bevor die Konfiguration entfernt wird.
+    try {
+      await stopBackgroundServiceCompletely();
+    } catch (_) {/* Service lief evtl. nicht — ignorieren */}
+
+    // 2) Geplante Automatiken abbestellen (sonst greifen sie ins Leere).
+    await AutoDeleteConfig.cancel();
+    await DutyEndConfig.cancel();
+
+    // 3) Konfiguration, Zugangsdaten und Einsatz-Zustand löschen.
+    await AutoDeleteConfig.wipeNow();
+
+    if (!mounted) return;
+
+    // 4) Zurück in die Einrichtung, Navigations-Stack leeren.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const OnboardingScreen()),
+      (_) => false,
+    );
   }
 
   Future<void> _setWakelockInDeployment(bool value) async {
@@ -477,6 +533,29 @@ class _MoreScreenState extends State<MoreScreen> {
                   MaterialPageRoute(
                       builder: (_) => const ProDashboardScreen()),
                 ),
+              ),
+
+              _sectionHeader('Einsatz'),
+              ListTile(
+                leading: Icon(Icons.delete_forever,
+                    color: Theme.of(context).colorScheme.error),
+                title: Text(
+                  'Einsatz beenden & alles löschen',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+                subtitle: const Text(
+                  'Übertragung stoppen und Konfiguration, Zugangsdaten und '
+                  'Einstellungen löschen. Das Gerät startet danach in der '
+                  'Einrichtung.',
+                  style: TextStyle(fontSize: 12),
+                ),
+                trailing: Icon(Icons.chevron_right,
+                    color: Theme.of(context).colorScheme.error),
+                onTap: _endDeploymentAndWipe,
               ),
               const SizedBox(height: 32),
             ],

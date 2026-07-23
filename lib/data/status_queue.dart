@@ -69,6 +69,11 @@ class StatusQueue {
     _db = await openDatabase(
       _dbpath!,
       version: _dbVersion,
+      onConfigure: (db) async {
+        // WAL: crash-sicherer und weniger Lock-Konflikte (siehe LocationQueue).
+        await db.rawQuery('PRAGMA journal_mode=WAL');
+        await db.execute('PRAGMA synchronous=NORMAL');
+      },
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE $_table (

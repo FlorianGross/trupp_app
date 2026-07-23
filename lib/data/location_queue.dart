@@ -90,6 +90,13 @@ class LocationQueue {
     _db = await openDatabase(
       _dbpath!,
       version: _dbVersion,
+      onConfigure: (db) async {
+        // WAL: robuster gegen Abstürze und deutlich weniger „database is
+        // locked" bei parallelem Insert (Stream) und Flush (Timer). NORMAL
+        // ist mit WAL crash-sicher und schneller als FULL.
+        await db.rawQuery('PRAGMA journal_mode=WAL');
+        await db.execute('PRAGMA synchronous=NORMAL');
+      },
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE $_table (
@@ -184,6 +191,27 @@ class LocationQueue {
     final db = await _open();
     final cutoff = DateTime.now().millisecondsSinceEpoch - maxAge.inMilliseconds;
     return db.delete(_table, where: 'ts_ms < ?', whereArgs: [cutoff]);
+  }
+
+  /// Harte Obergrenze gegen unbegrenztes Wachstum (z. B. langer Server-
+  /// Ausfall): überzählige Zeilen löschen, **gesendete zuerst** (die sind schon
+  /// übertragen), dann die ältesten. Gibt die Anzahl gelöschter Zeilen zurück.
+  Future<int> capRows({required int maxTotal}) async {
+    if (maxTotal <= 0) return 0;
+    final db = await _open();
+    final total = await totalCount();
+    if (total <= maxTotal) return 0;
+    final excess = total - maxTotal;
+    return db.rawDelete(
+      '''
+      DELETE FROM $_table WHERE id IN (
+        SELECT id FROM $_table
+        ORDER BY is_sent DESC, ts_ms ASC, id ASC
+        LIMIT ?
+      )
+      ''',
+      [excess],
+    );
   }
 
   Future<void> close() async {
