@@ -118,7 +118,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
         foregroundColor: Colors.white,
         elevation: 0,
       ),
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
@@ -197,12 +197,14 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
               style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
-                  color: Colors.grey.shade800),
+                  color: Theme.of(context).colorScheme.onSurface),
             ),
             const SizedBox(height: 4),
             Text(
               'Melde dich mit deinen EDP-Zugangsdaten an, um Pro-Funktionen zu nutzen.',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 16),
             TextField(
@@ -211,7 +213,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
                 labelText: 'Benutzername',
                 prefixIcon: const Icon(Icons.person_outline),
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10)),
               ),
@@ -224,7 +226,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
                 labelText: 'Passwort',
                 prefixIcon: const Icon(Icons.lock_outline),
                 filled: true,
-                fillColor: Colors.grey.shade50,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10)),
                 suffixIcon: IconButton(
@@ -299,7 +301,9 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
                     Text(_loggedInUser!,
                         style: TextStyle(
                             fontSize: 12,
-                            color: Colors.grey.shade600)),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
                 ],
               ),
             ),
@@ -322,7 +326,7 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
             style: TextStyle(
                 fontSize: 15,
                 fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800)),
+                color: Theme.of(context).colorScheme.onSurface)),
         const SizedBox(height: 12),
         Row(
           children: [
@@ -420,7 +424,8 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
               const SizedBox(height: 4),
               Text(subtitle,
                   style: TextStyle(
-                      fontSize: 12, color: Colors.grey.shade600)),
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ],
           ),
         ),

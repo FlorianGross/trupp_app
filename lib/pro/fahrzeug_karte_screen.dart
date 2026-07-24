@@ -295,7 +295,9 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
           SizedBox(
             width: 110,
             child: Text(label,
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    fontSize: 13)),
           ),
           Expanded(
             child: Text(value,
@@ -382,13 +384,18 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
                           padding: const EdgeInsets.symmetric(
                               horizontal: 16, vertical: 10),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.9),
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surface
+                                .withOpacity(0.9),
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             'Keine Fahrzeuge mit GPS-Daten',
-                            style:
-                                TextStyle(color: Colors.grey.shade700),
+                            style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant),
                           ),
                         ),
                       ),
@@ -406,7 +413,7 @@ class _FahrzeugKarteScreenState extends State<FahrzeugKarteScreen> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
+        color: Theme.of(context).colorScheme.surface.withOpacity(0.92),
         borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(

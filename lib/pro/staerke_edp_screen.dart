@@ -167,7 +167,8 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
               tooltip: 'Aktualisieren'),
         ],
       ),
-      backgroundColor: _isDark ? null : Colors.grey[100],
+      backgroundColor:
+          _isDark ? null : Theme.of(context).colorScheme.surface,
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _loadError != null
@@ -196,8 +197,9 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
   }
 
   Widget _buildContent() {
-    final cardBg =
-        _isDark ? Theme.of(context).colorScheme.surface : Colors.white;
+    final cardBg = _isDark
+        ? Theme.of(context).colorScheme.surfaceContainer
+        : Theme.of(context).colorScheme.surfaceContainerLowest;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -222,7 +224,8 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                       hintText: 'Suchen (Rufname, Wache…)',
                       prefixIcon: const Icon(Icons.search),
                       filled: true,
-                      fillColor: Colors.grey.shade50,
+                      fillColor:
+                          Theme.of(context).colorScheme.surfaceContainerHigh,
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(10),
                         borderSide: BorderSide.none,
@@ -282,17 +285,28 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                       : Container(
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHigh,
                             borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Colors.grey.shade200),
+                            border: Border.all(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .outlineVariant),
                           ),
-                          child: const Row(
+                          child: Row(
                             children: [
                               Icon(Icons.info_outline,
-                                  size: 16, color: Colors.grey),
-                              SizedBox(width: 8),
+                                  size: 16,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant),
+                              const SizedBox(width: 8),
                               Text('Noch kein Fahrzeug gewählt',
-                                  style: TextStyle(color: Colors.grey)),
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant)),
                             ],
                           ),
                         ),
@@ -303,7 +317,10 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                     child: Text(
                       '${_filtered.length} Fahrzeug${_filtered.length != 1 ? 'e' : ''}',
                       style: TextStyle(
-                          fontSize: 11, color: Colors.grey.shade500),
+                          fontSize: 11,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant),
                     ),
                   ),
                   // Vehicle list
@@ -315,8 +332,10 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                               padding: const EdgeInsets.all(16),
                               child: Text(
                                 'Keine Treffer',
-                                style:
-                                    TextStyle(color: Colors.grey.shade500),
+                                style: TextStyle(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant),
                               ),
                             ),
                           )
@@ -335,7 +354,9 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                                   Icons.directions_car,
                                   color: isSel
                                       ? Colors.red.shade800
-                                      : Colors.grey,
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
                                   size: 20,
                                 ),
                                 title: Text(m.displayName,
@@ -378,7 +399,9 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                                         style: TextStyle(
                                             fontSize: 11,
                                             fontWeight: FontWeight.bold,
-                                            color: Colors.grey.shade600))
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .onSurfaceVariant))
                                     : null,
                                 onTap: () => _select(m),
                                 shape: RoundedRectangleBorder(
@@ -457,7 +480,8 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red.shade800,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor: Colors.grey.shade300,
+                  disabledBackgroundColor:
+                      Theme.of(context).colorScheme.outlineVariant,
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12)),
@@ -500,7 +524,7 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                 fontSize: 12,
                 color: _selectedTyp == null
                     ? Colors.red.shade800
-                    : Colors.grey.shade700,
+                    : Theme.of(context).colorScheme.onSurfaceVariant,
               ),
             ),
           ),
@@ -517,7 +541,7 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
                     fontSize: 12,
                     color: _selectedTyp == t.typ
                         ? Colors.red.shade800
-                        : Colors.grey.shade700,
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
                 ),
               )),
@@ -555,11 +579,13 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
         Text(abbr,
             style: TextStyle(
                 fontSize: 11,
-                color: Colors.grey.shade600,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w700)),
         const SizedBox(height: 2),
         Text(label,
-            style: const TextStyle(fontSize: 10, color: Colors.grey),
+            style: TextStyle(
+                fontSize: 10,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis),
         const SizedBox(height: 8),
@@ -598,12 +624,16 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-          color: active ? Colors.red.shade800 : Colors.grey.shade200,
+          color: active
+              ? Colors.red.shade800
+              : Theme.of(context).colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Icon(icon,
             size: 16,
-            color: active ? Colors.white : Colors.grey.shade400),
+            color: active
+                ? Colors.white
+                : Theme.of(context).colorScheme.onSurfaceVariant),
       ),
     );
   }
