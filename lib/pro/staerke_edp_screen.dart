@@ -551,11 +551,25 @@ class _StaerkeEdpScreenState extends State<StaerkeEdpScreen> {
   }
 
   Widget _buildCard({required Color cardBg, required Widget child}) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-          color: cardBg, borderRadius: BorderRadius.circular(12)),
+        color: cardBg,
+        borderRadius: BorderRadius.circular(18),
+        border: isDark ? Border.all(color: cs.outlineVariant) : null,
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+      ),
       child: child,
     );
   }

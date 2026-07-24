@@ -184,9 +184,6 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
 
   Widget _buildLoginForm() {
     return Card(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -276,9 +273,6 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
 
   Widget _buildLoggedInCard() {
     return Card(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 1,
       child: Padding(
         padding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -396,12 +390,9 @@ class _ProDashboardScreenState extends State<ProDashboardScreen> {
     required VoidCallback onTap,
   }) {
     return Card(
-      shape:
-          RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      elevation: 2,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
