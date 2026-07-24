@@ -258,16 +258,16 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.person_add_alt_1, size: 64, color: Colors.grey.shade400),
+          Icon(Icons.person_add_alt_1, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(height: 16),
           Text(
             'Noch keine Profile gespeichert',
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 16),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 16),
           ),
           const SizedBox(height: 8),
           Text(
             'Tippe auf + um ein Profil anzulegen',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 13),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
         ],
       ),
@@ -323,12 +323,12 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                 decoration: BoxDecoration(
                   color: isActive
                       ? Colors.red.shade800
-                      : Colors.grey.shade200,
+                      : Theme.of(context).colorScheme.surfaceContainerHigh,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   isActive ? Icons.radio_button_checked : Icons.radio_button_unchecked,
-                  color: isActive ? Colors.white : Colors.grey.shade500,
+                  color: isActive ? Colors.white : Theme.of(context).colorScheme.onSurfaceVariant,
                   size: 22,
                 ),
               ),
@@ -361,7 +361,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                     Text(
                       '${profile.protocol}://${profile.server}',
                       style: TextStyle(
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontSize: 13,
                       ),
                     ),
@@ -369,7 +369,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                       'ISSI: ${profile.issi}'
                       '${profile.trupp.isNotEmpty ? '  •  ${profile.trupp}' : ''}',
                       style: TextStyle(
-                        color: Colors.grey.shade500,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontSize: 12,
                       ),
                     ),
@@ -399,7 +399,7 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
                       Text(
                         'Läuft ${profile.ttlHours} h nach Aktivierung ab',
                         style: TextStyle(
-                          color: Colors.grey.shade500,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 12,
                         ),
                       ),
@@ -539,11 +539,9 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
     Navigator.pop(context, profile);
   }
 
+  // Füllung/Rahmen zentral aus inputDecorationTheme (dark-mode-fähig).
   InputDecoration _dec(String label, {bool required = false}) => InputDecoration(
         labelText: required ? '$label *' : label,
-        filled: true,
-        fillColor: Colors.grey.shade50,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
       );
 
   @override
@@ -593,9 +591,9 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
                 backgroundColor: WidgetStateProperty.resolveWith((states) =>
                     states.contains(WidgetState.selected)
                         ? Colors.red.shade800
-                        : Colors.grey.shade200),
+                        : Theme.of(context).colorScheme.surfaceContainerHigh),
                 foregroundColor: WidgetStateProperty.resolveWith((states) =>
-                    states.contains(WidgetState.selected) ? Colors.white : Colors.black87),
+                    states.contains(WidgetState.selected) ? Colors.white : Theme.of(context).colorScheme.onSurface),
               ),
             ),
             const SizedBox(height: 8),
@@ -604,7 +602,7 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
                   ? 'Einsatz-Profil: wird nach Ablauf der Gültigkeitsdauer '
                       'automatisch gelöscht und das Standard-Profil wieder aktiviert.'
                   : 'Dauerhaftes Profil, z. B. für ein Fahrzeug.',
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+              style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
             ),
             const SizedBox(height: 12),
             if (_kind == ProfileKind.temporary)
@@ -645,9 +643,9 @@ class _ProfileEditorScreenState extends State<_ProfileEditorScreen> {
                 backgroundColor: WidgetStateProperty.resolveWith((states) =>
                     states.contains(WidgetState.selected)
                         ? Colors.red.shade800
-                        : Colors.grey.shade200),
+                        : Theme.of(context).colorScheme.surfaceContainerHigh),
                 foregroundColor: WidgetStateProperty.resolveWith((states) =>
-                    states.contains(WidgetState.selected) ? Colors.white : Colors.black87),
+                    states.contains(WidgetState.selected) ? Colors.white : Theme.of(context).colorScheme.onSurface),
               ),
             ),
             const SizedBox(height: 12),
