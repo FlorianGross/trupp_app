@@ -30,6 +30,11 @@ class StatusHistory {
   static const _key = 'status_history';
   static const _maxEntries = 200;
 
+  /// Wird bei jedem neuen Eintrag erhöht. Offene Verlaufs-Ansichten (im
+  /// selben Isolate) hören darauf und laden sich live neu – so ist der
+  /// Verlauf nicht mehr auf dem alten Stand, wenn ein Status gesetzt wird.
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
   static Future<void> add(int status) async {
     final prefs = await SharedPreferences.getInstance();
     final entries = await _load(prefs);
@@ -44,6 +49,9 @@ class StatusHistory {
     }
 
     await prefs.setString(_key, jsonEncode(entries.map((e) => e.toJson()).toList()));
+
+    // Offene Ansichten benachrichtigen
+    revision.value++;
   }
 
   static Future<List<StatusEntry>> getAll() async {
@@ -78,6 +86,14 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
   void initState() {
     super.initState();
     _load();
+    // Live aktualisieren, sobald ein neuer Status gesetzt wird.
+    StatusHistory.revision.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    StatusHistory.revision.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -97,7 +113,38 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
         centerTitle: true,
       ),
       body: _entries.isEmpty
-          ? const Center(child: Text('Noch keine Statuswechsel'))
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.history_toggle_off_rounded,
+                      size: 64,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withOpacity(0.6),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Noch keine Statuswechsel',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Sobald du einen Status setzt, erscheint er hier – live.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : ListView.builder(
               itemCount: _entries.length,
               itemBuilder: (context, index) {
@@ -116,20 +163,34 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   );
                 }
 
+                final cs = Theme.of(context).colorScheme;
                 final tile = Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: isDark
-                        ? Theme.of(context).colorScheme.surface
-                        : Colors.white,
-                    borderRadius: BorderRadius.circular(10),
+                        ? cs.surfaceContainer
+                        : cs.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(14),
+                    border: isDark
+                        ? Border.all(color: cs.outlineVariant)
+                        : null,
+                    boxShadow: isDark
+                        ? null
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 6,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                   ),
                   child: Row(
                     children: [
@@ -167,7 +228,7 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                         fmtTime(dt),
                         style: TextStyle(
                           fontSize: 14,
-                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontFamily: 'monospace',
                         ),
                       ),

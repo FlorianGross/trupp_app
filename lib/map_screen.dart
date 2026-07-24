@@ -174,7 +174,6 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final center = _currentPosition ?? const LatLng(51.1657, 10.4515);
     final isReplay = _mode == _MapMode.replay;
 
@@ -293,7 +292,7 @@ class _MapScreenState extends State<MapScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: (isDark ? Colors.grey.shade900 : Colors.white).withOpacity(0.9),
+                color: Theme.of(context).colorScheme.surface.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(10),
                 boxShadow: [
                   BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 6),
@@ -317,7 +316,7 @@ class _MapScreenState extends State<MapScreen> {
                               '${idx + 1} / ${_replayFixes.length} Punkte',
                               style: TextStyle(
                                 fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black87,
+                                color: Theme.of(context).colorScheme.onSurface,
                               ),
                             ),
                             const Spacer(),
@@ -329,9 +328,9 @@ class _MapScreenState extends State<MapScreen> {
                                 style: TextStyle(
                                   fontSize: 13,
                                   fontFamily: 'monospace',
-                                  color: isDark
-                                      ? Colors.grey.shade300
-                                      : Colors.grey.shade700,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
                                 ),
                               ),
                           ],
@@ -343,7 +342,7 @@ class _MapScreenState extends State<MapScreen> {
                       '${_trackPoints.length} Punkte',
                       style: TextStyle(
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.white : Colors.black87,
+                        color: Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const Spacer(),
@@ -353,7 +352,7 @@ class _MapScreenState extends State<MapScreen> {
                         '${_currentPosition!.longitude.toStringAsFixed(5)}',
                         style: TextStyle(
                           fontSize: 12,
-                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                   ],
@@ -363,7 +362,7 @@ class _MapScreenState extends State<MapScreen> {
           ),
 
           // Replay-Panel unten
-          if (isReplay) _buildReplayPanel(isDark),
+          if (isReplay) _buildReplayPanel(),
 
           // Zentrierungs-Button (nur Live)
           if (!isReplay)
@@ -411,8 +410,8 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  Widget _buildReplayPanel(bool isDark) {
-    final bg = isDark ? Colors.grey.shade900 : Colors.white;
+  Widget _buildReplayPanel() {
+    final bg = Theme.of(context).colorScheme.surface;
     final hasData = _replayFixes.isNotEmpty;
 
     return Positioned(
@@ -435,7 +434,8 @@ class _MapScreenState extends State<MapScreen> {
                 data: SliderTheme.of(context).copyWith(
                   activeTrackColor: Colors.blue.shade600,
                   thumbColor: Colors.blue.shade600,
-                  inactiveTrackColor: Colors.grey.shade300,
+                  inactiveTrackColor:
+                      Theme.of(context).colorScheme.surfaceContainerHighest,
                   trackHeight: 3,
                   thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
                 ),

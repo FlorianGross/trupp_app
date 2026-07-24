@@ -435,13 +435,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     // Seitenliste steht, kurz einen Ladeindikator zeigen — sonst würde man
     // eine zu überspringende Seite kurz aufblitzen sehen.
     if (!_ready) {
-      return const Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator()),
+      return Scaffold(
+        backgroundColor: Theme.of(context).colorScheme.surface,
+        body: const Center(child: CircularProgressIndicator()),
       );
     }
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: Column(
           children: [
@@ -685,7 +685,7 @@ class _ProgressHeader extends StatelessWidget {
                     onPressed: onBack,
                     padding: EdgeInsets.zero,
                     style: IconButton.styleFrom(
-                      foregroundColor: Colors.grey.shade600,
+                      foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   )
                 : const SizedBox.shrink(),
@@ -706,7 +706,7 @@ class _ProgressHeader extends StatelessWidget {
                         ? Colors.red.shade300
                         : active
                             ? Colors.red.shade800
-                            : Colors.grey.shade200,
+                            : Theme.of(context).colorScheme.outlineVariant,
                     borderRadius: BorderRadius.circular(4),
                   ),
                 );
@@ -720,7 +720,7 @@ class _ProgressHeader extends StatelessWidget {
               textAlign: TextAlign.right,
               style: TextStyle(
                 fontSize: 11,
-                color: Colors.grey.shade400,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -751,9 +751,9 @@ class _QrScannerSheetState extends State<_QrScannerSheet> {
   Widget build(BuildContext context) {
     return Container(
       height: MediaQuery.of(context).size.height * 0.82,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       ),
       child: Column(
         children: [
@@ -762,7 +762,7 @@ class _QrScannerSheetState extends State<_QrScannerSheet> {
             width: 44,
             height: 5,
             decoration: BoxDecoration(
-              color: Colors.grey.shade300,
+              color: Theme.of(context).colorScheme.outlineVariant,
               borderRadius: BorderRadius.circular(3),
             ),
           ),
@@ -782,7 +782,7 @@ class _QrScannerSheetState extends State<_QrScannerSheet> {
           Text(
             'Halte die Kamera auf den Konfigurations-QR-Code\ndes Administrators.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey.shade600, fontSize: 14, height: 1.5),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 20),
           Expanded(
@@ -900,7 +900,7 @@ class _WelcomePage extends StatelessWidget {
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
-              color: Colors.grey.shade900,
+              color: Theme.of(context).colorScheme.onSurface,
               height: 1.2,
             ),
           ),
@@ -908,7 +908,7 @@ class _WelcomePage extends StatelessWidget {
           Text(
             'Einrichtung in wenigen Schritten',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 15, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 32),
 
@@ -938,15 +938,15 @@ class _WelcomePage extends StatelessWidget {
           // Divider
           Row(
             children: [
-              Expanded(child: Divider(color: Colors.grey.shade200)),
+              Expanded(child: Divider(color: Theme.of(context).colorScheme.outlineVariant)),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Text(
                   'oder',
-                  style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
                 ),
               ),
-              Expanded(child: Divider(color: Colors.grey.shade200)),
+              Expanded(child: Divider(color: Theme.of(context).colorScheme.outlineVariant)),
             ],
           ),
 
@@ -968,8 +968,8 @@ class _WelcomePage extends StatelessWidget {
               style: const TextStyle(fontSize: 15),
             ),
             style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.grey.shade700,
-              side: BorderSide(color: Colors.grey.shade300),
+              foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+              side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
               minimumSize: const Size.fromHeight(52),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
@@ -1052,23 +1052,11 @@ class _ManualConfigForm extends StatelessWidget {
     required this.onFieldChanged,
   });
 
+  // Füllung, Rahmen und Fokus-Rahmen kommen zentral aus dem
+  // inputDecorationTheme (Theme-Token, dark-mode-fähig).
   InputDecoration _dec(String label, {bool required = false}) {
     return InputDecoration(
       labelText: required ? '$label *' : label,
-      filled: true,
-      fillColor: Colors.grey.shade50,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.grey.shade300),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: Colors.red.shade800, width: 2),
-      ),
     );
   }
 
@@ -1083,7 +1071,7 @@ class _ManualConfigForm extends StatelessWidget {
           const SizedBox(height: 6),
           Text(
             'GPS-Tracking und Statusmeldungen via EDP-Webhook-Schnittstelle.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           // Protocol
@@ -1099,13 +1087,13 @@ class _ManualConfigForm extends StatelessWidget {
                 if (states.contains(WidgetState.selected)) {
                   return Colors.red.shade800;
                 }
-                return Colors.grey.shade100;
+                return Theme.of(context).colorScheme.surfaceContainerHigh;
               }),
               foregroundColor: WidgetStateProperty.resolveWith((states) {
                 if (states.contains(WidgetState.selected)) {
                   return Colors.white;
                 }
-                return Colors.black87;
+                return Theme.of(context).colorScheme.onSurface;
               }),
             ),
           ),
@@ -1146,7 +1134,7 @@ class _ManualConfigForm extends StatelessWidget {
           Text(
             'EDP-Pro-API-Server – für ISSI-Auswahl (Tetra-Endgeräte, '
             'Fahrzeugabfrage).',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -1157,7 +1145,7 @@ class _ManualConfigForm extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             '* Pflichtfelder',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade400),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ],
       ),
@@ -1211,7 +1199,7 @@ class _IssiPage extends StatelessWidget {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w800,
-              color: Colors.grey.shade900,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 8),
@@ -1219,7 +1207,7 @@ class _IssiPage extends StatelessWidget {
             'Wähle dein TETRA-Endgerät oder Einsatzmittel vom Server\noder gib die ISSI-Nummer direkt ein.',
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontSize: 14, color: Colors.grey.shade500, height: 1.5),
+                fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5),
           ),
           const SizedBox(height: 28),
 
@@ -1243,16 +1231,16 @@ class _IssiPage extends StatelessWidget {
             const SizedBox(height: 16),
             Row(
               children: [
-                Expanded(child: Divider(color: Colors.grey.shade200)),
+                Expanded(child: Divider(color: Theme.of(context).colorScheme.outlineVariant)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 12),
                   child: Text(
                     'oder manuell',
                     style: TextStyle(
-                        color: Colors.grey.shade400, fontSize: 12),
+                        color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
                   ),
                 ),
-                Expanded(child: Divider(color: Colors.grey.shade200)),
+                Expanded(child: Divider(color: Theme.of(context).colorScheme.outlineVariant)),
               ],
             ),
             const SizedBox(height: 16),
@@ -1268,14 +1256,14 @@ class _IssiPage extends StatelessWidget {
               prefixIcon:
                   Icon(Icons.dialpad_rounded, color: Colors.indigo.shade400),
               filled: true,
-              fillColor: Colors.grey.shade50,
+              fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+                borderSide: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
               ),
               enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+                borderSide: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -1382,7 +1370,7 @@ class _PermissionPage extends StatelessWidget {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w800,
-              color: Colors.grey.shade900,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 4),
@@ -1399,16 +1387,16 @@ class _PermissionPage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
             ),
             child: Text(
               description,
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
-                color: Colors.grey.shade700,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 height: 1.6,
               ),
             ),
@@ -1473,8 +1461,8 @@ class _PermissionPage extends StatelessWidget {
                   child: OutlinedButton(
                     onPressed: onNext,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey.shade500,
-                      side: BorderSide(color: Colors.grey.shade200),
+                      foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
                       minimumSize: const Size.fromHeight(50),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14)),
@@ -1556,7 +1544,7 @@ class _BatteryPage extends StatelessWidget {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w800,
-              color: Colors.grey.shade900,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 4),
@@ -1573,9 +1561,9 @@ class _BatteryPage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
             ),
             child: Text(
               'Android schränkt Apps im Hintergrund ein, um Akku zu sparen. '
@@ -1583,7 +1571,7 @@ class _BatteryPage extends StatelessWidget {
               'sollte die Akku-Optimierung für TruppApp deaktiviert sein.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                  fontSize: 15, color: Colors.grey.shade700, height: 1.6),
+                  fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.6),
             ),
           ),
           const SizedBox(height: 24),
@@ -1645,8 +1633,8 @@ class _BatteryPage extends StatelessWidget {
                   child: OutlinedButton(
                     onPressed: onNext,
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey.shade500,
-                      side: BorderSide(color: Colors.grey.shade200),
+                      foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                      side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
                       minimumSize: const Size.fromHeight(50),
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14)),
@@ -1711,14 +1699,14 @@ class _UnitTypePage extends StatelessWidget {
             style: TextStyle(
               fontSize: 24,
               fontWeight: FontWeight.w800,
-              color: Colors.grey.shade900,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             'Du kannst die Auswahl jederzeit im Menü ändern.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
           const SizedBox(height: 20),
           Expanded(
@@ -1738,7 +1726,8 @@ class _UnitTypePage extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red.shade800,
               foregroundColor: Colors.white,
-              disabledBackgroundColor: Colors.grey.shade200,
+              disabledBackgroundColor:
+                  Theme.of(context).colorScheme.surfaceContainerHighest,
               minimumSize: const Size.fromHeight(54),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(14)),
@@ -1786,10 +1775,12 @@ class _UnitTypeCard extends StatelessWidget {
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
           decoration: BoxDecoration(
-            color: isSelected ? _color.withOpacity(0.08) : Colors.white,
+            color: isSelected
+                ? _color.withOpacity(0.08)
+                : Theme.of(context).colorScheme.surfaceContainerHigh,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isSelected ? _color : Colors.grey.shade200,
+              color: isSelected ? _color : Theme.of(context).colorScheme.outlineVariant,
               width: isSelected ? 2.5 : 1.5,
             ),
             boxShadow: isSelected
@@ -1824,7 +1815,7 @@ class _UnitTypeCard extends StatelessWidget {
                       style: TextStyle(
                         fontWeight: FontWeight.w700,
                         fontSize: 16,
-                        color: isSelected ? _color : Colors.grey.shade900,
+                        color: isSelected ? _color : Theme.of(context).colorScheme.onSurface,
                       ),
                     ),
                     const SizedBox(height: 4),
@@ -1832,7 +1823,7 @@ class _UnitTypeCard extends StatelessWidget {
                       unitType.description,
                       style: TextStyle(
                         fontSize: 12,
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         height: 1.4,
                       ),
                     ),
@@ -1849,7 +1840,7 @@ class _UnitTypeCard extends StatelessWidget {
                         size: 26)
                     : Icon(Icons.circle_outlined,
                         key: const ValueKey('unchecked'),
-                        color: Colors.grey.shade300,
+                        color: Theme.of(context).colorScheme.outlineVariant,
                         size: 26),
               ),
             ],
@@ -1973,7 +1964,7 @@ class _DutyRegistrationPageState extends State<_DutyRegistrationPage> {
               style: TextStyle(
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
-                color: Colors.grey.shade900,
+                color: Theme.of(context).colorScheme.onSurface,
               ),
             ),
             const SizedBox(height: 8),
@@ -1982,7 +1973,7 @@ class _DutyRegistrationPageState extends State<_DutyRegistrationPage> {
               'Dienstende festlegen.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                  fontSize: 14, color: Colors.grey.shade500, height: 1.5),
+                  fontSize: 14, color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5),
             ),
             const SizedBox(height: 24),
             _actionCard(
@@ -2033,7 +2024,7 @@ class _DutyRegistrationPageState extends State<_DutyRegistrationPage> {
     final cs = Theme.of(context).colorScheme;
     final accent = done ? Colors.green.shade600 : cs.primary;
     return Material(
-      color: Colors.grey.shade50,
+      color: Theme.of(context).colorScheme.surfaceContainerHigh,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -2042,7 +2033,7 @@ class _DutyRegistrationPageState extends State<_DutyRegistrationPage> {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
           ),
           child: Row(
             children: [
@@ -2066,11 +2057,12 @@ class _DutyRegistrationPageState extends State<_DutyRegistrationPage> {
                     const SizedBox(height: 2),
                     Text(subtitle,
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade600)),
+                            fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
+              Icon(Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ],
           ),
         ),
@@ -2124,7 +2116,7 @@ class _DonePage extends StatelessWidget {
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
-              color: Colors.grey.shade900,
+              color: Theme.of(context).colorScheme.onSurface,
             ),
           ),
           const SizedBox(height: 8),
@@ -2132,7 +2124,7 @@ class _DonePage extends StatelessWidget {
             'TruppApp ist eingerichtet und bereit für den Einsatz.',
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontSize: 15, color: Colors.grey.shade500, height: 1.5),
+                fontSize: 15, color: Theme.of(context).colorScheme.onSurfaceVariant, height: 1.5),
           ),
           const SizedBox(height: 28),
 
@@ -2140,9 +2132,9 @@ class _DonePage extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
-              color: Colors.grey.shade50,
+              color: Theme.of(context).colorScheme.surfaceContainerHigh,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.grey.shade200),
+              border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
             ),
             child: Column(
               children: [
@@ -2152,7 +2144,7 @@ class _DonePage extends StatelessWidget {
                       label: 'Server',
                       value: host!),
                 if (host != null && unitType != null)
-                  Divider(height: 20, color: Colors.grey.shade200),
+                  Divider(height: 20, color: Theme.of(context).colorScheme.outlineVariant),
                 if (unitType != null)
                   _SummaryRow(
                       icon: unitType!.icon,
@@ -2198,13 +2190,13 @@ class _SummaryRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Icon(icon, size: 18, color: Colors.grey.shade500),
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.onSurfaceVariant),
         const SizedBox(width: 10),
         Text(
           label,
           style: TextStyle(
               fontSize: 13,
-              color: Colors.grey.shade500,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500),
         ),
         const Spacer(),
@@ -2212,7 +2204,7 @@ class _SummaryRow extends StatelessWidget {
           value,
           style: TextStyle(
               fontSize: 14,
-              color: Colors.grey.shade800,
+              color: Theme.of(context).colorScheme.onSurface,
               fontWeight: FontWeight.w600),
         ),
       ],
@@ -2235,7 +2227,7 @@ class _SectionLabel extends StatelessWidget {
       style: TextStyle(
         fontSize: 13,
         fontWeight: FontWeight.w700,
-        color: Colors.grey.shade600,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
         letterSpacing: 0.5,
       ),
     );
@@ -2255,13 +2247,13 @@ class _ScanRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: Colors.grey.shade500),
+          Icon(icon, size: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(width: 8),
           Text(
             '$label: ',
             style: TextStyle(
               fontSize: 13,
-              color: Colors.grey.shade600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w500,
             ),
           ),

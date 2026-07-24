@@ -222,7 +222,7 @@ class _IssiPickerScreenState extends State<IssiPickerScreen>
                       )
                     : null,
                 filled: true,
-                fillColor: Colors.grey.shade100,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -238,7 +238,7 @@ class _IssiPickerScreenState extends State<IssiPickerScreen>
                 alignment: Alignment.centerLeft,
                 child: Text(
                   '$count Eintr${count != 1 ? 'äge' : 'ag'}',
-                  style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                 ),
               ),
             ),
@@ -274,13 +274,13 @@ class _IssiPickerScreenState extends State<IssiPickerScreen>
               style: TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade800),
+                  color: Theme.of(context).colorScheme.onSurface),
             ),
             const SizedBox(height: 8),
             Text(
               _error!,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+              style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
             const SizedBox(height: 20),
             ElevatedButton.icon(
@@ -336,7 +336,7 @@ class _IssiPickerScreenState extends State<IssiPickerScreen>
                         : _poolOnly
                             ? 'Keine Pool-Geräte gefunden'
                             : 'Keine Treffer für "${_searchCtrl.text}"',
-                    style: TextStyle(color: Colors.grey.shade500),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                 )
               : ListView.separated(
@@ -392,7 +392,7 @@ class _IssiPickerScreenState extends State<IssiPickerScreen>
           _emAll.isEmpty
               ? 'Keine Einsatzmittel gefunden'
               : 'Keine Treffer für "${_searchCtrl.text}"',
-          style: TextStyle(color: Colors.grey.shade500),
+          style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
       );
     }

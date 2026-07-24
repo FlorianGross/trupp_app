@@ -136,15 +136,15 @@ class _DienstanmeldungScreenState extends State<DienstanmeldungScreen> {
     );
   }
 
-  Color get _fieldFill =>
-      _isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade50;
+  Color get _fieldFill => Theme.of(context).colorScheme.surfaceContainerHigh;
   Color get _fieldBorder =>
-      _isDark ? Colors.white.withOpacity(0.12) : Colors.grey.shade200;
+      Theme.of(context).colorScheme.surfaceContainerHighest;
 
   @override
   Widget build(BuildContext context) {
-    final cardBg =
-        _isDark ? Theme.of(context).colorScheme.surface : Colors.white;
+    final cardBg = _isDark
+        ? Theme.of(context).colorScheme.surfaceContainer
+        : Theme.of(context).colorScheme.surfaceContainerLowest;
 
     return Scaffold(
       appBar: AppBar(
@@ -152,9 +152,7 @@ class _DienstanmeldungScreenState extends State<DienstanmeldungScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      backgroundColor: _isDark
-          ? Theme.of(context).scaffoldBackgroundColor
-          : Colors.grey[100],
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -394,7 +392,7 @@ class _DienstanmeldungScreenState extends State<DienstanmeldungScreen> {
         IconButton(
           onPressed: _members.length > 1 ? () => _removeMember(index) : null,
           icon: const Icon(Icons.remove_circle_outline),
-          color: Colors.grey,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
           tooltip: 'Entfernen',
         ),
       ],
@@ -418,12 +416,24 @@ class _DienstanmeldungScreenState extends State<DienstanmeldungScreen> {
   }
 
   Widget _buildCard({required Color cardBg, required Widget child}) {
+    final cs = Theme.of(context).colorScheme;
+    final isDark = cs.brightness == Brightness.dark;
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: cardBg,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(18),
+        border: isDark ? Border.all(color: cs.outlineVariant) : null,
+        boxShadow: isDark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: child,
     );
@@ -452,13 +462,15 @@ class _DienstanmeldungScreenState extends State<DienstanmeldungScreen> {
           abbr,
           style: TextStyle(
               fontSize: 12,
-              color: Colors.grey.shade600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
+          style: TextStyle(
+              fontSize: 10,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
           textAlign: TextAlign.center,
           overflow: TextOverflow.ellipsis,
         ),
@@ -510,7 +522,7 @@ class _DienstanmeldungScreenState extends State<DienstanmeldungScreen> {
         child: Icon(
           icon,
           size: 16,
-          color: active ? cs.onPrimary : Colors.grey.shade500,
+          color: active ? cs.onPrimary : cs.onSurfaceVariant,
         ),
       ),
     );

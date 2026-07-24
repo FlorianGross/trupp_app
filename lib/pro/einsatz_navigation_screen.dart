@@ -180,7 +180,7 @@ class _EinsatzNavigationScreenState
                 hintText: 'Suchen…',
                 prefixIcon: const Icon(Icons.search),
                 filled: true,
-                fillColor: Colors.grey.shade100,
+                fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: BorderSide.none,
@@ -228,12 +228,13 @@ class _EinsatzNavigationScreenState
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(Icons.inbox_outlined,
-                    size: 48, color: Colors.grey.shade400),
+                    size: 48,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
                 const SizedBox(height: 12),
                 Text(
                   'Keinem aktiven Einsatz zugeordnet',
                   style: TextStyle(
-                      color: Colors.grey.shade700,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       fontSize: 15,
                       fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
@@ -242,7 +243,8 @@ class _EinsatzNavigationScreenState
                 Text(
                   'Du kannst direkt die Stärke melden.',
                   style: TextStyle(
-                      color: Colors.grey.shade500, fontSize: 13),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 20),
@@ -269,11 +271,13 @@ class _EinsatzNavigationScreenState
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.inbox_outlined,
-                size: 48, color: Colors.grey.shade400),
+                size: 48,
+                color: Theme.of(context).colorScheme.onSurfaceVariant),
             const SizedBox(height: 12),
             Text(
               'Keine Ergebnisse für "$_filter"',
-              style: TextStyle(color: Colors.grey.shade600),
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ),
           ],
         ),
@@ -352,7 +356,9 @@ class _EinsatzNavigationScreenState
                         Text(e.adresse,
                             style: TextStyle(
                                 fontSize: 13,
-                                color: Colors.grey.shade700)),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant)),
                       ],
                     const SizedBox(height: 6),
                     Row(
@@ -360,14 +366,18 @@ class _EinsatzNavigationScreenState
                         Text('#${e.einsatznummer}',
                             style: TextStyle(
                                 fontSize: 11,
-                                color: Colors.grey.shade500)),
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant)),
                         if (e.eroeff != null) ...
                           [
                             const SizedBox(width: 8),
                             Text(_fmtTime(e.eroeff!),
                                 style: TextStyle(
                                     fontSize: 11,
-                                    color: Colors.grey.shade500)),
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant)),
                           ],
                         const Spacer(),
                         // Navigation icon button
@@ -383,7 +393,9 @@ class _EinsatzNavigationScreenState
                                 size: 16,
                                 color: e.hasCoordinates
                                     ? Colors.red.shade800
-                                    : Colors.grey.shade400,
+                                    : Theme.of(context)
+                                        .colorScheme
+                                        .onSurfaceVariant,
                               ),
                               const SizedBox(width: 4),
                               Text(
@@ -392,7 +404,9 @@ class _EinsatzNavigationScreenState
                                     fontSize: 12,
                                     color: e.hasCoordinates
                                         ? Colors.red.shade800
-                                        : Colors.grey.shade400,
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .onSurfaceVariant,
                                     fontWeight: FontWeight.w600),
                               ),
                             ],

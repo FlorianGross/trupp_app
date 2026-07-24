@@ -591,7 +591,8 @@ class _MoreScreenState extends State<MoreScreen> {
       title: Text(title,
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
       subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-      trailing: const Icon(Icons.chevron_right, color: Colors.grey),
+      trailing: Icon(Icons.chevron_right,
+          color: Theme.of(context).colorScheme.onSurfaceVariant),
       onTap: onTap,
     );
   }

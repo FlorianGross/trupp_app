@@ -554,7 +554,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
       case CheckStatus.error:
         return brand.connectionOffline;
       case CheckStatus.checking:
-        return Colors.grey;
+        return Theme.of(context).colorScheme.onSurfaceVariant;
     }
   }
 
@@ -576,7 +576,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
     final allOk = _errorCount == 0 && _warningCount == 0 && !_isChecking;
 
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('Systemprüfung'),
         backgroundColor: allOk ? Theme.of(context).brand.success : null,
@@ -719,15 +719,28 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
   }
 
   Widget _buildCheckItem(SystemCheckItem check) {
+    final cs = Theme.of(context).colorScheme;
+    final cardColor = cs.brightness == Brightness.dark
+        ? cs.surfaceContainer
+        : cs.surfaceContainerLowest;
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        color: cardColor,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: _getStatusColor(check.status).withOpacity(0.3),
           width: 2,
         ),
+        boxShadow: cs.brightness == Brightness.dark
+            ? null
+            : [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.06),
+                  blurRadius: 10,
+                  offset: const Offset(0, 2),
+                ),
+              ],
       ),
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -758,7 +771,7 @@ class _SystemCheckScreenState extends State<SystemCheckScreen> {
                         check.description,
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ],

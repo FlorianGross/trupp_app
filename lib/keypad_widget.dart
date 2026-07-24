@@ -134,7 +134,7 @@ class Keypad extends StatelessWidget {
     return Container(
       padding: EdgeInsets.fromLTRB(16, isSmallScreen ? 12 : 16, 16, 16),
       decoration: BoxDecoration(
-        color: isDark ? Theme.of(context).colorScheme.surface : Colors.white,
+        color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
@@ -214,7 +214,10 @@ class Keypad extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: isDisabled
-                    ? [Colors.grey.shade300, Colors.grey.shade500]
+                    ? [
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
+                        Theme.of(context).colorScheme.outline,
+                      ]
                     : (isSelected
                     ? [Colors.red.shade600, Colors.red.shade800]
                     : [Colors.red.shade700, Colors.red.shade900]),
