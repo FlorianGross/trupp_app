@@ -113,7 +113,38 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
         centerTitle: true,
       ),
       body: _entries.isEmpty
-          ? const Center(child: Text('Noch keine Statuswechsel'))
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.history_toggle_off_rounded,
+                      size: 64,
+                      color: Theme.of(context)
+                          .colorScheme
+                          .onSurfaceVariant
+                          .withOpacity(0.6),
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      'Noch keine Statuswechsel',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      'Sobald du einen Status setzt, erscheint er hier – live.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
           : ListView.builder(
               itemCount: _entries.length,
               itemBuilder: (context, index) {
@@ -138,14 +169,28 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                   );
                 }
 
+                final cs = Theme.of(context).colorScheme;
                 final tile = Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: isDark
-                        ? Theme.of(context).colorScheme.surfaceContainer
-                        : Theme.of(context).colorScheme.surfaceContainerLowest,
-                    borderRadius: BorderRadius.circular(10),
+                        ? cs.surfaceContainer
+                        : cs.surfaceContainerLowest,
+                    borderRadius: BorderRadius.circular(14),
+                    border: isDark
+                        ? Border.all(color: cs.outlineVariant)
+                        : null,
+                    boxShadow: isDark
+                        ? null
+                        : [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.04),
+                              blurRadius: 6,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
                   ),
                   child: Row(
                     children: [
