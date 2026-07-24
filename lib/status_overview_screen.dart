@@ -1255,6 +1255,28 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   Color get _mutedBorder =>
       Theme.of(context).colorScheme.surfaceContainerHighest;
 
+  // Gemeinsame Karten-Optik (neue Designsprache): heller Modus „schwebt"
+  // mit weichem Schatten & ohne Rahmen, dunkler Modus als klar abgesetzte,
+  // hellere Fläche mit feinem Rahmen (Schatten sind auf Dunkel unsichtbar).
+  static const double _cardRadius = 18;
+  BoxDecoration _cardDecoration() {
+    final cs = Theme.of(context).colorScheme;
+    return BoxDecoration(
+      color: _isDark ? cs.surfaceContainer : cs.surfaceContainerLowest,
+      borderRadius: BorderRadius.circular(_cardRadius),
+      border: _isDark ? Border.all(color: cs.outlineVariant) : null,
+      boxShadow: _isDark
+          ? null
+          : [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 10,
+                offset: const Offset(0, 2),
+              ),
+            ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
@@ -1284,12 +1306,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                     children: [
                       _buildCompactStatusBar(),
                       if (_silentFailure) _buildSilentFailureBanner(),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       _buildEssentialInfo(),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       _buildEigeneStaerkeSection(),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       _buildMessageSection(),
+                      const SizedBox(height: 12),
                     ],
                   ),
                 ),
@@ -1612,18 +1635,11 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   // Essentielle Info (nur Trupp, Leiter, aktueller Status, Queue kompakt)
   Widget _buildEssentialInfo() {
-    final cardBg = _isDark
-        ? Theme.of(context).colorScheme.surfaceContainer
-        : Theme.of(context).colorScheme.surfaceContainerLowest;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(),
         child: Column(
           children: [
             // Trupp & Leiter kompakt — Fallback-Text wenn die optionalen
@@ -1745,23 +1761,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   // Collapsible Eigene-Stärke-Sektion
   Widget _buildEigeneStaerkeSection() {
-    final cardBg = _isDark
-        ? Theme.of(context).colorScheme.surfaceContainer
-        : Theme.of(context).colorScheme.surfaceContainerLowest;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Container(
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        clipBehavior: Clip.antiAlias,
+        decoration: _cardDecoration(),
         child: Column(
           children: [
             InkWell(
               onTap: () =>
                   setState(() => _showStaerkeField = !_showStaerkeField),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(_cardRadius),
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Row(
@@ -1978,23 +1988,17 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
 
   // Collapsible Nachrichtenfeld
   Widget _buildMessageSection() {
-    final cardBg = _isDark
-        ? Theme.of(context).colorScheme.surfaceContainer
-        : Theme.of(context).colorScheme.surfaceContainerLowest;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Container(
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(12),
-        ),
+        clipBehavior: Clip.antiAlias,
+        decoration: _cardDecoration(),
         child: Column(
           children: [
             // Header zum Ein-/Ausklappen
             InkWell(
               onTap: () => setState(() => _showMessageField = !_showMessageField),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(_cardRadius),
               child: Padding(
                 padding: const EdgeInsets.all(14),
                 child: Row(
