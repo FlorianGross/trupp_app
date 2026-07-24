@@ -30,6 +30,11 @@ class StatusHistory {
   static const _key = 'status_history';
   static const _maxEntries = 200;
 
+  /// Wird bei jedem neuen Eintrag erhöht. Offene Verlaufs-Ansichten (im
+  /// selben Isolate) hören darauf und laden sich live neu – so ist der
+  /// Verlauf nicht mehr auf dem alten Stand, wenn ein Status gesetzt wird.
+  static final ValueNotifier<int> revision = ValueNotifier<int>(0);
+
   static Future<void> add(int status) async {
     final prefs = await SharedPreferences.getInstance();
     final entries = await _load(prefs);
@@ -44,6 +49,9 @@ class StatusHistory {
     }
 
     await prefs.setString(_key, jsonEncode(entries.map((e) => e.toJson()).toList()));
+
+    // Offene Ansichten benachrichtigen
+    revision.value++;
   }
 
   static Future<List<StatusEntry>> getAll() async {
@@ -78,6 +86,14 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
   void initState() {
     super.initState();
     _load();
+    // Live aktualisieren, sobald ein neuer Status gesetzt wird.
+    StatusHistory.revision.addListener(_load);
+  }
+
+  @override
+  void dispose() {
+    StatusHistory.revision.removeListener(_load);
+    super.dispose();
   }
 
   Future<void> _load() async {
