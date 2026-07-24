@@ -1194,7 +1194,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               const SizedBox(height: 4),
               Text(
                 cfg.host,
-                style: TextStyle(fontSize: 13, color: Colors.grey.shade500),
+                style: TextStyle(
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant),
               ),
               const SizedBox(height: 16),
               Container(
@@ -1249,15 +1251,13 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Einheitliche, theme-abhängige Flächen-/Rahmenfarben, damit Cards in Hell-
   // und Dunkelmodus konsistent aussehen (statt hartkodierter Grautöne).
   Color get _mutedSurface =>
-      _isDark ? Colors.white.withOpacity(0.06) : Colors.grey.shade100;
+      Theme.of(context).colorScheme.surfaceContainerHigh;
   Color get _mutedBorder =>
-      _isDark ? Colors.white.withOpacity(0.12) : Colors.grey.shade200;
+      Theme.of(context).colorScheme.surfaceContainerHighest;
 
   @override
   Widget build(BuildContext context) {
-    final scaffoldBg = _isDark
-        ? Theme.of(context).scaffoldBackgroundColor
-        : Colors.grey[100];
+    final scaffoldBg = Theme.of(context).scaffoldBackgroundColor;
 
     return Scaffold(
       backgroundColor: scaffoldBg,
@@ -1297,8 +1297,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
               Container(
                 decoration: BoxDecoration(
                   color: _isDark
-                      ? Theme.of(context).colorScheme.surface
-                      : Colors.white,
+                      ? Theme.of(context).colorScheme.surfaceContainer
+                      : Theme.of(context).colorScheme.surfaceContainerLowest,
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withOpacity(_isDark ? 0.2 : 0.05),
@@ -1585,7 +1585,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         tooltip = 'Offline';
         break;
       case _ConnectionState.unknown:
-        dotColor = Colors.grey;
+        dotColor = Theme.of(context).colorScheme.onSurfaceVariant;
         tooltip = 'Prüfe...';
         break;
     }
@@ -1613,8 +1613,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Essentielle Info (nur Trupp, Leiter, aktueller Status, Queue kompakt)
   Widget _buildEssentialInfo() {
     final cardBg = _isDark
-        ? Theme.of(context).colorScheme.surface
-        : Colors.white;
+        ? Theme.of(context).colorScheme.surfaceContainer
+        : Theme.of(context).colorScheme.surfaceContainerLowest;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1673,7 +1673,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                             fontWeight: FontWeight.bold,
                             color: selectedStatus != null
                                 ? Theme.of(context).colorScheme.primary
-                                : Colors.grey.shade600,
+                                : Theme.of(context).colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ],
@@ -1688,7 +1688,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                   final hasPending = _stats['pending']! > 0;
                   final brand = Theme.of(context).brand;
                   final bg = hasPending ? brand.queuePending : _mutedSurface;
-                  final fg = hasPending ? brand.warning : Colors.grey.shade600;
+                  final fg = hasPending
+                      ? brand.warning
+                      : Theme.of(context).colorScheme.onSurfaceVariant;
                   return Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 12, vertical: 10),
@@ -1744,8 +1746,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Collapsible Eigene-Stärke-Sektion
   Widget _buildEigeneStaerkeSection() {
     final cardBg = _isDark
-        ? Theme.of(context).colorScheme.surface
-        : Colors.white;
+        ? Theme.of(context).colorScheme.surfaceContainer
+        : Theme.of(context).colorScheme.surfaceContainerLowest;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -1778,7 +1780,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                       _showStaerkeField
                           ? Icons.expand_less
                           : Icons.expand_more,
-                      color: Colors.grey,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       size: 20,
                     ),
                   ],
@@ -1907,12 +1909,14 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w700,
-              color: Colors.grey.shade600),
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
+          style: TextStyle(
+              fontSize: 10,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
           textAlign: TextAlign.center,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1966,7 +1970,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
           size: 15,
           color: (primary && onTap != null)
               ? cs.onPrimary
-              : (onTap != null ? Colors.black87 : Colors.grey.shade400),
+              : (onTap != null ? cs.onSurface : cs.onSurfaceVariant),
         ),
       ),
     );
@@ -1975,8 +1979,8 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // Collapsible Nachrichtenfeld
   Widget _buildMessageSection() {
     final cardBg = _isDark
-        ? Theme.of(context).colorScheme.surface
-        : Colors.white;
+        ? Theme.of(context).colorScheme.surfaceContainer
+        : Theme.of(context).colorScheme.surfaceContainerLowest;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -2014,7 +2018,7 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
                       _showMessageField
                           ? Icons.expand_less
                           : Icons.expand_more,
-                      color: Colors.grey,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                       size: 20,
                     ),
                   ],
