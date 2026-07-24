@@ -174,17 +174,47 @@ final ColorScheme _darkScheme = ColorScheme.fromSeed(
   outlineVariant: const Color(0xFF3A322F),
 );
 
+/// Fein abgestimmte Typo-Skala: Titel etwas kräftiger & enger, Fließtext
+/// luftiger – gibt der App einen klareren, moderneren Rhythmus. Überschreibt
+/// NICHT die pro Screen fest gesetzten Größen, hebt aber alle Standard-Texte
+/// (AppBar, ListTile, Dialoge, Buttons) an.
+TextTheme _tunedTextTheme(ColorScheme scheme) {
+  final base = scheme.brightness == Brightness.dark
+      ? Typography.material2021().white
+      : Typography.material2021().black;
+  return base
+      .copyWith(
+        headlineSmall: base.headlineSmall
+            ?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.4),
+        titleLarge: base.titleLarge
+            ?.copyWith(fontWeight: FontWeight.w700, letterSpacing: -0.2),
+        titleMedium: base.titleMedium
+            ?.copyWith(fontWeight: FontWeight.w600, letterSpacing: -0.1),
+        bodyLarge: base.bodyLarge?.copyWith(height: 1.35),
+        bodyMedium: base.bodyMedium?.copyWith(height: 1.35),
+        labelLarge: base.labelLarge
+            ?.copyWith(fontWeight: FontWeight.w600, letterSpacing: 0.1),
+      )
+      .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface);
+}
+
 ThemeData _buildTheme(ColorScheme scheme, BrandColors brand) {
   final isDark = scheme.brightness == Brightness.dark;
   // Marken-AppBar: hell = kräftiges Rot; dunkel = tiefes, entsättigtes Rot
   // (nachts weniger blendend, Marke bleibt erkennbar).
   final appBarBg = isDark ? const Color(0xFF7C1A16) : _brandSeed;
-  final radius = BorderRadius.circular(12);
+  final radius = BorderRadius.circular(14);
+  // Etwas kräftigere Buttons: mehr Höhe/Innenabstand, klareres Label.
+  final buttonPadding =
+      const EdgeInsets.symmetric(horizontal: 20, vertical: 14);
+  const buttonTextStyle =
+      TextStyle(fontSize: 15, fontWeight: FontWeight.w600, letterSpacing: 0.1);
 
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
     scaffoldBackgroundColor: scheme.surface,
+    textTheme: _tunedTextTheme(scheme),
     extensions: <ThemeExtension<dynamic>>[brand],
     appBarTheme: AppBarTheme(
       backgroundColor: appBarBg,
@@ -193,16 +223,26 @@ ThemeData _buildTheme(ColorScheme scheme, BrandColors brand) {
       scrolledUnderElevation: 2,
       centerTitle: false,
       titleTextStyle: const TextStyle(
-          fontSize: 20, fontWeight: FontWeight.w600, color: Colors.white),
+          fontSize: 20,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.2,
+          color: Colors.white),
     ),
+    // Karten „schweben" jetzt: hell mit weichem Schatten & ohne Rahmen,
+    // dunkel als klar abgesetzte, hellere Fläche mit feinem Rahmen
+    // (Schatten sind auf Dunkel unsichtbar).
     cardTheme: CardThemeData(
-      color: scheme.surface,
-      elevation: 0,
+      color: isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest,
+      elevation: isDark ? 0 : 1,
+      shadowColor: Colors.black.withOpacity(isDark ? 0 : 0.06),
+      surfaceTintColor: Colors.transparent,
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: BorderSide(color: scheme.outlineVariant),
+        borderRadius: BorderRadius.circular(18),
+        side: isDark
+            ? BorderSide(color: scheme.outlineVariant)
+            : BorderSide.none,
       ),
     ),
     listTileTheme: ListTileThemeData(
@@ -237,12 +277,20 @@ ThemeData _buildTheme(ColorScheme scheme, BrandColors brand) {
     ),
     dialogTheme: DialogThemeData(
       backgroundColor: scheme.surfaceContainerHigh,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      elevation: 3,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      titleTextStyle: TextStyle(
+          fontSize: 19,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.2,
+          color: scheme.onSurface),
+      contentTextStyle: TextStyle(
+          fontSize: 14.5, height: 1.4, color: scheme.onSurfaceVariant),
     ),
     chipTheme: ChipThemeData(
       backgroundColor: scheme.surfaceContainerHigh,
       side: BorderSide(color: scheme.outlineVariant),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ),
     snackBarTheme: SnackBarThemeData(
       behavior: SnackBarBehavior.floating,
@@ -250,18 +298,24 @@ ThemeData _buildTheme(ColorScheme scheme, BrandColors brand) {
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
-          minimumSize: const Size(64, 48),
+          minimumSize: const Size(64, 50),
+          padding: buttonPadding,
+          textStyle: buttonTextStyle,
           shape: RoundedRectangleBorder(borderRadius: radius)),
     ),
     elevatedButtonTheme: ElevatedButtonThemeData(
       style: ElevatedButton.styleFrom(
-          minimumSize: const Size(64, 48),
+          minimumSize: const Size(64, 50),
+          padding: buttonPadding,
+          textStyle: buttonTextStyle,
           elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: radius)),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
-          minimumSize: const Size(64, 48),
+          minimumSize: const Size(64, 50),
+          padding: buttonPadding,
+          textStyle: buttonTextStyle,
           side: BorderSide(color: scheme.outline),
           shape: RoundedRectangleBorder(borderRadius: radius)),
     ),
