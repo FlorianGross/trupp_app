@@ -155,6 +155,13 @@ final ColorScheme _darkScheme = ColorScheme.fromSeed(
   seedColor: _brandSeed,
   brightness: Brightness.dark,
 ).copyWith(
+  // Akzent-Rot: statt des blass-rosa M3-Standards ein sattes, klares Rot,
+  // das auf dunklem Grund als BOS-Rot lesbar bleibt (Buttons, Schalter,
+  // Icons, Tabs, Fokus-Rahmen).
+  primary: const Color(0xFFFF6B60),
+  onPrimary: const Color(0xFF4E0F0A),
+  primaryContainer: const Color(0xFF8C1D18),
+  onPrimaryContainer: const Color(0xFFFFDAD5),
   surface: const Color(0xFF141110),
   onSurface: const Color(0xFFF4EEEB),
   surfaceContainerLowest: const Color(0xFF0E0B0A),
