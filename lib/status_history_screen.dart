@@ -116,7 +116,7 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                       ),
                     ),
                   );
@@ -127,8 +127,8 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
                     color: isDark
-                        ? Theme.of(context).colorScheme.surface
-                        : Colors.white,
+                        ? Theme.of(context).colorScheme.surfaceContainer
+                        : Theme.of(context).colorScheme.surfaceContainerLowest,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Row(
@@ -167,7 +167,7 @@ class _StatusHistoryScreenState extends State<StatusHistoryScreen> {
                         fmtTime(dt),
                         style: TextStyle(
                           fontSize: 14,
-                          color: isDark ? Colors.grey.shade400 : Colors.grey.shade600,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontFamily: 'monospace',
                         ),
                       ),

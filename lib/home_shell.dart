@@ -90,7 +90,7 @@ class _HomeShellState extends State<HomeShell> {
         currentIndex: currentIndex,
         onTap: _onTap,
         selectedItemColor: Theme.of(context).colorScheme.primary,
-        unselectedItemColor: Colors.grey,
+        unselectedItemColor: Theme.of(context).colorScheme.onSurfaceVariant,
         showUnselectedLabels: true,
         items: _tabs
             .map((t) => BottomNavigationBarItem(

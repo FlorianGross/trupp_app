@@ -263,8 +263,9 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                     letterSpacing: 0.5)),
             const SizedBox(height: 8),
             Text(text,
-                style:
-                    TextStyle(fontSize: 14, color: Colors.grey.shade800)),
+                style: TextStyle(
+                    fontSize: 14,
+                    color: Theme.of(context).colorScheme.onSurface)),
           ],
         ),
       ),
@@ -281,7 +282,8 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
             width: 120,
             child: Text(label,
                 style: TextStyle(
-                    fontSize: 13, color: Colors.grey.shade600)),
+                    fontSize: 13,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ),
           Expanded(
             child: Text(value,
@@ -342,7 +344,10 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                 if (e.addTimestamp != null)
                   Text(fmtDateTime(e.addTimestamp!),
                       style: TextStyle(
-                          fontSize: 11, color: Colors.grey.shade500)),
+                          fontSize: 11,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant)),
               ],
             ),
             if (_notEmpty(e.von) || _notEmpty(e.an)) ...
@@ -352,13 +357,19 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                   if (_notEmpty(e.von))
                     Text('Von: ${e.von}',
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade700)),
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
                   if (_notEmpty(e.von) && _notEmpty(e.an))
                     const SizedBox(width: 12),
                   if (_notEmpty(e.an))
                     Text('An: ${e.an}',
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade700)),
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
                 ]),
               ],
             if (_notEmpty(e.eintrag)) ...
@@ -373,14 +384,20 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                 const SizedBox(height: 4),
                 Text('Auftrag: ${e.auftrag}',
                     style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade600)),
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant)),
               ],
             if (_notEmpty(e.abschnitt)) ...
               [
                 const SizedBox(height: 4),
                 Text('Abschnitt: ${e.abschnitt}',
                     style: TextStyle(
-                        fontSize: 12, color: Colors.grey.shade500)),
+                        fontSize: 12,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .onSurfaceVariant)),
               ],
           ],
         ),
@@ -491,11 +508,17 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                   if (_notEmpty(f.rufnameLang))
                     Text(f.rufnameLang!,
                         style: TextStyle(
-                            fontSize: 12, color: Colors.grey.shade600)),
+                            fontSize: 12,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
                   if (_notEmpty(f.abschnitt))
                     Text(f.abschnitt!,
                         style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade500)),
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
                 ],
               ),
             ),
@@ -521,7 +544,10 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
                     const SizedBox(height: 4),
                     Text('${f.besatzungGes} Pers.',
                         style: TextStyle(
-                            fontSize: 11, color: Colors.grey.shade500)),
+                            fontSize: 11,
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant)),
                   ],
               ],
             ),
@@ -560,9 +586,13 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.inbox_outlined, size: 40, color: Colors.grey.shade400),
+          Icon(Icons.inbox_outlined,
+              size: 40,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
           const SizedBox(height: 12),
-          Text(msg, style: TextStyle(color: Colors.grey.shade600)),
+          Text(msg,
+              style: TextStyle(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant)),
         ],
       ),
     );

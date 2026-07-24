@@ -162,7 +162,9 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final cardBg = _isDark ? Theme.of(context).colorScheme.surface : Colors.white;
+    final cardBg = _isDark
+        ? Theme.of(context).colorScheme.surfaceContainer
+        : Theme.of(context).colorScheme.surfaceContainerLowest;
 
     return Scaffold(
       appBar: AppBar(
@@ -170,9 +172,7 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
         elevation: 0,
         centerTitle: true,
       ),
-      backgroundColor: _isDark
-          ? Theme.of(context).scaffoldBackgroundColor
-          : Colors.grey[100],
+      backgroundColor: Theme.of(context).colorScheme.surface,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(16),
@@ -219,7 +219,7 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                         hintText: 'z.B. 11831',
                         counterText: '',
                         filled: true,
-                        fillColor: Colors.grey.shade50,
+                        fillColor: Theme.of(context).colorScheme.surfaceContainerHigh,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                           borderSide: BorderSide.none,
@@ -262,7 +262,7 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                       'Format: [Bereich][Wache][FzgTyp 2-stlg][Nr]  •  '
                       '1=RV  2=FN  3=SIG  4=BC',
                       style: TextStyle(
-                          fontSize: 11, color: Colors.grey.shade500),
+                          fontSize: 11, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -327,9 +327,10 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.grey.shade50,
+                        color: Theme.of(context).colorScheme.surfaceContainerHigh,
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.grey.shade200),
+                        border: Border.all(
+                            color: Theme.of(context).colorScheme.outlineVariant),
                       ),
                       child: Text(
                         _buildMessageText(),
@@ -414,13 +415,15 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
           abbr,
           style: TextStyle(
               fontSize: 11,
-              color: Colors.grey.shade600,
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
               fontWeight: FontWeight.w700),
         ),
         const SizedBox(height: 2),
         Text(
           label,
-          style: const TextStyle(fontSize: 10, color: Colors.grey),
+          style: TextStyle(
+              fontSize: 10,
+              color: Theme.of(context).colorScheme.onSurfaceVariant),
           textAlign: TextAlign.center,
           overflow: TextOverflow.ellipsis,
         ),
@@ -465,13 +468,17 @@ class _StaerkeEditorScreenState extends State<StaerkeEditorScreen> {
         width: 28,
         height: 28,
         decoration: BoxDecoration(
-          color: active ? Colors.red.shade800 : Colors.grey.shade200,
+          color: active
+              ? Colors.red.shade800
+              : Theme.of(context).colorScheme.surfaceContainerHigh,
           borderRadius: BorderRadius.circular(6),
         ),
         child: Icon(
           icon,
           size: 16,
-          color: active ? Colors.white : Colors.grey.shade400,
+          color: active
+              ? Colors.white
+              : Theme.of(context).colorScheme.onSurfaceVariant,
         ),
       ),
     );

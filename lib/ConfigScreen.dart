@@ -103,30 +103,31 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   bool _isMissing(TextEditingController c) => c.text.trim().isEmpty;
 
   InputDecoration _materialDecoration(String label, {required bool missing}) {
+    final cs = Theme.of(context).colorScheme;
     return InputDecoration(
       labelText: label,
       filled: true,
-      fillColor: missing ? Colors.red.shade50 : Colors.grey.shade50,
+      fillColor: missing ? cs.errorContainer : cs.surfaceContainerHigh,
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: missing ? Colors.red.shade200 : Colors.grey.shade300,
+          color: missing ? cs.error : cs.outlineVariant,
         ),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
         borderSide: BorderSide(
-          color: missing ? Colors.red : Colors.red.shade800,
+          color: missing ? cs.error : cs.primary,
           width: 2,
         ),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.red),
+        borderSide: BorderSide(color: cs.error),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Colors.red, width: 2),
+        borderSide: BorderSide(color: cs.error, width: 2),
       ),
     );
   }
@@ -477,7 +478,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             'Protokoll',
             style: TextStyle(
                 fontSize: 13,
-                color: Colors.grey.shade700,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontWeight: FontWeight.w500),
           ),
         ),
@@ -494,13 +495,13 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
               if (states.contains(WidgetState.selected)) {
                 return Colors.red.shade800;
               }
-              return Colors.grey.shade200;
+              return Theme.of(context).colorScheme.surfaceContainerHigh;
             }),
             foregroundColor: WidgetStateProperty.resolveWith((states) {
               if (states.contains(WidgetState.selected)) {
                 return Colors.white;
               }
-              return Colors.black87;
+              return Theme.of(context).colorScheme.onSurface;
             }),
           ),
         ),
@@ -526,7 +527,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                 width: 40,
                 height: 4,
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
+                  color: Theme.of(context).colorScheme.outlineVariant,
                   borderRadius: BorderRadius.circular(2),
                 ),
               ),
@@ -578,7 +579,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.grey[100],
+      backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
         title: const Text('Konfiguration'),
         elevation: 0,
@@ -596,7 +597,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
         child: FadeTransition(
           opacity: _fadeAnimation,
           child: Material(
-            color: Colors.grey[100],
+            color: Theme.of(context).colorScheme.surface,
             child: _buildForm(),
           ),
         ),
@@ -634,7 +635,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
       elevation: 1,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Colors.grey.shade300),
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
@@ -656,24 +657,27 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                     color: cs.primary, size: 24),
               ),
               const SizedBox(width: 14),
-              const Expanded(
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
+                    const Text(
                       'Pro-Funktionen',
                       style: TextStyle(
                           fontSize: 16, fontWeight: FontWeight.w700),
                     ),
-                    SizedBox(height: 2),
+                    const SizedBox(height: 2),
                     Text(
                       'Einsatzliste, EDP-Bestand, ISSI-Auswahl',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
+                      style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right, color: Colors.grey),
+              Icon(Icons.chevron_right,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant),
             ],
           ),
         ),
@@ -728,14 +732,14 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
                           '${hostController.text}:${portController.text}',
                           style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade600),
+                              color: Theme.of(context).colorScheme.onSurfaceVariant),
                         )
                       else
                         Text(
                           'QR-Code vom Administrator scannen',
                           style: TextStyle(
                               fontSize: 12,
-                              color: Colors.grey.shade600),
+                              color: Theme.of(context).colorScheme.onSurfaceVariant),
                         ),
                     ],
                   ),
@@ -773,8 +777,8 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           ? 'Manuell konfigurieren – schließen'
           : 'Manuell konfigurieren'),
       style: OutlinedButton.styleFrom(
-        foregroundColor: Colors.grey.shade700,
-        side: BorderSide(color: Colors.grey.shade400),
+        foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
         minimumSize: const Size.fromHeight(48),
         shape:
             RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -794,14 +798,14 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800),
+                color: Theme.of(context).colorScheme.onSurface),
           ),
         ),
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
             'GPS-Tracking und Statusmeldungen (Webhook-Schnittstelle).',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
           ),
         ),
         _buildProtocolSelector(),
@@ -826,7 +830,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800),
+                color: Theme.of(context).colorScheme.onSurface),
           ),
         ),
         _issiField(),
@@ -843,14 +847,14 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
             style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.bold,
-                color: Colors.grey.shade800),
+                color: Theme.of(context).colorScheme.onSurface),
           ),
         ),
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 12),
           child: Text(
             'EDP-Pro-API-Server – für ISSI-Auswahl (Tetra-Endgeräte, Fahrzeugabfrage).',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
           ),
         ),
         _optionalField(
@@ -863,7 +867,7 @@ class _ConfigScreenState extends State<ConfigScreen> with SingleTickerProviderSt
           padding: const EdgeInsets.only(left: 4),
           child: Text(
             '* Pflichtfelder',
-            style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+            style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 12),
           ),
         ),
         const SizedBox(height: 24),
