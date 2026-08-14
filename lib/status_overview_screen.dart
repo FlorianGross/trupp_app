@@ -46,6 +46,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // UI/Status
   int? selectedStatus;
   int? _lastPersistentStatus;
+
+  /// Ankunfts-Vorschläge aus dem Hintergrunddienst (Geofence).
+  StreamSubscription<Map<String, dynamic>?>? _arrivalSub;
   Timer? _tempStatusTimer;
   Timer? _statsRefreshTimer;
   late AnimationController _animationController;
@@ -116,11 +119,24 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
         _onCarStatusChanged(status, delivered);
       }
     });
+
+    // Ankunft an Einsatzort/Wache: Der Hintergrunddienst erkennt sie, die
+    // Rückfrage stellt das Fahrzeug-Display.
+    _arrivalSub =
+        FlutterBackgroundService().on('arrivalSuggestion').listen((event) {
+      final status = event?['status'];
+      if (status is! int || status < 0 || status > 9) return;
+      IotCarHelper.showStatusSuggestion(
+        status: status,
+        label: (event?['label'] as String?) ?? '',
+      );
+    });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _arrivalSub?.cancel();
     _tempStatusTimer?.cancel();
     _statsRefreshTimer?.cancel();
     _connectionCheckTimer?.cancel();

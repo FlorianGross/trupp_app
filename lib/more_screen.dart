@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'ConfigScreen.dart';
 import 'data/app_prefs.dart';
+import 'data/arrival_target.dart';
 import 'data/auto_delete_config.dart';
 import 'data/duty_end_config.dart';
 import 'data/gpx_exporter.dart';
@@ -38,6 +40,7 @@ class _MoreScreenState extends State<MoreScreen> {
   bool _preciseLocationOnly = true;
   DateTime? _autoDeleteAt;
   DateTime? _dutyEndAt;
+  ArrivalTarget? _wacheTarget;
 
   @override
   void initState() {
@@ -50,8 +53,10 @@ class _MoreScreenState extends State<MoreScreen> {
     final active = await ProfileStore.activeName() ?? '';
     final autoDeleteAt = await AutoDeleteConfig.scheduledAt();
     final dutyEndAt = await DutyEndConfig.scheduledAt();
+    final wache = await ArrivalTargetStore.load(ArrivalTargetKind.wache);
     if (!mounted) return;
     setState(() {
+      _wacheTarget = wache;
       _autoDeactivateMinutes = prefs.getInt('autoDeactivateMinutes') ?? 0;
       _activeProfileName = active;
       _wakelockInDeployment =
@@ -63,6 +68,86 @@ class _MoreScreenState extends State<MoreScreen> {
       _autoDeleteAt = autoDeleteAt;
       _dutyEndAt = dutyEndAt;
     });
+  }
+
+  /// Meldet dem Hintergrunddienst, dass sich die Ziele der Ankunfts-Erkennung
+  /// geändert haben (er puffert sie).
+  Future<void> _notifyArrivalTargetsChanged() async {
+    final service = FlutterBackgroundService();
+    if (await service.isRunning()) {
+      service.invoke('arrivalTargetsChanged', {});
+    }
+  }
+
+  /// Hinterlegt die aktuelle Position als Wache. Steht das Fahrzeug später
+  /// wieder dort, fragt das Fahrzeug-Display nach Status 2 — gedacht für die
+  /// Rückkehr nach dem Einsatz, wo das Umstellen gern vergessen wird.
+  Future<void> _showWacheDialog() async {
+    final hasTarget = _wacheTarget != null;
+    final action = await showDialog<String>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Wache'),
+        content: Text(
+          hasTarget
+              ? 'Die Wache ist hinterlegt. Bei Ankunft fragt das Fahrzeug-Display, '
+                  'ob Status 2 gesendet werden soll.'
+              : 'Die aktuelle Position wird als Wache gespeichert. Bei Ankunft '
+                  'dort fragt das Fahrzeug-Display, ob Status 2 gesendet werden '
+                  'soll.\n\nDafür am besten direkt an der Wache stehen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
+          if (hasTarget)
+            TextButton(
+              onPressed: () => Navigator.pop(context, 'clear'),
+              child: const Text('Entfernen'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, 'set'),
+            child: Text(hasTarget ? 'Neu übernehmen' : 'Position übernehmen'),
+          ),
+        ],
+      ),
+    );
+    if (action == null) return;
+
+    if (action == 'clear') {
+      await ArrivalTargetStore.clear(ArrivalTargetKind.wache);
+      await _notifyArrivalTargetsChanged();
+      if (!mounted) return;
+      setState(() => _wacheTarget = null);
+      _showSnackbar('Wache entfernt');
+      return;
+    }
+
+    try {
+      final pos = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+      final target = ArrivalTarget(
+        kind: ArrivalTargetKind.wache,
+        lat: pos.latitude,
+        lon: pos.longitude,
+        label: 'Wache',
+        suggestedStatus: 2,
+        radiusM: ArrivalTarget.wacheRadiusM,
+      );
+      await ArrivalTargetStore.save(target);
+      await _notifyArrivalTargetsChanged();
+      if (!mounted) return;
+      setState(() => _wacheTarget = target);
+      _showSnackbar('Wache gespeichert (±${pos.accuracy.toStringAsFixed(0)} m)');
+    } catch (_) {
+      if (!mounted) return;
+      _showSnackbar('Position konnte nicht ermittelt werden', success: false);
+    }
   }
 
   /// Weist den laufenden Hintergrunddienst an, geänderte Tracking-
@@ -438,6 +523,16 @@ class _MoreScreenState extends State<MoreScreen> {
                 title: 'Einheitstyp ändern',
                 subtitle: 'Status-Tasten an die Einheit anpassen',
                 onTap: _changeUnitType,
+              ),
+              _tile(
+                icon: _wacheTarget == null
+                    ? Icons.home_outlined
+                    : Icons.home_filled,
+                title: 'Wache (Ankunfts-Erinnerung)',
+                subtitle: _wacheTarget == null
+                    ? 'Nicht hinterlegt – bei Ankunft an Status 2 erinnern'
+                    : 'Hinterlegt – fragt bei Ankunft nach Status 2',
+                onTap: _showWacheDialog,
               ),
               _tile(
                 icon: Icons.timer_off,

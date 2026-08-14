@@ -57,6 +57,16 @@ import UserNotifications
           userInfo: ["status": status]
         )
         result(true)
+      } else if call.method == "showStatusSuggestion",
+                let args = call.arguments as? [String: Any],
+                let status = args["status"] as? Int {
+        // Ankunfts-Rückfrage im CarPlay-Display anzeigen lassen.
+        NotificationCenter.default.post(
+          name: NSNotification.Name("dev.floriang.trupp_app.STATUS_SUGGESTION"),
+          object: nil,
+          userInfo: ["status": status, "label": args["label"] as? String ?? ""]
+        )
+        result(true)
       } else {
         result(FlutterMethodNotImplemented)
       }

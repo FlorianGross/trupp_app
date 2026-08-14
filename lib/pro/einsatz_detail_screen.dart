@@ -1,6 +1,8 @@
 // lib/pro/einsatz_detail_screen.dart
 import 'package:flutter/material.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../data/arrival_target.dart';
 import '../data/edp_api.dart';
 import '../data/edp_api_pro.dart';
 import '../theme/em_status.dart';
@@ -38,6 +40,7 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
     _loadVerlauf();
     _loadAbschnitte();
     _loadFahrzeuge();
+    _loadArrivalTarget();
   }
 
   @override
@@ -118,6 +121,57 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
     }
   }
 
+  /// Ist dieser Einsatz gerade das Ziel der Ankunfts-Erkennung?
+  bool _isArrivalTarget = false;
+
+  Future<void> _loadArrivalTarget() async {
+    final target = await ArrivalTargetStore.load(ArrivalTargetKind.einsatz);
+    if (!mounted) return;
+    final e = widget.einsatz;
+    setState(() {
+      _isArrivalTarget = target != null &&
+          e.hasCoordinates &&
+          (target.lat - e.koordy!).abs() < 0.00001 &&
+          (target.lon - e.koordx!).abs() < 0.00001;
+    });
+  }
+
+  /// Setzt den Einsatzort als Ziel (oder entfernt ihn wieder). Bei Ankunft
+  /// fragt das Fahrzeug-Display dann nach Status 4.
+  Future<void> _toggleArrivalTarget() async {
+    final e = widget.einsatz;
+    if (!e.hasCoordinates) return;
+
+    if (_isArrivalTarget) {
+      await ArrivalTargetStore.clear(ArrivalTargetKind.einsatz);
+    } else {
+      await ArrivalTargetStore.save(ArrivalTarget(
+        kind: ArrivalTargetKind.einsatz,
+        lat: e.koordy!,
+        lon: e.koordx!,
+        label: e.adresse.isNotEmpty ? e.adresse : e.title,
+        suggestedStatus: 4,
+        radiusM: ArrivalTarget.einsatzRadiusM,
+      ));
+    }
+
+    // Hintergrunddienst über das neue Ziel informieren (er puffert die Ziele).
+    final svc = FlutterBackgroundService();
+    if (await svc.isRunning()) {
+      svc.invoke('arrivalTargetsChanged', {});
+    }
+
+    if (!mounted) return;
+    setState(() => _isArrivalTarget = !_isArrivalTarget);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(_isArrivalTarget
+            ? 'Bei Ankunft wird nach Status 4 gefragt'
+            : 'Ankunfts-Erinnerung entfernt'),
+      ),
+    );
+  }
+
   Future<void> _navigate() async {
     final e = widget.einsatz;
     Uri uri;
@@ -150,6 +204,16 @@ class _EinsatzDetailScreenState extends State<EinsatzDetailScreen>
         foregroundColor: Colors.white,
         elevation: 0,
         actions: [
+          if (e.hasCoordinates)
+            IconButton(
+              icon: Icon(_isArrivalTarget
+                  ? Icons.my_location
+                  : Icons.location_searching),
+              tooltip: _isArrivalTarget
+                  ? 'Ankunfts-Erinnerung aus'
+                  : 'Bei Ankunft an Status 4 erinnern',
+              onPressed: _toggleArrivalTarget,
+            ),
           IconButton(
             icon: const Icon(Icons.navigation),
             tooltip: 'Navigation starten',

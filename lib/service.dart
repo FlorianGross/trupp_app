@@ -19,6 +19,8 @@ import 'data/location_sync_manager.dart';
 import 'data/status_sync_manager.dart';
 import 'data/deployment_state.dart';
 import 'data/adaptive_location_settings.dart';
+import 'data/arrival_detector.dart';
+import 'data/arrival_target.dart';
 import 'data/auto_delete_config.dart';
 import 'data/duty_end_config.dart';
 
@@ -311,6 +313,9 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
 
     _quality.markSent(pos, now: now);
 
+    // Ankunft am Einsatzort/an der Wache? → Statusvorschlag ins Display.
+    await _checkArrival(service, sm.lat, sm.lon, sm.accuracy);
+
     await _updateNotificationIfDue(
       service,
       title: 'Trupp App',
@@ -318,6 +323,71 @@ Future<void> _sendPositionIfOk(ServiceInstance service, Position pos,
     );
   } catch (e, st) {
     AppLogger.e('LocationService', 'Positionsübertragung fehlgeschlagen', e, st);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ankunfts-Erkennung (Geofence) → Statusvorschlag im Fahrzeug-Display
+// ---------------------------------------------------------------------------
+
+final ArrivalDetector _arrivalDetector = ArrivalDetector();
+
+/// Gepufferte Ziele. Ohne Puffer läse jede Position die Prefs neu ein
+/// (inkl. reload() über die Isolate-Grenze) — das ist bei sekündlichen Fixes
+/// unnötige I/O. Die UI meldet Änderungen über `arrivalTargetsChanged`.
+List<ArrivalTarget>? _arrivalTargets;
+DateTime? _arrivalTargetsLoadedAt;
+const _arrivalTargetsTtl = Duration(minutes: 1);
+
+Future<List<ArrivalTarget>> _loadArrivalTargets() async {
+  final cached = _arrivalTargets;
+  final loadedAt = _arrivalTargetsLoadedAt;
+  if (cached != null &&
+      loadedAt != null &&
+      DateTime.now().difference(loadedAt) < _arrivalTargetsTtl) {
+    return cached;
+  }
+  final targets = await ArrivalTargetStore.loadAll();
+  _arrivalTargets = targets;
+  _arrivalTargetsLoadedAt = DateTime.now();
+  return targets;
+}
+
+/// Prüft, ob die Position eine Ankunft an einem hinterlegten Ziel ist, und
+/// schickt in dem Fall einen Statusvorschlag an die UI (die ihn ins
+/// Fahrzeug-Display weiterreicht). Gesendet wird hier nichts — bestätigt wird
+/// im Auto.
+Future<void> _checkArrival(
+    ServiceInstance service, double lat, double lon, double accuracyM) async {
+  try {
+    final targets = await _loadArrivalTargets();
+    if (targets.isEmpty) return;
+
+    final event = _arrivalDetector.evaluate(
+      lat: lat,
+      lon: lon,
+      accuracyM: accuracyM,
+      targets: targets,
+    );
+    if (event == null) return;
+
+    // Steht der vorgeschlagene Status ohnehin schon, gibt es nichts zu fragen.
+    if (event.target.suggestedStatus == _currentStatus) return;
+
+    AppLogger.i(
+      'Arrival',
+      'Ankunft an "${event.target.label}" (${event.distanceM.toStringAsFixed(0)} m) '
+          '→ Vorschlag Status ${event.target.suggestedStatus}',
+    );
+
+    service.invoke('arrivalSuggestion', {
+      'status': event.target.suggestedStatus,
+      'label': event.target.label,
+      'kind': event.target.kind.name,
+    });
+  } catch (e, st) {
+    // Die Ankunfts-Erkennung ist Komfort — sie darf die Ortung nie stören.
+    AppLogger.e('Arrival', 'Ankunfts-Prüfung fehlgeschlagen', e, st);
   }
 }
 
@@ -814,6 +884,15 @@ Future<void> _onStartGuarded(ServiceInstance service) async {
         force: true,
       );
     }
+  }));
+
+  // Ziele für die Ankunfts-Erkennung haben sich geändert (Einsatzziel gesetzt
+  // oder gelöscht, Wache hinterlegt) → Puffer verwerfen und den Detektor
+  // zurücksetzen, damit ein neues Ziel nicht mit altem Zustand startet.
+  _serviceEventSubs.add(service.on('arrivalTargetsChanged').listen((_) async {
+    _arrivalTargets = null;
+    _arrivalTargetsLoadedAt = null;
+    _arrivalDetector.reset();
   }));
 
   // Deployment-Modus-Änderungen lauschen

@@ -39,4 +39,25 @@ class IotCarHelper {
       // Car-Display nicht verbunden - kein Fehler
     }
   }
+
+  /// Zeigt im Fahrzeug-Display eine Rückfrage zu einem vorgeschlagenen Status
+  /// („Ziel erreicht – 4 Ziel erreicht senden?").
+  ///
+  /// Bestätigt der Fahrer, läuft der Status über denselben Weg zurück wie ein
+  /// normaler Druck im Display (`statusChanged` mit `delivered`-Flag) — hier
+  /// wird also nichts gesendet, nur gefragt. Ist kein Display verbunden,
+  /// passiert nichts.
+  static Future<void> showStatusSuggestion({
+    required int status,
+    required String label,
+  }) async {
+    try {
+      await platform.invokeMethod(
+        'showStatusSuggestion',
+        {'status': status, 'label': label},
+      );
+    } catch (_) {
+      // Kein Car-Display verbunden - kein Fehler
+    }
+  }
 }

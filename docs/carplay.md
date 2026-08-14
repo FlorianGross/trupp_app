@@ -75,3 +75,45 @@ behandelt — lieber einmal zu viel nachsenden als eine Statusmeldung verlieren.
 Die Gegenrichtung (Status in der App gedrückt → Anzeige im Auto aktualisieren)
 läuft über `IotCarHelper.sendStatusToIot` und ändert im Auto nur die Darstellung,
 löst also keinen weiteren Versand aus.
+
+## Statusvorschlag bei Ankunft (Geofence)
+
+Erreicht das Fahrzeug ein hinterlegtes Ziel, fragt das CarPlay-Display nach,
+statt dass der Statuswechsel vergessen wird:
+
+| Ziel | Vorschlag | Gesetzt über |
+|---|---|---|
+| Einsatzort | Status 4 (Ziel erreicht) | Pro → Einsatz-Detail → Zielsymbol in der Titelleiste |
+| Wache | Status 2 (Einsatzbereit Wache) | Mehr → Einstellungen → *Wache* („Position übernehmen") |
+
+```
+Hintergrunddienst (Position)
+   └─ ArrivalDetector.evaluate()
+        └─ service.invoke('arrivalSuggestion')  →  UI-Isolate
+             └─ IotCarHelper.showStatusSuggestion()  →  CPAlertTemplate
+                  └─ „senden" → normaler Statusweg inkl. delivered-Flag
+```
+
+Gesendet wird nichts automatisch — bestätigt wird immer im Fahrzeug. Ein
+Vorschlag entfällt, wenn der Status ohnehin schon gesetzt ist.
+
+`ArrivalDetector` (`lib/data/arrival_detector.dart`) ist bewusst frei von
+Plugin-Abhängigkeiten und in `test/arrival_detector_test.dart` abgedeckt. Er
+sichert gegen die drei Fälle ab, die eine Ankunfts-Erkennung sonst unbrauchbar
+machen:
+
+- **Ungenaue Fixes** (> 100 m) werden verworfen — ein WLAN-Fix springt sonst in
+  den Radius und löst während der Fahrt eine Rückfrage aus.
+- **Start im Radius** ist keine Ankunft. Wer auf der Wache einschaltet, wird
+  nicht gefragt; gemeldet wird nur eine echte Bewegung von außen nach innen.
+- **Zappeln an der Radiusgrenze** wird über eine Hysterese abgefangen: erst
+  deutlich außerhalb (Faktor 1,5) wird das Ziel wieder scharf gestellt.
+
+Die Ziele liegen als JSON in den SharedPreferences, damit der Hintergrund-
+Isolate sie lesen kann. Er puffert sie eine Minute; die UI meldet Änderungen
+sofort über `arrivalTargetsChanged`.
+
+**Grenzen:** Die Rückfrage erscheint nur im CarPlay-Display und nur, solange der
+UI-Isolate der App lebt (der Hintergrunddienst kann keine Templates zeigen). Für
+Android Auto ist die Rückfrage noch nicht umgesetzt — dort werden Ziele zwar
+erkannt, aber nicht angezeigt.
