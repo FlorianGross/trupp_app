@@ -117,3 +117,43 @@ sofort über `arrivalTargetsChanged`.
 UI-Isolate der App lebt (der Hintergrunddienst kann keine Templates zeigen). Für
 Android Auto ist die Rückfrage noch nicht umgesetzt — dort werden Ziele zwar
 erkannt, aber nicht angezeigt.
+
+## Einsatz-Liste („wer ist noch auf dem Einsatz?")
+
+Der achte Grid-Button *Einsatz* öffnet eine Liste der Fahrzeuge, die mit dem
+eigenen auf demselben Einsatz laufen — mit Status, Besatzung und Abschnitt. Das
+eigene Fahrzeug steht oben und ist mit `▶` markiert.
+
+**Der Einsatz wird nicht von Hand gewählt**, sondern von der Leitstelle
+abgeleitet — sie weiß ohnehin, worauf disponiert ist:
+
+```
+eigene ISSI (Prefs)
+  → getTetraEndgeraete()  → rufname des eigenen Geräts
+    → getEinsatzmittel()  → einsatznummer des eigenen Fahrzeugs
+      → alle Einsatzmittel mit derselben einsatznummer
+```
+
+Die Zuordnung ISSI→Rufname ändert sich praktisch nie und wird gepuffert; die
+Einsatzmittel werden bei jeder Abfrage frisch geholt. Abgefragt wird **nur beim
+Öffnen der Liste** (Holschuld) — kein Polling im Hintergrund, das im Fahrzeug
+nur Akku und Funkzeit kosten würde.
+
+Kommt keine Liste zustande, zeigt das Display den Grund im Klartext statt einer
+leeren Liste („Keinem Einsatz zugeordnet", „Pro-API nicht konfiguriert",
+„Leitstelle nicht erreichbar", „App nicht gestartet").
+
+Die Auswertung steckt in `EinsatzCrewResolver` (`lib/data/einsatz_crew.dart`) —
+reine Funktionen ohne HTTP, abgedeckt in `test/einsatz_crew_test.dart`. Die
+CarPlay-Szene erreicht die Flutter-Engine über `TruppFlutterBridge`, weil sie in
+einer eigenen Szene läuft und den MethodChannel des AppDelegate nicht kennt.
+
+**Voraussetzung:** die Pro-API. Ohne sie gibt es keine Einsatzmittel-Daten, und
+der Button meldet das entsprechend.
+
+**Templatewahl:** bewusst eine gepushte `CPListTemplate` statt eines
+`CPTabBarTemplate`. Die Public-Safety-Kategorie erlaubt eine Stack-Tiefe von 5,
+das Pushen ist also gedeckt; welche Templates die Kategorie genau freigibt,
+steht nur in der Tabelle auf Seite 15 des CarPlay App Programming Guide (PDF,
+nicht frei abrufbar) — die restriktivere Tab-Bar-Variante wurde deshalb
+vermieden.

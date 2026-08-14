@@ -72,6 +72,18 @@ import UserNotifications
       }
     }
 
+    // Die CarPlay-Szene kann die Flutter-Engine nicht direkt erreichen — sie
+    // fragt die Einsatz-Liste über diese Brücke ab.
+    TruppFlutterBridge.shared.requestEinsatzCrew = { [weak self] completion in
+      guard let channel = self?.statusChannel else {
+        completion(nil)
+        return
+      }
+      channel.invokeMethod("getEinsatzCrew", arguments: nil) { result in
+        completion(result as? [String: Any])
+      }
+    }
+
     // Status-Änderungen von CarPlay an Flutter weiterleiten
     NotificationCenter.default.addObserver(
       forName: NSNotification.Name("dev.floriang.trupp_app.STATUS_CHANGED"),
