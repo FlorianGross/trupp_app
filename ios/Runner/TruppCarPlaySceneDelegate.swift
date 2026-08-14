@@ -42,6 +42,13 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
             name: NSNotification.Name("dev.floriang.trupp_app.STATUS_UPDATE"),
             object: nil
         )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(onStatusSuggestion(_:)),
+            name: NSNotification.Name("dev.floriang.trupp_app.STATUS_SUGGESTION"),
+            object: nil
+        )
     }
 
     func templateApplicationScene(
@@ -51,6 +58,7 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
         NotificationCenter.default.removeObserver(self)
         self.interfaceController = nil
         gridTemplate = nil
+        suggestionVisible = false
     }
 
     // MARK: - Template Building
@@ -111,14 +119,70 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
         currentStatus = status
         refreshTemplate()
 
-        // An Flutter melden (für die Haupt-App)
+        // Die Meldung an Flutter folgt erst, wenn das Ergebnis der Übertragung
+        // feststeht — siehe notifyFlutter(status:delivered:).
+        sendStatusToServer(status)
+    }
+
+    /// Meldet der Flutter-App den im Auto gedrückten Status samt Ergebnis der
+    /// nativen Übertragung.
+    ///
+    /// `delivered == true`: die Leitstelle hat den Status bereits erhalten, die
+    /// App darf ihn dann NICHT erneut senden (sonst doppelte Statusmeldung).
+    /// `delivered == false`: der native Versand ist endgültig fehlgeschlagen —
+    /// die Offline-Queue der App übernimmt das Nachsenden.
+    private func notifyFlutter(status: Int, delivered: Bool) {
         NotificationCenter.default.post(
             name: NSNotification.Name("dev.floriang.trupp_app.STATUS_CHANGED"),
             object: nil,
-            userInfo: ["status": status]
+            userInfo: ["status": status, "delivered": delivered]
         )
+    }
 
-        sendStatusToServer(status)
+    // MARK: - Ankunfts-Rückfrage (Geofence)
+
+    /// Verhindert, dass sich mehrere Rückfragen stapeln — im Fahrbetrieb wäre
+    /// ein Stapel von Dialogen die schlechteste denkbare Ablenkung.
+    private var suggestionVisible = false
+
+    @objc private func onStatusSuggestion(_ notification: Notification) {
+        guard let status = notification.userInfo?["status"] as? Int else { return }
+        let label = notification.userInfo?["label"] as? String ?? ""
+        DispatchQueue.main.async { [weak self] in
+            self?.presentSuggestion(status: status, label: label)
+        }
+    }
+
+    /// Fragt im Display nach, ob der bei Ankunft naheliegende Status gesendet
+    /// werden soll. Bestätigt der Fahrer, läuft der Status durch denselben Weg
+    /// wie ein normaler Tastendruck (inkl. Rückmeldung an die App).
+    private func presentSuggestion(status: Int, label: String) {
+        guard let controller = interfaceController, !suggestionVisible else { return }
+        // Steht der Status schon, gibt es nichts zu fragen (die App prüft das
+        // ebenfalls — zwischen Vorschlag und Anzeige kann er sich geändert haben).
+        guard status != currentStatus else { return }
+
+        let statusText = statusList.first(where: { $0.num == status })?.text ?? "Status \(status)"
+        let title = label.isEmpty ? "Ziel erreicht" : "Ziel erreicht – \(label)"
+
+        let send = CPAlertAction(title: "\(status) \(statusText) senden", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.suggestionVisible = false
+            self.interfaceController?.dismissTemplate(animated: true, completion: nil)
+            self.onStatusPressed(status)
+        }
+        let later = CPAlertAction(title: "Später", style: .cancel) { [weak self] _ in
+            guard let self else { return }
+            self.suggestionVisible = false
+            self.interfaceController?.dismissTemplate(animated: true, completion: nil)
+        }
+
+        // titleVariants: CarPlay wählt je nach Displaybreite die passende Länge.
+        let alert = CPAlertTemplate(titleVariants: [title, "Ziel erreicht"], actions: [send, later])
+        suggestionVisible = true
+        controller.presentTemplate(alert, animated: true) { [weak self] success, _ in
+            if !success { self?.suggestionVisible = false }
+        }
     }
 
     @objc private func onStatusUpdateFromFlutter(_ notification: Notification) {
@@ -144,7 +208,13 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
               let url = URL(string: "\(proto)://\(server)/\(token)/setstatus?issi=\(issi)&status=\(status)")
         else {
             connectionOk = false
-            DispatchQueue.main.async { [weak self] in self?.refreshTemplate() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.refreshTemplate()
+                // Ohne gültige Konfiguration kann die Szene nichts senden — die
+                // App soll den Status über ihre Queue übernehmen.
+                self.notifyFlutter(status: status, delivered: false)
+            }
             return
         }
 
@@ -169,6 +239,7 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
                     self.saveCurrentStatus(status)
                 }
                 self.refreshTemplate()
+                self.notifyFlutter(status: status, delivered: ok)
             }
         }.resume()
     }

@@ -57,6 +57,16 @@ import UserNotifications
           userInfo: ["status": status]
         )
         result(true)
+      } else if call.method == "showStatusSuggestion",
+                let args = call.arguments as? [String: Any],
+                let status = args["status"] as? Int {
+        // Ankunfts-Rückfrage im CarPlay-Display anzeigen lassen.
+        NotificationCenter.default.post(
+          name: NSNotification.Name("dev.floriang.trupp_app.STATUS_SUGGESTION"),
+          object: nil,
+          userInfo: ["status": status, "label": args["label"] as? String ?? ""]
+        )
+        result(true)
       } else {
         result(FlutterMethodNotImplemented)
       }
@@ -69,7 +79,14 @@ import UserNotifications
       queue: .main
     ) { [weak self] notification in
       if let status = notification.userInfo?["status"] as? Int {
-        self?.statusChannel?.invokeMethod("statusChanged", arguments: ["status": status])
+        // delivered: hat die CarPlay-Szene den Status schon zugestellt? Fehlt
+        // das Flag, konservativ als "nein" behandeln — dann sendet die App über
+        // ihre Queue nach, statt die Meldung zu verlieren.
+        let delivered = notification.userInfo?["delivered"] as? Bool ?? false
+        self?.statusChannel?.invokeMethod(
+          "statusChanged",
+          arguments: ["status": status, "delivered": delivered]
+        )
       }
     }
   }

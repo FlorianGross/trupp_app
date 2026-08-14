@@ -46,6 +46,9 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
   // UI/Status
   int? selectedStatus;
   int? _lastPersistentStatus;
+
+  /// Ankunfts-Vorschläge aus dem Hintergrunddienst (Geofence).
+  StreamSubscription<Map<String, dynamic>?>? _arrivalSub;
   Timer? _tempStatusTimer;
   Timer? _statsRefreshTimer;
   late AnimationController _animationController;
@@ -111,16 +114,29 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     _initialize();
 
     // Car-Integration: Status-Änderungen von Android Auto / CarPlay empfangen
-    IotCarHelper.initialize((status) {
+    IotCarHelper.initialize((status, delivered) {
       if (status >= 0 && status <= 9) {
-        _onStatusPressed(status);
+        _onCarStatusChanged(status, delivered);
       }
+    });
+
+    // Ankunft an Einsatzort/Wache: Der Hintergrunddienst erkennt sie, die
+    // Rückfrage stellt das Fahrzeug-Display.
+    _arrivalSub =
+        FlutterBackgroundService().on('arrivalSuggestion').listen((event) {
+      final status = event?['status'];
+      if (status is! int || status < 0 || status > 9) return;
+      IotCarHelper.showStatusSuggestion(
+        status: status,
+        label: (event?['label'] as String?) ?? '',
+      );
     });
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _arrivalSub?.cancel();
     _tempStatusTimer?.cancel();
     _statsRefreshTimer?.cancel();
     _connectionCheckTimer?.cancel();
@@ -702,6 +718,101 @@ class _StatusOverviewState extends State<StatusOverview> with SingleTickerProvid
     }
 
     // Einsatz automatisch starten, sobald ein aktiver Status gedrückt wird.
+    await _maybeAutoStartDeployment(st);
+  }
+
+  /// Statuswechsel, der im Fahrzeug-Display (CarPlay / Android Auto) ausgelöst
+  /// wurde.
+  ///
+  /// Wichtig gegenüber [_onStatusPressed]: Die native Car-Schicht hat den
+  /// Status bereits selbst an die Leitstelle geschickt (sie läuft auch ohne
+  /// aktive Flutter-Oberfläche). Bei [delivered] == true darf er hier deshalb
+  /// NICHT noch einmal gesendet werden — sonst steht jede im Auto gedrückte
+  /// Meldung doppelt in der Leitstelle. Nur wenn der native Versand endgültig
+  /// fehlgeschlagen ist, übernimmt die Offline-Queue der App.
+  ///
+  /// Ebenfalls anders: Es werden keine Berechtigungs-Dialoge geöffnet. Im Auto
+  /// ist am Telefon niemand, der sie bedienen könnte, und der Statusversand
+  /// selbst braucht keine Standortfreigabe.
+  Future<void> _onCarStatusChanged(int st, bool delivered) async {
+    StatusHistory.add(st);
+
+    if (_isTempStatus(st)) {
+      selectedStatus = st;
+      _tempStatusTimer?.cancel();
+      _tempStatusTimer = Timer(_tempDurations[st]!, () {
+        if (_lastPersistentStatus != null && selectedStatus == st) {
+          selectedStatus = _lastPersistentStatus;
+          if (mounted) setState(() {});
+        }
+      });
+    } else {
+      _lastPersistentStatus = st;
+      selectedStatus = st;
+
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(AppPrefsKeys.lastStatus, st);
+      await DeploymentState.updateActivity();
+
+      final svc = FlutterBackgroundService();
+      if (await svc.isRunning()) {
+        svc.invoke('statusChanged', {'status': st});
+      }
+    }
+    if (mounted) setState(() {});
+
+    if (!delivered) {
+      // Nativer Versand fehlgeschlagen → Queue der App übernimmt inkl. Retry
+      // und SDS-Nachmeldung.
+      final sentOnline = await StatusSyncManager.instance.sendOrQueue(st);
+      if (mounted) {
+        _showSnackbar(
+          sentOnline
+              ? 'Status $st gesendet'
+              : 'Status $st gespeichert – wird automatisch nachgesendet',
+          success: sentOnline,
+        );
+      }
+    }
+
+    // Position zum Status melden — unabhängig davon, über welchen Weg der
+    // Status selbst übertragen wurde (best effort, ohne Berechtigungsdialog).
+    if (await _hasWhileInUsePermission()) {
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.high,
+            timeLimit: Duration(seconds: 5),
+          ),
+        );
+        await LocationSyncManager.instance.sendOrQueue(
+          lat: position.latitude,
+          lon: position.longitude,
+          accuracy: position.accuracy,
+          status: st,
+          timestamp: position.timestamp,
+        );
+        await LocationSyncManager.instance.flushPendingNow();
+      } catch (_) {
+        // GPS ist optional — der Status ist bereits gemeldet.
+      }
+    }
+
+    // Automatische SDS bei Status 0 (DRINGEND) und 5 (Sprechwunsch) — wie beim
+    // Druck in der App. Android Auto bietet Status 5 an, deshalb muss der Weg
+    // aus dem Fahrzeug dieselbe Nachricht auslösen.
+    if (st == 0 || st == 5) {
+      try {
+        final who = trupp.isNotEmpty ? trupp : 'ISSI $issi';
+        final sdsText = st == 0
+            ? 'DRINGEND! $who benötigt sofortige Unterstützung!'
+            : 'Sprechwunsch von $who - Bitte melden!';
+        await EdpApi.instance.sendSdsText(sdsText);
+      } catch (_) {
+        // SDS-Fehler ist nicht kritisch, der Status wurde trotzdem gemeldet.
+      }
+    }
+
     await _maybeAutoStartDeployment(st);
   }
 

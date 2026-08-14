@@ -21,8 +21,15 @@ class MainActivity: FlutterActivity() {
         override fun onReceive(context: Context?, intent: Intent?) {
             val status = intent?.getIntExtra("status", -1) ?: return
             if (status >= 0) {
+                // delivered: hat die Car-App den Status schon zugestellt? Fehlt
+                // das Extra, konservativ als "nein" behandeln — dann sendet die
+                // App über ihre Queue nach, statt die Meldung zu verlieren.
+                val delivered = intent.getBooleanExtra("delivered", false)
                 // Status an Flutter weitergeben
-                methodChannel.invokeMethod("statusChanged", mapOf("status" to status))
+                methodChannel.invokeMethod(
+                    "statusChanged",
+                    mapOf("status" to status, "delivered" to delivered)
+                )
             }
         }
     }

@@ -9,9 +9,10 @@
 	<!-- CarPlay-Kategorie „Public Safety": inhaltlich korrekt für BOS/Einsatz
 	     (Feuerwehr, Polizei, Rettungsdienst — Dispatch/Status), erlaubt tiefere
 	     Navigation (5 statt 2 Templates) und ein volleres Template-Set.
-	     WICHTIG: Dieses Entitlement muss von Apple gesondert freigegeben werden
-	     (Antrag unter developer.apple.com/carplay, BOS-Nachweis nötig). Erst nach
-	     Freigabe + passendem Provisioning-Profil lädt die App in CarPlay. -->
+	     Von Apple freigegeben (Case-ID 21199826) und dem Developer-Account
+	     zugewiesen. Damit ein Build in CarPlay lädt, muss die App-ID die
+	     CarPlay-Capability aktiviert haben und das Provisioning-Profil danach neu
+	     erzeugt worden sein — siehe docs/carplay.md. -->
 	<key>com.apple.developer.carplay-public-safety</key>
 	<true/>
 </dict>
