@@ -1,6 +1,8 @@
 // lib/iot_car_helper.dart
 import 'package:flutter/services.dart';
 
+import 'data/einsatz_crew.dart';
+
 /// Helper für Kommunikation mit Android Auto / Apple CarPlay
 class IotCarHelper {
   static const platform = MethodChannel('dev.floriang.trupp_app/status');
@@ -19,15 +21,25 @@ class IotCarHelper {
     void Function(int status, bool delivered) onStatusChanged,
   ) {
     platform.setMethodCallHandler((call) async {
-      if (call.method == 'statusChanged') {
-        final args = call.arguments as Map;
-        final status = args['status'] as int;
-        // Fehlt das Flag (ältere native Schicht), konservativ als „nicht
-        // zugestellt" behandeln — lieber einmal zu viel nachsenden als eine
-        // Statusmeldung verlieren.
-        final delivered = args['delivered'] as bool? ?? false;
-        onStatusChanged(status, delivered);
+      switch (call.method) {
+        case 'statusChanged':
+          final args = call.arguments as Map;
+          final status = args['status'] as int;
+          // Fehlt das Flag (ältere native Schicht), konservativ als „nicht
+          // zugestellt" behandeln — lieber einmal zu viel nachsenden als eine
+          // Statusmeldung verlieren.
+          final delivered = args['delivered'] as bool? ?? false;
+          onStatusChanged(status, delivered);
+          return null;
+
+        // Das Display fragt die am Einsatz beteiligten Fahrzeuge ab. Bewusst
+        // eine Hol- statt Bringschuld: abgefragt wird nur, wenn der Fahrer die
+        // Liste öffnet — kein Polling im Hintergrund.
+        case 'getEinsatzCrew':
+          final crew = await EinsatzCrewService.instance.load();
+          return crew.toMap();
       }
+      return null;
     });
   }
 

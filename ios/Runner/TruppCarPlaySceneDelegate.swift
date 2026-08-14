@@ -72,7 +72,8 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
     }
 
     private func buildButtons() -> [CPGridButton] {
-        statusList.map { entry in
+        // CPGridTemplate fasst maximal 8 Buttons: 7 Status + „Einsatz".
+        var buttons = statusList.map { entry in
             let isActive = entry.num == currentStatus
             let image = makeIcon(sfSymbol: entry.sfSymbol, color: entry.color, active: isActive)
             return CPGridButton(
@@ -81,6 +82,72 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
             ) { [weak self] _ in
                 self?.onStatusPressed(entry.num)
             }
+        }
+
+        let crewImage = makeIcon(sfSymbol: "car.2.fill", color: .systemTeal, active: true)
+        buttons.append(CPGridButton(
+            titleVariants: ["Einsatz", "Einsatzmittel"],
+            image: crewImage
+        ) { [weak self] _ in
+            self?.showEinsatzCrew()
+        })
+        return buttons
+    }
+
+    // MARK: - Einsatz-Liste
+
+    /// Zeigt die am aktuellen Einsatz beteiligten Fahrzeuge.
+    ///
+    /// Die Liste wird sofort mit einem Platzhalter aufgeschoben und nachgefüllt,
+    /// sobald Flutter geantwortet hat — so ist der Tastendruck unmittelbar
+    /// quittiert, auch wenn die Leitstelle ein paar hundert Millisekunden
+    /// braucht.
+    private func showEinsatzCrew() {
+        guard let controller = interfaceController else { return }
+
+        let list = CPListTemplate(
+            title: "Einsatz",
+            sections: [CPListSection(items: [CPListItem(text: "Lade …", detailText: nil)])]
+        )
+        controller.pushTemplate(list, animated: true, completion: nil)
+
+        guard let request = TruppFlutterBridge.shared.requestEinsatzCrew else {
+            fill(list, items: [CPListItem(text: "App nicht gestartet", detailText: nil)])
+            return
+        }
+
+        request { [weak self] data in
+            DispatchQueue.main.async {
+                self?.fill(list, items: Self.crewItems(from: data))
+            }
+        }
+    }
+
+    private func fill(_ list: CPListTemplate, items: [CPListItem]) {
+        list.updateSections([CPListSection(items: items)])
+    }
+
+    /// Baut die Zeilen aus der Antwort von Flutter. Ohne Liste steht dort ein
+    /// Hinweis (z. B. „Keinem Einsatz zugeordnet"), der direkt angezeigt wird.
+    private static func crewItems(from data: [String: Any]?) -> [CPListItem] {
+        guard let data else {
+            return [CPListItem(text: "Keine Verbindung zur App", detailText: nil)]
+        }
+
+        let members = data["members"] as? [[String: Any]] ?? []
+        if members.isEmpty {
+            let hint = (data["hint"] as? String) ?? ""
+            return [CPListItem(text: hint.isEmpty ? "Keine Fahrzeuge" : hint, detailText: nil)]
+        }
+
+        return members.map { member in
+            let rufname = (member["rufname"] as? String) ?? ""
+            let detail = (member["detail"] as? String) ?? ""
+            let isOwn = (member["isOwn"] as? Bool) ?? false
+            return CPListItem(
+                text: isOwn ? "▶ \(rufname)" : rufname,
+                detailText: detail.isEmpty ? nil : detail
+            )
         }
     }
 
