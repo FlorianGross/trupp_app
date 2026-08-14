@@ -69,7 +69,14 @@ import UserNotifications
       queue: .main
     ) { [weak self] notification in
       if let status = notification.userInfo?["status"] as? Int {
-        self?.statusChannel?.invokeMethod("statusChanged", arguments: ["status": status])
+        // delivered: hat die CarPlay-Szene den Status schon zugestellt? Fehlt
+        // das Flag, konservativ als "nein" behandeln — dann sendet die App über
+        // ihre Queue nach, statt die Meldung zu verlieren.
+        let delivered = notification.userInfo?["delivered"] as? Bool ?? false
+        self?.statusChannel?.invokeMethod(
+          "statusChanged",
+          arguments: ["status": status, "delivered": delivered]
+        )
       }
     }
   }

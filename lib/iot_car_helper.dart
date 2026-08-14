@@ -5,12 +5,28 @@ import 'package:flutter/services.dart';
 class IotCarHelper {
   static const platform = MethodChannel('dev.floriang.trupp_app/status');
 
-  /// Initialisiert den Listener für Status-Änderungen AUS dem Car-Display
-  static void initialize(Function(int status) onStatusChanged) {
+  /// Initialisiert den Listener für Status-Änderungen AUS dem Car-Display.
+  ///
+  /// [onStatusChanged] erhält neben dem Status auch `delivered`: die native
+  /// Car-Schicht (CarPlay-Szene bzw. Android-Auto-Screen) sendet den Status
+  /// selbst an die Leitstelle, weil sie auch dann läuft, wenn die Flutter-App
+  /// gerade nicht im Vordergrund ist. `delivered == true` heißt, die Meldung
+  /// ist dort bereits angekommen — die App darf sie dann NICHT erneut senden,
+  /// sonst steht der Status doppelt in der Leitstelle. Bei `false` ist der
+  /// native Versand endgültig fehlgeschlagen und die Offline-Queue der App
+  /// übernimmt das Nachsenden.
+  static void initialize(
+    void Function(int status, bool delivered) onStatusChanged,
+  ) {
     platform.setMethodCallHandler((call) async {
       if (call.method == 'statusChanged') {
-        final status = call.arguments['status'] as int;
-        onStatusChanged(status);
+        final args = call.arguments as Map;
+        final status = args['status'] as int;
+        // Fehlt das Flag (ältere native Schicht), konservativ als „nicht
+        // zugestellt" behandeln — lieber einmal zu viel nachsenden als eine
+        // Statusmeldung verlieren.
+        final delivered = args['delivered'] as bool? ?? false;
+        onStatusChanged(status, delivered);
       }
     });
   }

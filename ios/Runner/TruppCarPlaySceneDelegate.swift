@@ -111,14 +111,24 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
         currentStatus = status
         refreshTemplate()
 
-        // An Flutter melden (für die Haupt-App)
+        // Die Meldung an Flutter folgt erst, wenn das Ergebnis der Übertragung
+        // feststeht — siehe notifyFlutter(status:delivered:).
+        sendStatusToServer(status)
+    }
+
+    /// Meldet der Flutter-App den im Auto gedrückten Status samt Ergebnis der
+    /// nativen Übertragung.
+    ///
+    /// `delivered == true`: die Leitstelle hat den Status bereits erhalten, die
+    /// App darf ihn dann NICHT erneut senden (sonst doppelte Statusmeldung).
+    /// `delivered == false`: der native Versand ist endgültig fehlgeschlagen —
+    /// die Offline-Queue der App übernimmt das Nachsenden.
+    private func notifyFlutter(status: Int, delivered: Bool) {
         NotificationCenter.default.post(
             name: NSNotification.Name("dev.floriang.trupp_app.STATUS_CHANGED"),
             object: nil,
-            userInfo: ["status": status]
+            userInfo: ["status": status, "delivered": delivered]
         )
-
-        sendStatusToServer(status)
     }
 
     @objc private func onStatusUpdateFromFlutter(_ notification: Notification) {
@@ -144,7 +154,13 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
               let url = URL(string: "\(proto)://\(server)/\(token)/setstatus?issi=\(issi)&status=\(status)")
         else {
             connectionOk = false
-            DispatchQueue.main.async { [weak self] in self?.refreshTemplate() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.refreshTemplate()
+                // Ohne gültige Konfiguration kann die Szene nichts senden — die
+                // App soll den Status über ihre Queue übernehmen.
+                self.notifyFlutter(status: status, delivered: false)
+            }
             return
         }
 
@@ -169,6 +185,7 @@ class TruppCarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate
                     self.saveCurrentStatus(status)
                 }
                 self.refreshTemplate()
+                self.notifyFlutter(status: status, delivered: ok)
             }
         }.resume()
     }

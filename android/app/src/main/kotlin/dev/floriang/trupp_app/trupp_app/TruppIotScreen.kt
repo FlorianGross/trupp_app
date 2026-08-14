@@ -98,6 +98,9 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
         if (server.isEmpty() || token.isEmpty() || issi.isEmpty()) {
             connectionOk = false
             invalidate()
+            // Ohne gültige Konfiguration kann hier nichts gesendet werden — die
+            // App soll den Status über ihre Offline-Queue übernehmen.
+            notifyApp(status, delivered = false)
             return
         }
 
@@ -112,6 +115,7 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
                 if (attempt < _maxRetries) {
                     mainHandler.postDelayed({ sendStatus(status, attempt + 1) }, _retryDelayMs)
                 } else {
+                    notifyApp(status, delivered = false)
                     mainHandler.post {
                         connectionOk = false
                         invalidate()
@@ -130,11 +134,8 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
                 }
                 if (success) {
                     saveCurrentStatus(status)
-                    // Broadcast an Flutter-App senden (Thread-unkritisch)
-                    val intent = Intent("dev.floriang.trupp_app.STATUS_CHANGED")
-                    intent.putExtra("status", status)
-                    carContext.sendBroadcast(intent)
                 }
+                notifyApp(status, delivered = success)
                 mainHandler.post {
                     connectionOk = success
                     if (success) currentStatus = status
@@ -142,6 +143,22 @@ class TruppIotScreen(carContext: CarContext) : Screen(carContext) {
                 }
             }
         })
+    }
+
+    /**
+     * Meldet der Flutter-App den im Auto gedrückten Status samt Ergebnis der
+     * nativen Übertragung (Thread-unkritisch).
+     *
+     * delivered == true: die Leitstelle hat den Status bereits erhalten, die App
+     * darf ihn dann NICHT erneut senden (sonst doppelte Statusmeldung).
+     * delivered == false: der Versand ist endgültig fehlgeschlagen — die
+     * Offline-Queue der App übernimmt das Nachsenden.
+     */
+    private fun notifyApp(status: Int, delivered: Boolean) {
+        val intent = Intent("dev.floriang.trupp_app.STATUS_CHANGED")
+        intent.putExtra("status", status)
+        intent.putExtra("delivered", delivered)
+        carContext.sendBroadcast(intent)
     }
 
     private fun loadCurrentStatus() {
