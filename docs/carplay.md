@@ -51,6 +51,14 @@ com.apple.developer.carplay-public-safety entitlement"):
 - `TruppIotCarService` / `TruppIotScreen` (`androidx.car.app`, Kategorie `IOT`)
   zeigen die Status als `ListTemplate`.
 - `MainActivity` überträgt zwischen Car-App und Flutter-Engine.
+- Damit Android Auto die App überhaupt anzeigt, braucht es zwei Dinge:
+  `res/xml/automotive_app_desc.xml` mit `<uses name="template"/>` und den
+  Verweis darauf im Manifest (`meta-data`
+  `com.google.android.gms.car.application`). Fehlt eins davon, erscheint die
+  App nicht im Android-Auto-Launcher.
+- `TruppIotCarService.createHostValidator()` erlaubt in Debug-Builds jeden
+  Host (Desktop Head Unit), in Release-Builds nur die von Google gepflegte
+  Liste `hosts_allowlist_sample`.
 
 ## Wer sendet den Status?
 

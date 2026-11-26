@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Deklariert die App gegenüber Android Auto als Car-App-Library-App
+     (TruppIotCarService, Kategorie IOT). Ohne „template" (und ohne den
+     Verweis per meta-data im Manifest) zeigt Android Auto die App nicht an.
+     Kein „media": die App hat keinen MediaBrowserService, die Deklaration
+     würde bei der Car-Review auffallen. -->
 <automotiveApp>
-    <!-- Notifications werden in Android Auto angezeigt -->
-    <uses name="notification"/>
-
-    <!-- Optional: Media-Controls (falls du später Audio/Media hinzufügen willst) -->
-    <uses name="media"/>
+    <uses name="template"/>
 </automotiveApp>

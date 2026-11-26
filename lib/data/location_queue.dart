@@ -16,6 +16,10 @@ class LocationFix {
   final bool isSent;
   final int? sentAtMs;
 
+  /// ISSI, unter der die Position erfasst wurde (siehe QueuedStatus.issi).
+  /// null = Altbestand, gilt als zur aktuellen ISSI gehörig.
+  final String? issi;
+
   const LocationFix({
     this.id,
     required this.tsMs,
@@ -25,6 +29,7 @@ class LocationFix {
     this.status,
     this.isSent = false,
     this.sentAtMs,
+    this.issi,
   });
 
   LocationFix copyWith({
@@ -36,6 +41,7 @@ class LocationFix {
     int? status,
     bool? isSent,
     int? sentAtMs,
+    String? issi,
   }) =>
       LocationFix(
         id: id ?? this.id,
@@ -46,6 +52,7 @@ class LocationFix {
         status: status ?? this.status,
         isSent: isSent ?? this.isSent,
         sentAtMs: sentAtMs ?? this.sentAtMs,
+        issi: issi ?? this.issi,
       );
 
   Map<String, Object?> toMap() => {
@@ -57,6 +64,7 @@ class LocationFix {
     'status': status,
     'is_sent': isSent ? 1 : 0,
     'sent_at_ms': sentAtMs,
+    'issi': issi,
   };
 
   static LocationFix fromMap(Map<String, Object?> m) => LocationFix(
@@ -68,12 +76,13 @@ class LocationFix {
     status: m['status'] as int?,
     isSent: ((m['is_sent'] as int?) ?? 0) == 1,
     sentAtMs: m['sent_at_ms'] as int?,
+    issi: m['issi'] as String?,
   );
 }
 
 class LocationQueue {
   static const _dbName = 'location_queue.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 3;
   static const _table = 'location_queue';
   String? _dbpath;
 
@@ -107,7 +116,8 @@ class LocationQueue {
             acc REAL,
             status INTEGER,
             is_sent INTEGER NOT NULL DEFAULT 0,
-            sent_at_ms INTEGER
+            sent_at_ms INTEGER,
+            issi TEXT
           )
         ''');
         // Sendeeffizienz: Index auf ts_ms
@@ -119,6 +129,11 @@ class LocationQueue {
           await db.execute('ALTER TABLE $_table ADD COLUMN is_sent INTEGER NOT NULL DEFAULT 0');
           await db.execute('ALTER TABLE $_table ADD COLUMN sent_at_ms INTEGER');
           await db.execute('CREATE INDEX IF NOT EXISTS idx_${_table}_sent_ts ON $_table(is_sent, ts_ms)');
+        }
+        // v2 → v3: ISSI je Position, damit nach einem Profilwechsel nichts
+        // unter der falschen Einheit nachgesendet wird.
+        if (old < 3) {
+          await db.execute('ALTER TABLE $_table ADD COLUMN issi TEXT');
         }
       },
     );
@@ -170,6 +185,19 @@ class LocationQueue {
     await db.rawUpdate(
       'UPDATE $_table SET is_sent = 1, sent_at_ms = ? WHERE id IN ($qMarks)',
       [sentAtMs, ...ids],
+    );
+  }
+
+  /// Nimmt ausstehende Positionen einer anderen ISSI als [currentIssi] aus der
+  /// Übertragung (Profilwechsel). Sie bleiben für Karte/GPX-Export in der DB,
+  /// werden aber nicht mehr gesendet (is_sent = 1, sent_at_ms = NULL heißt
+  /// „nicht übertragen, verworfen"). Altbestand ohne ISSI bleibt pending.
+  Future<int> retirePendingForOtherIssi(String currentIssi) async {
+    final db = await _open();
+    return db.rawUpdate(
+      'UPDATE $_table SET is_sent = 1, sent_at_ms = NULL '
+      'WHERE is_sent = 0 AND issi IS NOT NULL AND issi != ?',
+      [currentIssi],
     );
   }
 
