@@ -1,4 +1,6 @@
 // lib/profiles_screen.dart
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,7 +8,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'data/edp_api.dart';
 import 'data/edp_api_pro.dart';
 import 'data/app_prefs.dart';
+import 'data/location_sync_manager.dart';
 import 'data/profile_store.dart';
+import 'data/status_sync_manager.dart';
 import 'issi_picker_screen.dart';
 import 'theme/brand_colors.dart';
 
@@ -91,6 +95,8 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
     if (maybeNewProfile == null) return; // Abbruch
     final effective = maybeNewProfile;
 
+    if (!await _settlePendingBeforeSwitch(effective)) return; // Abbruch
+
     await ProfileStore.activate(effective);
     await EdpApi.initFromPrefs();
     await _restartService();
@@ -113,6 +119,88 @@ class _ProfilesScreenState extends State<ProfilesScreen> {
         ),
       );
     }
+  }
+
+  /// Wechselt die ISSI, gehören noch nicht übertragene Status/Positionen zur
+  /// bisherigen Einheit. Nach dem Wechsel werden sie nicht mehr gesendet (sonst
+  /// stünden sie unter der falschen ISSI in der Leitstelle). Deshalb hier
+  /// zuerst versuchen, sie mit der alten Konfiguration zu übertragen, und nur
+  /// wenn das nicht klappt nachfragen.
+  ///
+  /// Rückgabe: true = Wechsel fortsetzen, false = Abbruch.
+  Future<bool> _settlePendingBeforeSwitch(AppProfile next) async {
+    final api = await EdpApi.ensureCurrent();
+    if (api == null || api.config.issi == next.issi) return true;
+
+    Future<(int, int)> counts() async => (
+          await StatusSyncManager.instance.pendingCount(),
+          (await LocationSyncManager.instance.getStats())['pending'] ?? 0,
+        );
+
+    var (statusPending, gpsPending) = await counts();
+    if (statusPending == 0 && gpsPending == 0) return true;
+    if (!mounted) return false;
+
+    // Kurz nachsenden (offline nicht ewig blockieren). Ein über das Timeout
+    // hinaus laufender Flush sendet mit der alten Konfiguration weiter — das
+    // ist gewollt; Einträge der neuen ISSI rührt er nicht an.
+    unawaited(showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            SizedBox(
+                width: 24, height: 24, child: CircularProgressIndicator()),
+            SizedBox(width: 16),
+            Expanded(child: Text('Ausstehende Meldungen werden gesendet …')),
+          ],
+        ),
+      ),
+    ));
+    try {
+      await Future.wait([
+        StatusSyncManager.instance.flushPendingNow(),
+        LocationSyncManager.instance.flushPendingNow(),
+      ]).timeout(const Duration(seconds: 15));
+    } catch (_) {
+      // Timeout/Fehler: unten wird nachgezählt.
+    }
+    if (mounted) Navigator.of(context).pop();
+
+    (statusPending, gpsPending) = await counts();
+    if (statusPending == 0 && gpsPending == 0) return true;
+    if (!mounted) return false;
+
+    final parts = [
+      if (statusPending > 0)
+        '$statusPending Statusmeldung${statusPending == 1 ? '' : 'en'}',
+      if (gpsPending > 0) '$gpsPending Position${gpsPending == 1 ? '' : 'en'}',
+    ];
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nicht alles übertragen'),
+        content: Text(
+          '${parts.join(' und ')} der bisherigen ISSI (${api.config.issi}) '
+          'konnten noch nicht gesendet werden.\n\n'
+          'Nach dem Wechsel auf ISSI ${next.issi} werden sie nicht mehr '
+          'übertragen. Positionen bleiben im Verlauf und im GPX-Export '
+          'erhalten.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Trotzdem wechseln'),
+          ),
+        ],
+      ),
+    );
+    return confirmed == true;
   }
 
   static String _formatExpiry(DateTime t) {

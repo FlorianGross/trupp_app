@@ -48,6 +48,16 @@ class EdpConfig {
     return Uri(scheme: protocol, host: host, port: port);
   }
 
+  /// true, wenn beide Konfigurationen an dieselbe Stelle unter derselben
+  /// Kennung senden (Server, Token, ISSI). Trupp/Leiter/Pro-API sind für das
+  /// Senden von Status/Positionen ohne Belang.
+  bool sameEndpointAs(EdpConfig other) =>
+      protocol == other.protocol &&
+      host == other.host &&
+      port == other.port &&
+      token == other.token &&
+      issi == other.issi;
+
   Map<String, String> toPrefs() => {
     AppPrefsKeys.protocol: protocol,
     AppPrefsKeys.server: '$host:$port',
@@ -132,6 +142,31 @@ class EdpApi {
   static Future<EdpApi?> ensureInitialized() async {
     if (_instance != null) return _instance;
     return await initFromPrefs(); // setzt _instance falls Prefs ok
+  }
+
+  /// Wie [ensureInitialized], gleicht die Instanz aber vorher mit den
+  /// aktuell gespeicherten Prefs ab (inkl. `reload()` über die Isolate-Grenze).
+  ///
+  /// Jedes Isolate (UI, Hintergrunddienst, iOS-Background-Handler) hält ein
+  /// eigenes Singleton. Wird in einem anderen Isolate das Profil gewechselt,
+  /// sendet ein bereits initialisiertes Singleton sonst weiter unter der alten
+  /// ISSI/dem alten Token. Für die Flushes der Warteschlangen, die je Eintrag
+  /// die ISSI vergleichen, ist eine aktuelle Konfiguration Pflicht.
+  static Future<EdpApi?> ensureCurrent() async {
+    final prefs = await SharedPreferences.getInstance();
+    try {
+      await prefs.reload();
+    } catch (_) {
+      // reload() ist best-effort; ohne ihn gilt der zwischengespeicherte Stand.
+    }
+    final hasConfig = prefs.getBool(AppPrefsKeys.hasConfig) ?? false;
+    final cfg = await EdpConfig.fromPrefs(prefs);
+    if (!hasConfig || cfg == null || !cfg.isComplete) return null;
+
+    final inst = _instance;
+    if (inst != null && inst._config.sameEndpointAs(cfg)) return inst;
+    _instance = EdpApi._(cfg);
+    return _instance;
   }
 
   EdpApi._(this._config, {http.Client? client})

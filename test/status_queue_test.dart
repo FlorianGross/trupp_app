@@ -108,4 +108,91 @@ void main() {
     expect(
         await StatusQueue.instance.purgeOlderThan(const Duration(days: 7)), 1);
   });
+
+  group('Claim (Doppelversand aus zwei Isolates verhindern)', () {
+    const lease = Duration(minutes: 3);
+
+    test('nur der erste Claim gewinnt, solange er gilt', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final id = await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now, status: 3));
+
+      expect(await StatusQueue.instance.tryClaim(id, lease: lease), true);
+      // Zweites „Isolate" (gleiche DB) bekommt den Eintrag nicht.
+      expect(await StatusQueue.instance.tryClaim(id, lease: lease), false);
+    });
+
+    test('abgelaufener Claim wird wieder vergeben', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final id = await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now, status: 3));
+
+      expect(await StatusQueue.instance.tryClaim(id, lease: lease, nowMs: now),
+          true);
+      // Prozess ist mitten im Senden gestorben → nach Ablauf frei.
+      final later = now + lease.inMilliseconds + 1;
+      expect(
+          await StatusQueue.instance.tryClaim(id, lease: lease, nowMs: later),
+          true);
+    });
+
+    test('releaseClaim gibt nach Fehlschlag sofort frei', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final id = await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now, status: 3));
+
+      expect(await StatusQueue.instance.tryClaim(id, lease: lease), true);
+      await StatusQueue.instance.releaseClaim(id);
+      expect(await StatusQueue.instance.tryClaim(id, lease: lease), true);
+    });
+
+    test('gesendeter Eintrag ist nicht mehr beanspruchbar', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final id = await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now, status: 3));
+
+      expect(await StatusQueue.instance.tryClaim(id, lease: lease), true);
+      await StatusQueue.instance.markSentByIds([id], sentAtMs: now);
+      expect(await StatusQueue.instance.isSent(id), true);
+      expect(await StatusQueue.instance.tryClaim(id, lease: lease), false);
+    });
+
+    test('parallele Claims: genau einer gewinnt', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final id = await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now, status: 3));
+
+      final results = await Future.wait(List.generate(
+          5, (_) => StatusQueue.instance.tryClaim(id, lease: lease)));
+      expect(results.where((r) => r).length, 1);
+    });
+  });
+
+  group('ISSI je Eintrag (Profilwechsel)', () {
+    test('ISSI wird gespeichert und wieder gelesen', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now, status: 3, issi: '1234567'));
+      final batch = await StatusQueue.instance.pendingBatch();
+      expect(batch.single.issi, '1234567');
+    });
+
+    test('discardPendingForOtherIssi verwirft nur fremde ISSI', () async {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now, status: 3, issi: 'alt'));
+      await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now + 1, status: 4, issi: 'neu'));
+      // Altbestand ohne ISSI gilt als zur aktuellen Einheit gehörig.
+      await StatusQueue.instance
+          .insert(QueuedStatus(tsMs: now + 2, status: 1));
+
+      final discarded =
+          await StatusQueue.instance.discardPendingForOtherIssi('neu');
+      expect(discarded, 1);
+
+      final remaining = await StatusQueue.instance.pendingBatch();
+      expect(remaining.map((e) => e.status).toList(), [4, 1]);
+    });
+  });
 }

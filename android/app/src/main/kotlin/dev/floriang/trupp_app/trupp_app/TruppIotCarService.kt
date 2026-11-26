@@ -5,6 +5,7 @@ import androidx.car.app.Screen
 import androidx.car.app.Session
 import androidx.car.app.validation.HostValidator
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.IntentFilter
@@ -14,8 +15,19 @@ import androidx.lifecycle.LifecycleOwner
 
 class TruppIotCarService : CarAppService() {
 
+    /**
+     * Debug-Builds akzeptieren jeden Host (z. B. die Desktop Head Unit beim
+     * Testen). Release-Builds nur die von Google gepflegte Liste der echten
+     * Android-Auto-/Automotive-Hosts — ALLOW_ALL ist laut Google nur zum
+     * Testen gedacht und fällt bei der Car-Review auf.
+     */
     override fun createHostValidator(): HostValidator {
-        return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
+        val debuggable =
+            (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE) != 0
+        if (debuggable) return HostValidator.ALLOW_ALL_HOSTS_VALIDATOR
+        return HostValidator.Builder(applicationContext)
+            .addAllowedHosts(androidx.car.app.R.array.hosts_allowlist_sample)
+            .build()
     }
 
     override fun onCreateSession(): Session {

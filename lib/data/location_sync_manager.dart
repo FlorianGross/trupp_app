@@ -24,12 +24,22 @@ class LocationSyncManager {
   }) async {
     final ts = timestamp?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch;
 
-    // API für dieses Isolate sicherstellen
-    final api = await EdpApi.ensureInitialized();
+    // API für dieses Isolate sicherstellen (mit den aktuellen Prefs
+    // abgeglichen, damit nach einem Profilwechsel die neue ISSI gilt).
+    final api = await EdpApi.ensureCurrent();
 
-    // 1) Aktuellen Fix protokollieren (single write)
+    // 1) Aktuellen Fix protokollieren (single write), mit der ISSI gestempelt,
+    // unter der er erfasst wurde.
     final id = await _queue.insert(
-      LocationFix(tsMs: ts, lat: lat, lon: lon, acc: accuracy, status: status, isSent: false),
+      LocationFix(
+        tsMs: ts,
+        lat: lat,
+        lon: lon,
+        acc: accuracy,
+        status: status,
+        isSent: false,
+        issi: api?.config.issi,
+      ),
     );
 
     // Wenn API fehlt, nur queuen
@@ -69,14 +79,26 @@ class LocationSyncManager {
     DateTime? timestamp,
   }) async {
     final ts = timestamp?.millisecondsSinceEpoch ?? DateTime.now().millisecondsSinceEpoch;
+    // Bewusst ensureInitialized (kein Prefs-reload): wird für jeden Fix
+    // aufgerufen. Der periodische Flush gleicht das Singleton per
+    // ensureCurrent ab, und ein Profilwechsel startet den Dienst neu.
+    final api = await EdpApi.ensureInitialized();
     return await _queue.insert(
-      LocationFix(tsMs: ts, lat: lat, lon: lon, acc: accuracy, status: status, isSent: false),
+      LocationFix(
+        tsMs: ts,
+        lat: lat,
+        lon: lon,
+        acc: accuracy,
+        status: status,
+        isSent: false,
+        issi: api?.config.issi,
+      ),
     );
   }
 
   /// Manueller Trigger von außen (z.B. bei Netzwerk-Wiederherstellung)
   Future<bool> flushPendingNow({int batchSize = 200}) async {
-    final api = await EdpApi.ensureInitialized();
+    final api = await EdpApi.ensureCurrent();
     if (api == null) return false;
     return _flushPendingInternal(api, batchSize: batchSize);
   }
@@ -95,6 +117,11 @@ class LocationSyncManager {
   Future<bool> _flushPendingInternal(EdpApi api, {int batchSize = 100}) async {
     int totalSent = 0;
     bool hadError = false;
+    final issi = api.config.issi;
+
+    // Positionen einer anderen Einheit (Profilwechsel) nicht unter dieser ISSI
+    // senden — sie bleiben für Karte/GPX-Export in der DB.
+    await _queue.retirePendingForOtherIssi(issi);
 
     // Großer Backlog (z.B. nach langem Funkloch) → ausdünnen statt
     // hunderte fast identische Positionen einzeln zu senden.
@@ -111,6 +138,14 @@ class LocationSyncManager {
       // Batch senden (mit kurzer Pause zwischen Requests für Server-Freundlichkeit)
       for (int i = 0; i < batch.length; i++) {
         final fix = batch[i];
+
+        // Erst nach Beginn dieses Flushs unter einer anderen ISSI erfasst
+        // (Profilwechsel während des Sendens) → nicht mit dieser
+        // Konfiguration senden; der nächste Flush ordnet ihn zu.
+        if (fix.issi != null && fix.issi != issi) {
+          hadError = true;
+          break;
+        }
 
         if (thinning &&
             lastSent != null &&

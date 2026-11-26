@@ -73,6 +73,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Android Auto: verweist auf die Deklaration der Car-App (template).
+             Ohne diesen Eintrag taucht die App im Android-Auto-Launcher nicht auf. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+
         <!-- Automotive OS Metadata -->
         <meta-data
             android:name="androidx.car.app.minCarApiLevel"

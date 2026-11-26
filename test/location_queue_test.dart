@@ -59,4 +59,24 @@ void main() {
     expect(await LocationQueue.instance.pendingCount(), 1);
     expect(await LocationQueue.instance.totalCount(), 2);
   });
+
+  test('retirePendingForOtherIssi: fremde ISSI nicht mehr senden, aber behalten',
+      () async {
+    LocationFix fixFor(int ts, String? issi) =>
+        LocationFix(tsMs: ts, lat: 52.0, lon: 13.0, issi: issi);
+
+    await LocationQueue.instance.insert(fixFor(1, 'alt'));
+    await LocationQueue.instance.insert(fixFor(2, 'neu'));
+    await LocationQueue.instance.insert(fixFor(3, null)); // Altbestand
+
+    final retired =
+        await LocationQueue.instance.retirePendingForOtherIssi('neu');
+    expect(retired, 1);
+
+    final pending = await LocationQueue.instance.pendingBatch();
+    expect(pending.map((f) => f.tsMs).toList(), [2, 3]);
+    expect(pending.first.issi, 'neu');
+    // Für Karte/GPX-Export bleibt die Position erhalten.
+    expect(await LocationQueue.instance.totalCount(), 3);
+  });
 }
